@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +30,6 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/metadata"
 	"github.com/your-org/ai-sa-assistant/internal/openai"
-	"go.uber.org/zap"
 )
 
 const (
@@ -118,7 +116,13 @@ func runIngestionCommand(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runIngestionPipeline(cfg *config.Config, docsPath string, chunkSize int, forceReindex bool, logger *zap.Logger) (*IngestionStats, error) {
+func runIngestionPipeline(
+	cfg *config.Config,
+	docsPath string,
+	chunkSize int,
+	forceReindex bool,
+	logger *zap.Logger,
+) (*IngestionStats, error) {
 	ctx := context.Background()
 
 	// Initialize OpenAI client
@@ -148,7 +152,11 @@ func runIngestionPipeline(cfg *config.Config, docsPath string, chunkSize int, fo
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize metadata store: %w", err)
 	}
-	defer metadataStore.Close()
+	defer func() {
+		if err := metadataStore.Close(); err != nil {
+			logger.Warn("Failed to close metadata store", zap.Error(err))
+		}
+	}()
 
 	// Load metadata from JSON file
 	metadataPath := filepath.Join(docsPath, "metadata.json")
@@ -233,9 +241,13 @@ func runIngestionPipeline(cfg *config.Config, docsPath string, chunkSize int, fo
 	return stats, nil
 }
 
-func (p *IngestionPipeline) processDocument(ctx context.Context, entry metadata.MetadataEntry, filePath string) (int, error) {
+func (p *IngestionPipeline) processDocument(
+	ctx context.Context,
+	entry metadata.MetadataEntry,
+	filePath string,
+) (int, error) {
 	// Read document content
-	content, err := ioutil.ReadFile(filePath)
+	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read file %s: %w", filePath, err)
 	}

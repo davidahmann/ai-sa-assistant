@@ -110,7 +110,7 @@ func TestPromptIntegrationWithLLM(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Generate prompt
 			config := PromptConfig{
-				MaxTokens:       4000,
+				MaxTokens:       6000,
 				MaxContextItems: 10,
 				MaxWebResults:   5,
 				QueryType:       tt.queryType,
@@ -282,7 +282,7 @@ func TestPromptOptimizationForDifferentQueryTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := PromptConfig{
-				MaxTokens:       4000,
+				MaxTokens:       6000,
 				MaxContextItems: 10,
 				MaxWebResults:   5,
 				QueryType:       tt.queryType,
@@ -312,7 +312,7 @@ func TestContextPrioritizationInPrompt(t *testing.T) {
 	}
 
 	config := PromptConfig{
-		MaxTokens:       4000,
+		MaxTokens:       6000,
 		MaxContextItems: 2, // Limit to force prioritization
 		MaxWebResults:   5,
 		QueryType:       GeneralQuery,

@@ -1,4 +1,5 @@
 AI-Powered Cloud SA Assistant
+
 1. Project Philosophy & Core Value Proposition
 
 The AI-Powered Cloud SA Assistant is an internal, demo-level solution designed to showcase the power of modern RAG (Retrieval-Augmented Generation) architectures. Our mission is to transform the pre-sales workflow for Solutions Architects by turning hours of manual research into seconds of actionable, trusted, and visually impressive plans. We target the most time-consuming SA tasks: lift-and-shift migrations, hybrid architecture design, disaster recovery planning, and security compliance analysis.
@@ -49,9 +50,10 @@ Configuration: Viper. All configuration, including API keys and service endpoint
 
 We enforce strict Go standards, validated automatically in our CI pipeline.
 
-Go 1.23.5: gofmt for formatting, golangci-lint for linting.
+Go 1.23.5: gofmt for formatting, golangci-lint v2.2.1 for linting.
 
 **Dependencies (with versions)**:
+
 - github.com/gin-gonic/gin v1.10.0 (HTTP framework)
 - github.com/sashabaranov/go-openai v1.26.0 (OpenAI API client)
 - github.com/spf13/viper v1.19.0 (Configuration management)
@@ -67,7 +69,7 @@ Docker Compose: v2.x syntax.
 
 Our testing strategy is designed to ensure each component is reliable before integration.
 
-Pre-commit: Local hooks run gofmt and golangci-lint --fast.
+Pre-commit: Local hooks run gofmt and golangci-lint v2.2.1 --fast.
 
 Unit Tests (CI): On every Pull Request, a suite of unit tests is run for each Go service, validating internal logic (e.g., chunking, prompt templating, API handlers).
 
@@ -160,6 +162,7 @@ The system showcases different RAG pipeline capabilities through four distinct d
 **User Prompt**: @SA-Assistant Generate a high-level lift-and-shift plan for migrating 120 on-prem Windows and Linux VMs to AWS, including EC2 instance recommendations, VPC/subnet topology, and the latest AWS MGN best practices from Q2 2025.
 
 **Pipeline Flow**:
+
 - **Metadata Filter**: Filters for docs with scenario="migration" AND cloud="aws"
 - **Chunk Retrieval**: Extracts EC2 sizing recommendations and VPC design patterns
 - **Freshness Detection**: "Q2 2025" triggers web search for latest AWS MGN updates
@@ -172,6 +175,7 @@ The system showcases different RAG pipeline capabilities through four distinct d
 **User Prompt**: @SA-Assistant Outline a hybrid reference architecture connecting our on-prem VMware environment to Azure, covering ExpressRoute configuration, VMware HCX migration, active-active failover, and June 2025 Azure Hybrid announcements.
 
 **Pipeline Flow**:
+
 - **Metadata Filter**: Filters for docs with scenario="hybrid" AND cloud="azure"
 - **Chunk Retrieval**: Extracts ExpressRoute peering steps and VMware HCX workflows
 - **Freshness Detection**: "June 2025" triggers web search for Azure Arc for VMware updates
@@ -184,6 +188,7 @@ The system showcases different RAG pipeline capabilities through four distinct d
 **User Prompt**: @SA-Assistant Design a DR solution in Azure for critical workloads with RTO = 2 hours and RPO = 15 minutes, including geo-replication options, failover orchestration, and cost-optimized standby.
 
 **Pipeline Flow**:
+
 - **Metadata Filter**: Filters for docs with scenario="disaster-recovery"
 - **Chunk Retrieval**: Extracts Azure Site Recovery configuration and RTO/RPO patterns
 - **Fallback Search**: Expands search when initial results are insufficient
@@ -196,6 +201,7 @@ The system showcases different RAG pipeline capabilities through four distinct d
 **User Prompt**: @SA-Assistant Summarize HIPAA and GDPR encryption, logging, and policy enforcement requirements for our AWS landing zone, and include any recent AWS compliance feature updates.
 
 **Pipeline Flow**:
+
 - **Metadata Filter**: Filters for docs with scenario="security" AND tags containing "compliance"
 - **Chunk Retrieval**: Extracts HIPAA and GDPR encryption standards and logging requirements
 - **Freshness Detection**: "recent" triggers web search for latest AWS compliance features

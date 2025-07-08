@@ -35,7 +35,7 @@ func mockOpenAIServer(t testing.TB, responses map[string]string) *httptest.Serve
 			if response, ok := responses["embeddings"]; ok {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(response))
+				_, _ = w.Write([]byte(response))
 				return
 			}
 		}
@@ -43,12 +43,12 @@ func mockOpenAIServer(t testing.TB, responses map[string]string) *httptest.Serve
 			if response, ok := responses["chat"]; ok {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(response))
+				_, _ = w.Write([]byte(response))
 				return
 			}
 		}
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error": "not found"}`))
+		_, _ = w.Write([]byte(`{"error": "not found"}`))
 	}))
 }
 
@@ -333,13 +333,13 @@ func TestRetryLogic(t *testing.T) {
 			// First attempt: rate limit error
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"error": {"message": "Rate limit exceeded", "type": "rate_limit_exceeded"}}`))
+			_, _ = w.Write([]byte(`{"error": {"message": "Rate limit exceeded", "type": "rate_limit_exceeded"}}`))
 			return
 		}
 		// Second attempt: success
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(createMockEmbeddingResponse(1)))
+		_, _ = w.Write([]byte(createMockEmbeddingResponse(1)))
 	}))
 	defer server.Close()
 
@@ -418,7 +418,7 @@ func TestErrorHandling(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.response))
+				_, _ = w.Write([]byte(tt.response))
 			}))
 			defer server.Close()
 
@@ -463,7 +463,7 @@ func TestEmbeddingDimensionValidation(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		// Return embedding with wrong dimensions (should be 1536, but we'll return 512)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"object": "list",
 			"data": [
 				{
@@ -620,7 +620,7 @@ func TestContextCancellation(t *testing.T) {
 		time.Sleep(2 * time.Second)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(createMockEmbeddingResponse(1)))
+		_, _ = w.Write([]byte(createMockEmbeddingResponse(1)))
 	}))
 	defer server.Close()
 

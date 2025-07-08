@@ -160,7 +160,11 @@ func (c *Client) makeRequest(req *http.Request) (*http.Response, error) {
 	}
 
 	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close response body", zap.Error(err))
+			}
+		}()
 		body, _ := io.ReadAll(resp.Body)
 
 		var chromaErr ChromaError
@@ -218,7 +222,11 @@ func (c *Client) AddDocuments(documents []Document, embeddings [][]float32) erro
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close response body", zap.Error(err))
+			}
+		}()
 
 		c.logger.Info("Successfully added documents",
 			zap.String("collection", c.collection),
@@ -269,7 +277,11 @@ func (c *Client) Search(queryEmbedding []float32, nResults int, docIDs []string)
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close response body", zap.Error(err))
+			}
+		}()
 
 		var searchResp SearchResponse
 		if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
@@ -321,7 +333,11 @@ func (c *Client) HealthCheck() error {
 		if err != nil {
 			return fmt.Errorf("failed to check ChromaDB health: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close response body", zap.Error(err))
+			}
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("ChromaDB health check failed with status %d", resp.StatusCode)
@@ -362,7 +378,11 @@ func (c *Client) CreateCollection(name string, metadata map[string]interface{}) 
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close response body", zap.Error(err))
+			}
+		}()
 
 		c.logger.Info("Collection created successfully", zap.String("collection_name", name))
 		return nil
@@ -385,7 +405,11 @@ func (c *Client) DeleteCollection(name string) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close response body", zap.Error(err))
+			}
+		}()
 
 		c.logger.Info("Collection deleted successfully", zap.String("collection_name", name))
 		return nil
@@ -409,7 +433,11 @@ func (c *Client) GetCollection(name string) (*Collection, error) {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close response body", zap.Error(err))
+			}
+		}()
 
 		if err := json.NewDecoder(resp.Body).Decode(&collection); err != nil {
 			return fmt.Errorf("failed to decode collection response: %w", err)
@@ -439,7 +467,11 @@ func (c *Client) ListCollections() ([]Collection, error) {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close response body", zap.Error(err))
+			}
+		}()
 
 		if err := json.NewDecoder(resp.Body).Decode(&collections); err != nil {
 			return fmt.Errorf("failed to decode collections response: %w", err)

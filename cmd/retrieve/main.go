@@ -97,7 +97,11 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to initialize dependencies", zap.Error(err))
 	}
-	defer deps.MetadataStore.Close()
+	defer func() {
+		if err := deps.MetadataStore.Close(); err != nil {
+			logger.Warn("Failed to close metadata store", zap.Error(err))
+		}
+	}()
 
 	// Set Gin mode based on log level
 	if cfg.Logging.Level == "debug" {
@@ -311,7 +315,7 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 
 		// Step 1: Apply metadata filters if present
 		var filteredDocIDs []string
-		if searchReq.Filters != nil && len(searchReq.Filters) > 0 {
+		if len(searchReq.Filters) > 0 {
 			filterOpts := metadata.FilterOptions{
 				AndFilters: true,
 			}
@@ -383,10 +387,18 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 			// Check if fallback is needed based on count or average score
 			needsFallback := false
 			if len(searchResults) < deps.Config.Retrieval.FallbackThreshold {
-				fallbackReason = fmt.Sprintf("insufficient results (%d < %d)", len(searchResults), deps.Config.Retrieval.FallbackThreshold)
+				fallbackReason = fmt.Sprintf(
+					"insufficient results (%d < %d)",
+					len(searchResults),
+					deps.Config.Retrieval.FallbackThreshold,
+				)
 				needsFallback = true
 			} else if avgScore < deps.Config.Retrieval.FallbackScoreThreshold {
-				fallbackReason = fmt.Sprintf("low average similarity score (%.3f < %.3f)", avgScore, deps.Config.Retrieval.FallbackScoreThreshold)
+				fallbackReason = fmt.Sprintf(
+					"low average similarity score (%.3f < %.3f)",
+					avgScore,
+					deps.Config.Retrieval.FallbackScoreThreshold,
+				)
 				needsFallback = true
 			}
 

@@ -116,18 +116,18 @@ logging:
 	}
 
 	// Set environment variables
-	os.Setenv("OPENAI_API_KEY", "sk-env-key")
-	os.Setenv("TEAMS_WEBHOOK_URL", "https://env.webhook.com/test")
-	os.Setenv("CHROMA_URL", "http://env:8000")
-	os.Setenv("LOG_LEVEL", "debug")
-	os.Setenv("LOG_FORMAT", "text")
+	_ = os.Setenv("OPENAI_API_KEY", "sk-env-key")
+	_ = os.Setenv("TEAMS_WEBHOOK_URL", "https://env.webhook.com/test")
+	_ = os.Setenv("CHROMA_URL", "http://env:8000")
+	_ = os.Setenv("LOG_LEVEL", "debug")
+	_ = os.Setenv("LOG_FORMAT", "text")
 
 	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("TEAMS_WEBHOOK_URL")
-		os.Unsetenv("CHROMA_URL")
-		os.Unsetenv("LOG_LEVEL")
-		os.Unsetenv("LOG_FORMAT")
+		_ = os.Unsetenv("OPENAI_API_KEY")
+		_ = os.Unsetenv("TEAMS_WEBHOOK_URL")
+		_ = os.Unsetenv("CHROMA_URL")
+		_ = os.Unsetenv("LOG_LEVEL")
+		_ = os.Unsetenv("LOG_FORMAT")
 	}()
 
 	config, err := Load(configPath)
@@ -550,8 +550,10 @@ metadata:
 	}
 
 	// Set CONFIG_PATH environment variable
-	os.Setenv("CONFIG_PATH", configPath)
-	defer os.Unsetenv("CONFIG_PATH")
+	_ = os.Setenv("CONFIG_PATH", configPath)
+	defer func() {
+		_ = os.Unsetenv("CONFIG_PATH")
+	}()
 
 	config, err := Load("")
 	if err != nil {
@@ -680,20 +682,20 @@ func TestGetEnvironment(t *testing.T) {
 	}
 
 	// Test ENVIRONMENT variable
-	os.Setenv("ENVIRONMENT", "production")
+	_ = os.Setenv("ENVIRONMENT", "production")
 	env = getEnvironment()
 	if env != "production" {
 		t.Errorf("Expected environment 'production', got '%s'", env)
 	}
-	os.Unsetenv("ENVIRONMENT")
+	_ = os.Unsetenv("ENVIRONMENT")
 
 	// Test ENV variable
-	os.Setenv("ENV", "staging")
+	_ = os.Setenv("ENV", "staging")
 	env = getEnvironment()
 	if env != "staging" {
 		t.Errorf("Expected environment 'staging', got '%s'", env)
 	}
-	os.Unsetenv("ENV")
+	_ = os.Unsetenv("ENV")
 }
 
 func TestValidationError(t *testing.T) {
@@ -760,12 +762,4 @@ func TestContains(t *testing.T) {
 	if contains([]string{}, "test") {
 		t.Error("Expected contains to return false for empty slice")
 	}
-}
-
-// Helper function to check if error contains substring
-func containsError(err error, substr string) bool {
-	if err == nil {
-		return false
-	}
-	return contains([]string{err.Error()}, substr)
 }

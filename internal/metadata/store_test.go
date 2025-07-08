@@ -16,7 +16,6 @@ package metadata
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +31,11 @@ func TestNewStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Test database schema was created
 	var tableName string
@@ -55,7 +58,11 @@ func TestNewStoreWithFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Test that database file was created
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -69,7 +76,11 @@ func TestAddMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	entry := MetadataEntry{
 		DocID:         "test-doc.md",
@@ -118,7 +129,11 @@ func TestLoadFromJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Create test metadata JSON
 	metadataIndex := MetadataIndex{
@@ -162,7 +177,7 @@ func TestLoadFromJSON(t *testing.T) {
 		t.Fatalf("Failed to marshal metadata: %v", err)
 	}
 
-	err = ioutil.WriteFile(jsonPath, jsonData, 0644)
+	err = os.WriteFile(jsonPath, jsonData, 0644)
 	if err != nil {
 		t.Fatalf("Failed to write JSON file: %v", err)
 	}
@@ -204,7 +219,11 @@ func TestFilterDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Add test data
 	testEntries := []MetadataEntry{
@@ -404,7 +423,11 @@ func TestGetMetadataByDocID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	entry := MetadataEntry{
 		DocID:         "test-doc.md",
@@ -455,7 +478,11 @@ func TestGetAllMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Add test data
 	testEntries := []MetadataEntry{
@@ -519,7 +546,11 @@ func TestGetStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Add test data
 	testEntries := []MetadataEntry{
@@ -619,7 +650,11 @@ func TestMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Run migration
 	err = store.Migrate()
@@ -656,7 +691,11 @@ func TestEmptyFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Add test data
 	entry := MetadataEntry{
@@ -700,7 +739,11 @@ func TestInvalidJSONPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Test with non-existent file
 	err = store.LoadFromJSON("/non/existent/file.json")
@@ -715,13 +758,17 @@ func TestInvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Create temporary file with invalid JSON
 	tmpDir := t.TempDir()
 	jsonPath := filepath.Join(tmpDir, "invalid.json")
 
-	err = ioutil.WriteFile(jsonPath, []byte("invalid json content"), 0644)
+	err = os.WriteFile(jsonPath, []byte("invalid json content"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write invalid JSON file: %v", err)
 	}

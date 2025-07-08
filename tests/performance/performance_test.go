@@ -154,7 +154,7 @@ func TestLoadTesting(t *testing.T) {
 	// Analyze results
 	var totalDuration time.Duration
 	var maxDuration time.Duration
-	var minDuration time.Duration = time.Hour
+	var minDuration = time.Hour
 	requestCount := 0
 
 	for duration := range results {

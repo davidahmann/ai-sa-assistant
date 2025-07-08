@@ -414,15 +414,6 @@ Guidelines:
 
 // buildDiagramInstructions creates comprehensive Mermaid.js diagram generation instructions
 func buildDiagramInstructions(_ QueryType) string {
-	return buildDiagramHeader() +
-		buildMermaidSyntaxInstructions() +
-		buildCloudArchitecturePatterns() +
-		buildDiagramQualityGuidelines() +
-		buildDiagramFallbackInstructions()
-}
-
-// buildDiagramHeader creates the main header for diagram instructions
-func buildDiagramHeader() string {
 	return `
 ## MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS
 
@@ -436,17 +427,559 @@ Generate architecture diagrams for queries involving:
 - CI/CD pipeline designs
 - Data flow and integration patterns
 
-`
-}
-
-// buildMermaidSyntaxInstructions creates the syntax requirements section
-func buildMermaidSyntaxInstructions() string {
-	return `### Mermaid Syntax Requirements
+### Mermaid Syntax Requirements
 - ALWAYS use "graph TD" (Top-Down) syntax for cloud architecture diagrams
 - Enclose ALL diagram code in triple backticks with "mermaid" language identifier: ` + "```mermaid" + `
 - Use descriptive node names with proper formatting
 - Include subgraphs for logical groupings (environments, regions, services)
 - Use appropriate arrow styles for different connection types
+
+### Cloud Architecture Diagram Conventions
+
+#### AWS Architecture Diagrams
+- Use subgraphs for VPCs, Availability Zones, and service groupings
+- Node naming: Use AWS service names (EC2, RDS, S3, Lambda, etc.)
+- Include security groups, subnets, and load balancers
+- Show data flow with labeled arrows
+
+Example AWS Pattern:
+` + "```" + `
+graph TD
+    subgraph "AWS Cloud"
+        subgraph "VPC: 10.0.0.0/16"
+            subgraph "Public Subnet"
+                ALB[Application Load Balancer]
+                NAT[NAT Gateway]
+            end
+            subgraph "Private Subnet"
+                EC2[EC2 Instances]
+                RDS[RDS Database]
+            end
+        end
+        S3[S3 Buckets]
+    end
+    Users[Users] --> ALB
+    ALB --> EC2
+    EC2 --> RDS
+    EC2 --> S3
+` + "```" + `
+
+#### Azure Architecture Diagrams
+- Use subgraphs for Resource Groups, Virtual Networks, and subscriptions
+- Node naming: Use Azure service names (VM, SQL Database, Storage Account, etc.)
+- Include Azure-specific components (Application Gateway, Traffic Manager)
+- Show resource relationships and dependencies
+
+Example Azure Pattern:
+` + "```" + `
+graph TD
+    subgraph "Azure Subscription"
+        subgraph "Resource Group: Production"
+            subgraph "Virtual Network"
+                AG[Application Gateway]
+                VM[Virtual Machines]
+                SQL[SQL Database]
+            end
+            SA[Storage Account]
+        end
+    end
+    Internet[Internet] --> AG
+    AG --> VM
+    VM --> SQL
+    VM --> SA
+` + "```" + `
+
+#### Hybrid Cloud Architecture Diagrams
+- Clearly separate on-premises and cloud environments
+- Show connection methods (VPN, ExpressRoute, Direct Connect)
+- Include hybrid services and replication patterns
+- Demonstrate data synchronization flows
+
+Example Hybrid Pattern:
+` + "```" + `
+graph TD
+    subgraph "On-Premises"
+        DC[Data Center]
+        AD[Active Directory]
+        APP[Applications]
+    end
+    subgraph "AWS Cloud"
+        VPC[VPC]
+        EC2[EC2 Instances]
+        RDS[RDS Database]
+    end
+    DC -.->|VPN Connection| VPC
+    AD -.->|AD Connector| VPC
+    APP --> EC2
+    EC2 --> RDS
+` + "```" + `
+
+### Diagram Quality Requirements
+- Include 5-15 nodes for optimal clarity
+- Use meaningful node labels (not generic terms)
+- Group related components in subgraphs
+- Show clear data flow direction with arrows
+- Include security boundaries and access controls
+- Use consistent naming conventions throughout
+
+### Node Formatting Guidelines
+- Use PascalCase for service names: EC2, RDS, S3
+- Use descriptive labels: "Web Servers" instead of "Servers"
+- Include capacity or scale indicators when relevant
+- Use square brackets for services: [EC2 Instances]
+- Use parentheses for external entities: (Users)
+- Use curly braces for databases: {RDS Database}
+
+### Arrow Types and Meanings
+- Solid arrows (-->) for primary data flow
+- Dashed arrows (-.->)  for secondary or backup connections
+- Thick arrows (==>) for high-bandwidth connections
+- Dotted arrows (...>) for occasional or batch data transfer
+
+### Fallback Instructions
+If the query is NOT about architecture, infrastructure, or technical implementation:
+- Do NOT generate a diagram
+- Focus on textual response with bullet points and structured information
+- Only include diagrams if they genuinely add value to the architectural understanding
+
+### Common Diagram Mistakes to Avoid
+- Do NOT use "graph LR" (Left-Right) - always use "graph TD" (Top-Down)
+- Do NOT create overcomplicated diagrams with too many nodes
+- Do NOT use generic node names like "Server1", "Database1"
+- Do NOT forget to enclose diagram code in proper markdown code blocks
+- Do NOT include diagrams for non-architectural queries
+
+### Code Block Format
+Always format Mermaid diagrams exactly like this:
+
+` + "```mermaid" + `
+graph TD
+    [Your diagram content here]
+` + "```" + `
+
+`
+}
+
+// buildCodeGenerationInstructions creates comprehensive code generation instructions
+func buildCodeGenerationInstructions(_ QueryType) string {
+	var instructions strings.Builder
+
+	instructions.WriteString(buildCodeGenerationHeader())
+	instructions.WriteString(buildTerraformInstructions())
+	instructions.WriteString(buildAWSCLIInstructions())
+	instructions.WriteString(buildAzureCLIInstructions())
+	instructions.WriteString(buildPowerShellInstructions())
+	instructions.WriteString(buildCodeTestingInstructions())
+
+	return instructions.String()
+}
+
+// buildCodeGenerationHeader creates the header section for code generation instructions
+func buildCodeGenerationHeader() string {
+	return `
+## CODE GENERATION INSTRUCTIONS
+
+### When to Generate Code
+Generate code snippets for queries involving:
+- Infrastructure deployment and configuration
+- Cloud resource provisioning and management
+- Migration and deployment automation
+- Configuration management and orchestration
+- Security implementations and compliance
+- Monitoring, logging, and observability setup
+- CI/CD pipeline configurations
+- Backup, disaster recovery, and automation scripts
+
+### Language and Tool Requirements
+
+#### Terraform (Infrastructure as Code)
+- Use for cloud infrastructure provisioning
+- Include provider configuration (AWS, Azure, GCP)
+- Use meaningful resource names with proper naming conventions
+- Include data sources for existing resources
+- Add variable definitions and output values
+- Format: ` + "`terraform`" + `
+
+Example Pattern:
+` + "```terraform" + `
+# Configure the AWS Provider
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+# Configure the AWS Provider
+provider "aws" {
+  region = var.aws_region
+}
+
+# Create VPC
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name        = "$${var.project_name}-vpc"
+    Environment = var.environment
+  }
+}
+` + "```" + `
+
+#### AWS CLI Commands
+- Use for AWS resource management and automation
+- Include profile and region specifications where applicable
+- Use meaningful output formats (json, table, text)
+- Include error handling and validation
+- Format: ` + "`bash`" + ` or ` + "`aws`" + `
+
+Example Pattern:
+` + "```bash" + `
+#!/bin/bash
+# AWS CLI script for EC2 instance management
+
+# Set default region and profile
+export AWS_DEFAULT_REGION=us-west-2
+export AWS_PROFILE=production
+
+# Create EC2 instance
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type t3.medium \
+  --key-name my-key-pair \
+  --security-group-ids sg-1234567890abcdef0 \
+  --subnet-id subnet-12345678 \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=WebServer},{Key=Environment,Value=Production}]' \
+  --output table
+
+# Wait for instance to be running
+aws ec2 wait instance-running --instance-ids $${INSTANCE_ID}
+echo "Instance $${INSTANCE_ID} is now running"
+` + "```" + `
+
+#### Azure CLI Commands
+- Use for Azure resource management and automation
+- Include subscription and resource group context
+- Use meaningful output formats (json, table, yaml)
+- Include error handling and resource validation
+- Format: ` + "`bash`" + ` or ` + "`azurecli`" + `
+
+Example Pattern:
+` + "```bash" + `
+#!/bin/bash
+# Azure CLI script for VM deployment
+
+# Set subscription and resource group
+az account set --subscription "Production-Subscription"
+RESOURCE_GROUP="myapp-prod-rg"
+LOCATION="eastus"
+
+# Create resource group if it doesn't exist
+az group create --name $$RESOURCE_GROUP --location $$LOCATION
+
+# Create virtual machine
+az vm create \
+  --resource-group $$RESOURCE_GROUP \
+  --name myVM \
+  --image Ubuntu2204 \
+  --admin-username azureuser \
+  --generate-ssh-keys \
+  --size Standard_B2s \
+  --tags Environment=Production Project=MyApp \
+  --output table
+
+# Open port 80 for web traffic
+az vm open-port --port 80 --resource-group $$RESOURCE_GROUP --name myVM
+` + "```" + `
+
+#### PowerShell (Azure/Windows Automation)
+- Use for Windows-based automation and Azure management
+- Include proper error handling with try-catch blocks
+- Use meaningful variable names and cmdlet parameters
+- Include progress indicators for long-running operations
+- Format: ` + "`powershell`" + ` or ` + "`ps1`" + `
+
+Example Pattern:
+` + "```powershell" + `
+# PowerShell script for Azure resource deployment
+
+# Import required modules
+Import-Module Az.Accounts
+Import-Module Az.Resources
+
+# Connect to Azure (if not already connected)
+if (-not (Get-AzContext)) {
+    Connect-AzAccount
+}
+
+# Set variables
+$$resourceGroupName = "myapp-prod-rg"
+$$location = "East US"
+$$vmName = "myappvm01"
+
+try {
+    # Create resource group
+    Write-Host "Creating resource group: $$resourceGroupName" -ForegroundColor Green
+    New-AzResourceGroup -Name $$resourceGroupName -Location $$location -Force
+
+    # Create virtual machine
+    Write-Host "Creating virtual machine: $$vmName" -ForegroundColor Green
+    $$vm = New-AzVM ` + "`" + `
+        -ResourceGroupName $$resourceGroupName ` + "`" + `
+        -Name $$vmName ` + "`" + `
+        -Location $$location ` + "`" + `
+        -Size "Standard_B2s" ` + "`" + `
+        -Image "Ubuntu2204" ` + "`" + `
+        -OpenPorts 80,443,22 ` + "`" + `
+        -PublicIpAddressName "$$vmName-pip" ` + "`" + `
+        -SecurityGroupName "$$vmName-nsg"
+
+    Write-Host "VM created successfully with IP: $$($$vm.PublicIpAddress)" -ForegroundColor Green
+}
+catch {
+    Write-Error "Failed to create resources: $$($$_.Exception.Message)"
+    exit 1
+}
+` + "```" + `
+
+#### YAML/JSON Configuration Files
+- Use for Kubernetes, Docker Compose, CI/CD pipelines
+- Include proper indentation and structure
+- Add comments explaining complex configurations
+- Use meaningful names and labels
+- Format: ` + "`yaml`" + `, ` + "`json`" + `, or ` + "`kubernetes`" + `
+
+Example Pattern:
+` + "```yaml" + `
+# Kubernetes deployment configuration
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-deployment
+  labels:
+    app: webapp
+    version: v1.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: webapp
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      containers:
+      - name: webapp
+        image: myregistry/webapp:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: database-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+` + "```" + `
+
+### Code Quality and Security Requirements
+
+#### Security Best Practices
+- NEVER include hardcoded secrets, API keys, passwords, or sensitive data
+- Use environment variables, parameter stores, or secret management services
+- Include proper IAM permissions and security group configurations
+- Use least-privilege access principles
+- Include encryption configurations where applicable
+
+#### Code Quality Standards
+- Include meaningful comments explaining complex logic
+- Use consistent naming conventions throughout
+- Add error handling and validation
+- Include resource tagging for organization and cost tracking
+- Use variables and parameters instead of hardcoded values
+- Include outputs and return values where applicable
+
+#### Documentation Requirements
+- Add header comments explaining the purpose of each script
+- Include usage examples and parameter descriptions
+- Add inline comments for complex operations
+- Include prerequisites and dependencies
+- Add error handling explanations
+
+### Conditional Code Generation Based on Platform
+
+#### AWS-Specific Code
+Generate when query mentions:
+- AWS services (EC2, S3, RDS, Lambda, etc.)
+- AWS deployment patterns
+- AWS CLI operations
+- AWS CloudFormation or CDK
+
+#### Azure-Specific Code
+Generate when query mentions:
+- Azure services (VM, Storage Account, SQL Database, etc.)
+- Azure deployment patterns
+- Azure CLI or PowerShell operations
+- Azure Resource Manager templates
+
+#### Multi-Cloud or Hybrid Code
+Generate when query mentions:
+- Multi-cloud strategies
+- Hybrid architectures
+- Cloud-agnostic tools (Terraform, Kubernetes)
+- Migration between platforms
+
+### Code Block Formatting Requirements
+- ALWAYS use triple backticks with appropriate language identifier
+- Supported identifiers: terraform, bash, powershell, yaml, json, python, javascript
+- Include file extensions in comments when applicable (e.g., # main.tf, # deploy.ps1)
+- Use consistent indentation (2 spaces for YAML, 4 spaces for others)
+- Include proper line breaks and spacing for readability
+
+### Common Code Generation Patterns
+
+#### Infrastructure Provisioning
+- Include provider configuration
+- Use data sources for existing resources
+- Add proper tagging and naming conventions
+- Include networking and security configurations
+
+#### Automation Scripts
+- Include error handling and logging
+- Use meaningful variable names
+- Add progress indicators for long operations
+- Include cleanup and rollback procedures
+
+#### Configuration Management
+- Use configuration files with proper structure
+- Include environment-specific configurations
+- Add validation and testing steps
+- Include backup and recovery procedures
+
+### Fallback Instructions for Non-Technical Queries
+
+#### When NOT to Generate Code
+- Business strategy and planning queries
+- High-level architectural discussions without implementation details
+- Cost and pricing analysis requests
+- Training and educational content requests
+- Policy and compliance documentation requests
+
+#### Alternative Response Patterns
+For non-technical queries, provide:
+- Structured bullet points with recommendations
+- Best practices and guidelines
+- Reference links and documentation pointers
+- Process descriptions and workflows
+- Timeline and planning considerations
+
+### Code Comments and Documentation Standards
+
+#### Header Comments for Scripts
+` + "```bash" + `
+#!/bin/bash
+#
+# Script: deploy-webapp.sh
+# Purpose: Deploy web application to AWS ECS
+# Author: Solutions Architect Team
+# Version: 1.0
+# Dependencies: AWS CLI v2, jq
+# Usage: ./deploy-webapp.sh <environment> <image-tag>
+#
+` + "```" + `
+
+#### Inline Comments for Complex Logic
+` + "```terraform" + `
+# Create internet gateway for public subnet access
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "$${var.project_name}-igw"
+  }
+}
+
+# Route table for public subnets to enable internet access
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  # Default route to internet gateway for outbound traffic
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name = "$${var.project_name}-public-rt"
+  }
+}
+` + "```" + `
+
+### Error Handling Patterns
+
+#### Bash Error Handling
+` + "```bash" + `
+#!/bin/bash
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Function for error handling
+error_exit() {
+    echo "ERROR: $1" >&2
+    exit 1
+}
+
+# Check if AWS CLI is installed
+command -v aws >/dev/null 2>&1 || error_exit "AWS CLI is required but not installed"
+
+# Validate required environment variables
+: $${AWS_REGION:?AWS_REGION environment variable is required}
+: $${ENVIRONMENT:?ENVIRONMENT environment variable is required}
+` + "```" + `
+
+#### PowerShell Error Handling
+` + "```powershell" + `
+# Set error action preference
+$$ErrorActionPreference = "Stop"
+
+try {
+    # Main script logic here
+    Write-Host "Starting deployment..." -ForegroundColor Green
+
+    # Validate prerequisites
+    if (-not (Get-Module -ListAvailable -Name Az)) {
+        throw "Azure PowerShell module is required but not installed"
+    }
+
+    # Your deployment code here
+}
+catch {
+    Write-Error "Deployment failed: $$($$_.Exception.Message)"
+    Write-Host "Rolling back changes..." -ForegroundColor Yellow
+    # Rollback logic here
+    exit 1
+}
+finally {
+    Write-Host "Cleanup completed" -ForegroundColor Blue
+}
+` + "```" + `
+
+### Integration and Testing Considerations
+- Include unit tests for complex scripts
+- Add integration testing steps
+- Include deployment validation checks
+- Add monitoring and alerting configurations
+- Include rollback and recovery procedures
 
 `
 }
@@ -526,8 +1059,8 @@ func validatePromptContent(prompt string) error {
 func validateDiagramInstructions(prompt string) error {
 	diagramRequirements := map[string]string{
 		"MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS": "Mermaid.js diagram generation instructions",
-		"graph TD":   "graph TD syntax instructions",
-		"```mermaid": "mermaid code block formatting instructions",
+		"graph TD":                                   "graph TD syntax instructions",
+		"```mermaid":                                 "mermaid code block formatting instructions",
 	}
 
 	for requirement, description := range diagramRequirements {
@@ -542,13 +1075,13 @@ func validateDiagramInstructions(prompt string) error {
 // validateCodeInstructions checks for code generation instruction requirements
 func validateCodeInstructions(prompt string) error {
 	codeRequirements := map[string]string{
-		"CODE GENERATION INSTRUCTIONS":    "code generation instructions",
-		"terraform":                       "Terraform code generation instructions",
-		"AWS CLI":                         "AWS CLI code generation instructions",
-		"Azure CLI":                       "Azure CLI code generation instructions",
-		"PowerShell":                      "PowerShell code generation instructions",
-		"NEVER include hardcoded secrets": "security requirements for code generation", // pragma: allowlist secret
-		"meaningful comments":             "code commenting requirements",
+		"CODE GENERATION INSTRUCTIONS":     "code generation instructions",
+		"terraform":                        "Terraform code generation instructions",
+		"AWS CLI":                          "AWS CLI code generation instructions",
+		"Azure CLI":                        "Azure CLI code generation instructions",
+		"PowerShell":                       "PowerShell code generation instructions",
+		"NEVER include hardcoded secrets": "security requirements for code generation",
+		"meaningful comments":              "code commenting requirements",
 	}
 
 	for requirement, description := range codeRequirements {
@@ -625,332 +1158,4 @@ func IsBusinessOnlyQuery(query string) bool {
 
 	// If it has business keywords but no architecture keywords, it's business-only
 	return businessScore > 0 && !DetectArchitectureQuery(query)
-}
-
-// buildCodeGenerationInstructions creates comprehensive code generation instructions
-func buildCodeGenerationInstructions(_ QueryType) string {
-	return buildCodeGenerationHeader() +
-		buildTerraformInstructions() +
-		buildAWSCLIInstructions() +
-		buildAzureCLIInstructions() +
-		buildPowerShellInstructions() +
-		buildCodeTestingInstructions()
-}
-
-// buildCodeGenerationHeader creates the header section for code generation instructions
-func buildCodeGenerationHeader() string {
-	return `
-## CODE GENERATION INSTRUCTIONS
-
-### When to Generate Code
-Generate code snippets for queries involving:
-- Infrastructure deployment and configuration
-- Cloud resource provisioning and management
-- Migration and deployment automation
-- Configuration management and orchestration
-- Security implementations and compliance
-- Monitoring, logging, and observability setup
-- CI/CD pipeline configurations
-- Backup, disaster recovery, and automation scripts
-
-### Language and Tool Requirements
-
-`
-}
-
-// buildTerraformInstructions creates Terraform-specific code generation instructions
-func buildTerraformInstructions() string {
-	return `#### Terraform (Infrastructure as Code)
-- Use for cloud infrastructure provisioning
-- Include provider configuration (AWS, Azure, GCP)
-- Use meaningful resource names with proper naming conventions
-- Include data sources for existing resources
-- Add variable definitions and output values
-- Format: ` + "`terraform`" + `
-
-Example Pattern:
-` + "```terraform" + `
-# Configure the AWS Provider
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-# Configure the AWS Provider
-provider "aws" {
-  region = var.aws_region
-}
-
-# Create VPC
-resource "aws_vpc" "main" {
-  cidr_block           = var.vpc_cidr
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = {
-    Name        = "$${var.project_name}-vpc"
-    Environment = var.environment
-  }
-}
-` + "```" + `
-
-`
-}
-
-// buildAWSCLIInstructions creates AWS CLI-specific code generation instructions
-func buildAWSCLIInstructions() string {
-	return `#### AWS CLI Commands
-- Use for AWS resource management and automation
-- Include profile and region specifications where applicable
-- Use meaningful output formats (json, table, text)
-- Include error handling and validation
-- Format: ` + "`bash`" + ` or ` + "`aws`" + `
-
-Example Pattern:
-` + "```bash" + `
-#!/bin/bash
-# AWS CLI script for EC2 instance management
-
-# Set default region and profile
-export AWS_DEFAULT_REGION=us-west-2
-export AWS_PROFILE=production
-
-# Create EC2 instance
-aws ec2 run-instances \
-  --image-id ami-0abcdef1234567890 \
-  --instance-type t3.medium \
-  --key-name my-key-pair \
-  --security-group-ids sg-0123456789abcdef0 \
-  --subnet-id subnet-0123456789abcdef0 \
-  --user-data file://user-data.sh \
-  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=MyInstance}]' \
-  --output json
-
-# Wait for instance to be running
-aws ec2 wait instance-running --instance-ids i-0123456789abcdef0
-
-# Get instance information
-aws ec2 describe-instances \
-  --instance-ids i-0123456789abcdef0 \
-  --query 'Reservations[0].Instances[0].{ID:InstanceId,State:State.Name}' \
-  --output table
-` + "```" + `
-
-`
-}
-
-// buildAzureCLIInstructions creates Azure CLI-specific code generation instructions
-func buildAzureCLIInstructions() string {
-	return `#### Azure CLI Commands
-- Use for Azure resource management and automation
-- Include subscription and resource group specifications
-- Use meaningful output formats (json, table, yaml)
-- Include resource tagging and naming conventions
-- Format: ` + "`bash`" + ` or ` + "`azure`" + `
-
-Example Pattern:
-` + "```bash" + `
-#!/bin/bash
-# Azure CLI script for VM deployment
-
-# Set default subscription and resource group
-az account set --subscription "Production"
-RESOURCE_GROUP="rg-production-eastus"
-LOCATION="eastus"
-
-# Create resource group if it doesn't exist
-az group create --name $RESOURCE_GROUP --location $LOCATION
-
-# Create virtual network
-az network vnet create \
-  --resource-group $RESOURCE_GROUP \
-  --name vnet-production \
-  --address-prefix 10.0.0.0/16 \
-  --subnet-name subnet-web \
-  --subnet-prefix 10.0.1.0/24
-
-# Create virtual machine
-az vm create \
-  --resource-group $RESOURCE_GROUP \
-  --name vm-web-01 \
-  --image Ubuntu2204 \
-  --admin-username azureuser \
-  --generate-ssh-keys \
-  --vnet-name vnet-production \
-  --subnet subnet-web \
-  --size Standard_B2s \
-  --tags Environment=Production Team=WebDev
-` + "```" + `
-
-`
-}
-
-// buildPowerShellInstructions creates PowerShell-specific code generation instructions
-func buildPowerShellInstructions() string {
-	return `#### PowerShell (Azure PowerShell)
-- Use for Windows-centric Azure automation
-- Include error handling and progress indicators
-- Use meaningful variable names and parameter validation
-- Include logging and status reporting
-- Format: ` + "`powershell`" + `
-
-Example Pattern:
-` + "```powershell" + `
-# Azure PowerShell script for resource deployment
-param(
-    [Parameter(Mandatory=$true)]
-    [string]$ResourceGroupName,
-
-    [Parameter(Mandatory=$true)]
-    [string]$Location,
-
-    [Parameter(Mandatory=$false)]
-    [string]$Environment = "Production"
-)
-
-# Connect to Azure (if not already connected)
-if (-not (Get-AzContext)) {
-    Write-Host "Connecting to Azure..." -ForegroundColor Yellow
-    Connect-AzAccount
-}
-
-try {
-    Write-Host "Starting deployment to $ResourceGroupName" -ForegroundColor Green
-
-    # Create resource group
-    $resourceGroup = New-AzResourceGroup -Name $ResourceGroupName -Location $Location -Force
-    Write-Host "Resource group created: $($resourceGroup.ResourceGroupName)" -ForegroundColor Green
-
-    # Deploy ARM template
-    $deploymentResult = New-AzResourceGroupDeployment \
-        -ResourceGroupName $ResourceGroupName \
-        -TemplateFile "azuredeploy.json" \
-        -Environment $Environment \
-        -Verbose
-
-    Write-Host "Deployment completed successfully" -ForegroundColor Green
-}
-catch {
-    Write-Error "Deployment failed: $($_.Exception.Message)"
-    Write-Host "Rolling back changes..." -ForegroundColor Yellow
-    exit 1
-}
-finally {
-    Write-Host "Cleanup completed" -ForegroundColor Blue
-}
-` + "```" + `
-
-`
-}
-
-// buildCodeTestingInstructions creates testing and integration instructions
-func buildCodeTestingInstructions() string {
-	return `### Integration and Testing Considerations
-- Include unit tests for complex scripts
-- Add integration testing steps
-- Include deployment validation checks
-- Add monitoring and alerting configurations
-- Include rollback and recovery procedures
-
-`
-}
-
-// buildCloudArchitecturePatterns creates cloud architecture pattern examples
-func buildCloudArchitecturePatterns() string {
-	return `
-
-### Cloud Architecture Diagram Conventions
-
-#### AWS Architecture Diagrams
-- Use subgraphs for VPCs, Availability Zones, and service groupings
-- Node naming: Use AWS service names (EC2, RDS, S3, Lambda, etc.)
-- Include security groups, subnets, and load balancers
-- Show data flow with labeled arrows
-
-Example AWS Pattern:
-` + "```" + `
-graph TD
-    subgraph "AWS Cloud"
-        subgraph "VPC: 10.0.0.0/16"
-            subgraph "Public Subnet"
-                ALB[Application Load Balancer]
-                NAT[NAT Gateway]
-            end
-            subgraph "Private Subnet"
-                EC2[EC2 Instances]
-                RDS[RDS Database]
-            end
-        end
-        S3[S3 Buckets]
-    end
-    Users[Users] --> ALB
-    ALB --> EC2
-    EC2 --> RDS
-    EC2 --> S3
-` + "```" + `
-
-#### Azure Architecture Diagrams
-- Use subgraphs for Resource Groups, Virtual Networks, and subscriptions
-- Node naming: Use Azure service names (VM, SQL Database, Storage Account, etc.)
-- Include Azure-specific components (Application Gateway, Traffic Manager)
-- Show resource relationships and dependencies
-
-`
-}
-
-// buildDiagramQualityGuidelines creates quality and formatting guidelines
-func buildDiagramQualityGuidelines() string {
-	return `### Diagram Quality Requirements
-- Include 5-15 nodes for optimal clarity
-- Use meaningful node labels (not generic terms)
-- Group related components in subgraphs
-- Show clear data flow direction with arrows
-- Include security boundaries and access controls
-- Use consistent naming conventions throughout
-
-### Node Formatting Guidelines
-- Use PascalCase for service names: EC2, RDS, S3
-- Use descriptive labels: "Web Servers" instead of "Servers"
-- Include capacity or scale indicators when relevant
-- Use square brackets for services: [EC2 Instances]
-- Use parentheses for external entities: (Users)
-- Use curly braces for databases: {RDS Database}
-
-### Arrow Types and Meanings
-- Solid arrows (-->) for primary data flow
-- Dashed arrows (-.->)  for secondary or backup connections
-- Thick arrows (==>) for high-bandwidth connections
-- Dotted arrows (...>) for occasional or batch data transfer
-
-`
-}
-
-// buildDiagramFallbackInstructions creates fallback and format instructions
-func buildDiagramFallbackInstructions() string {
-	return `### Fallback Instructions
-If the query is NOT about architecture, infrastructure, or technical implementation:
-- Do NOT generate a diagram
-- Focus on textual response with bullet points and structured information
-- Only include diagrams if they genuinely add value to the architectural understanding
-
-### Common Diagram Mistakes to Avoid
-- Do NOT use "graph LR" (Left-Right) - always use "graph TD" (Top-Down)
-- Do NOT create overcomplicated diagrams with too many nodes
-- Do NOT use generic node names like "Server1", "Database1"
-- Do NOT forget to enclose diagram code in proper markdown code blocks
-- Do NOT include diagrams for non-architectural queries
-
-### Code Block Format
-Always format Mermaid diagrams exactly like this:
-
-` + "```mermaid" + `
-graph TD
-    [Your diagram content here]
-` + "```" + `
-
-`
 }

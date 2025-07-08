@@ -1,0 +1,20 @@
+# Markdown linting configuration for technical documentation
+# Adjust rules for better compatibility with technical docs
+
+# Disable line length checking for technical docs with long URLs, command examples
+MD013: false
+
+# Allow first line to not be a top-level heading
+MD041: false
+
+# Disable ordered list prefix checking (allow mixed numbering styles)
+MD029: false
+
+# Allow inline HTML (useful for technical docs)
+MD033: false
+
+# Allow bare URLs (common in technical docs)
+MD034: false
+
+# Allow duplicate headers (common in technical docs with repeated sections)
+MD024: false

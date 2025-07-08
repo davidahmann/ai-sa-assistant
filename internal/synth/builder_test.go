@@ -117,7 +117,7 @@ func TestBuildPromptWithConfig(t *testing.T) {
 			},
 			webResults: []string{},
 			config: PromptConfig{
-				MaxTokens:       2000,
+				MaxTokens:       6000,
 				MaxContextItems: 5,
 				MaxWebResults:   3,
 				QueryType:       TechnicalQuery,
@@ -136,7 +136,7 @@ func TestBuildPromptWithConfig(t *testing.T) {
 			},
 			webResults: []string{},
 			config: PromptConfig{
-				MaxTokens:       2000,
+				MaxTokens:       6000,
 				MaxContextItems: 5,
 				MaxWebResults:   3,
 				QueryType:       BusinessQuery,
@@ -158,7 +158,7 @@ func TestBuildPromptWithConfig(t *testing.T) {
 			},
 			webResults: []string{},
 			config: PromptConfig{
-				MaxTokens:       4000,
+				MaxTokens:       6000,
 				MaxContextItems: 2,
 				MaxWebResults:   3,
 				QueryType:       GeneralQuery,
@@ -443,7 +443,7 @@ func TestValidatePrompt(t *testing.T) {
 		},
 		{
 			name:        "Valid prompt with all requirements",
-			prompt:      "User Query: test Solutions Architect [source_id] MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS graph TD ```mermaid " + strings.Repeat("a", 200),
+			prompt:      "User Query: test Solutions Architect [source_id] MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS graph TD ```mermaid CODE GENERATION INSTRUCTIONS terraform AWS CLI Azure CLI PowerShell NEVER include hardcoded secrets meaningful comments " + strings.Repeat("a", 200),
 			expectError: false,
 		},
 	}
@@ -466,8 +466,8 @@ func TestValidatePrompt(t *testing.T) {
 func TestDefaultPromptConfig(t *testing.T) {
 	config := DefaultPromptConfig()
 
-	if config.MaxTokens != 4000 {
-		t.Errorf("Expected MaxTokens to be 4000, got %d", config.MaxTokens)
+	if config.MaxTokens != 6000 {
+		t.Errorf("Expected MaxTokens to be 6000, got %d", config.MaxTokens)
 	}
 
 	if config.MaxContextItems != 10 {
@@ -663,7 +663,7 @@ func TestMermaidInstructionsInPrompt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := PromptConfig{
-				MaxTokens:       4000,
+				MaxTokens:       6000,
 				MaxContextItems: 10,
 				MaxWebResults:   5,
 				QueryType:       tt.queryType,
@@ -732,6 +732,458 @@ func TestPromptValidationWithMermaidInstructions(t *testing.T) {
 	for _, requirement := range mermaidRequirements {
 		if !strings.Contains(prompt, requirement) {
 			t.Errorf("Prompt missing required Mermaid instruction: %s", requirement)
+		}
+	}
+}
+
+func TestCodeGenerationInstructionsInPrompt(t *testing.T) {
+	// Test that code generation instructions are included in prompts
+	query := "Deploy infrastructure on AWS using Terraform"
+	contextItems := []ContextItem{
+		{Content: "Infrastructure as code best practices", SourceID: "iac-guide"},
+	}
+	webResults := []string{}
+
+	prompt := BuildPrompt(query, contextItems, webResults)
+
+	// Verify specific code generation instructions are present
+	codeRequirements := []string{
+		"CODE GENERATION INSTRUCTIONS",
+		"When to Generate Code",
+		"Terraform (Infrastructure as Code)",
+		"AWS CLI Commands",
+		"Azure CLI Commands",
+		"PowerShell (Azure/Windows Automation)",
+		"YAML/JSON Configuration Files",
+		"Code Quality and Security Requirements",
+		"NEVER include hardcoded secrets",
+		"meaningful comments",
+		"Conditional Code Generation Based on Platform",
+		"Code Block Formatting Requirements",
+		"terraform",
+		"bash",
+		"powershell",
+		"yaml",
+		"Security Best Practices",
+		"Documentation Requirements",
+		"Error Handling Patterns",
+		"Fallback Instructions for Non-Technical Queries",
+	}
+
+	for _, requirement := range codeRequirements {
+		if !strings.Contains(prompt, requirement) {
+			t.Errorf("Prompt missing required code generation instruction: %s", requirement)
+		}
+	}
+}
+
+func TestCodeGenerationLanguageSpecificInstructions(t *testing.T) {
+	// Test that language-specific instructions are present
+	query := "How to automate Azure deployment?"
+	prompt := BuildPrompt(query, []ContextItem{}, []string{})
+
+	languageSpecificRequirements := []string{
+		"terraform",
+		"AWS CLI",
+		"Azure CLI",
+		"PowerShell",
+		"Include provider configuration",
+		"Use meaningful resource names",
+		"Include error handling and validation",
+		"Use meaningful variable names",
+		"Include proper indentation and structure",
+	}
+
+	for _, requirement := range languageSpecificRequirements {
+		if !strings.Contains(prompt, requirement) {
+			t.Errorf("Prompt missing language-specific instruction: %s", requirement)
+		}
+	}
+}
+
+func TestCodeGenerationSecurityRequirements(t *testing.T) {
+	// Test that security requirements are present in code generation instructions
+	query := "Create secure infrastructure deployment"
+	prompt := BuildPrompt(query, []ContextItem{}, []string{})
+
+	securityRequirements := []string{
+		"NEVER include hardcoded secrets",
+		"API keys, passwords, or sensitive data",
+		"environment variables",
+		"parameter stores",
+		"secret management services",
+		"least-privilege access principles",
+		"encryption configurations",
+	}
+
+	for _, requirement := range securityRequirements {
+		if !strings.Contains(prompt, requirement) {
+			t.Errorf("Prompt missing security requirement: %s", requirement)
+		}
+	}
+}
+
+func TestParseResponse(t *testing.T) {
+	tests := []struct {
+		name                 string
+		response             string
+		expectedMain         string
+		expectedDiagram      string
+		expectedCodeSnippets int
+		expectedSources      int
+	}{
+		{
+			name:                 "Response with Mermaid diagram",
+			response:             "Here's a comprehensive AWS architecture solution:\n\n## Architecture Overview\nThis solution provides a highly available web application architecture.\n\n```mermaid\ngraph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n            ALB[Application Load Balancer]\n            EC2[EC2 Instances]\n            RDS[RDS Database]\n        end\n    end\n    Users --> ALB\n    ALB --> EC2\n    EC2 --> RDS\n```\n\nThe architecture includes load balancing and database replication [aws-guide].",
+			expectedMain:         "Here's a comprehensive AWS architecture solution:",
+			expectedDiagram:      "graph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n            ALB[Application Load Balancer]\n            EC2[EC2 Instances]\n            RDS[RDS Database]\n        end\n    end\n    Users --> ALB\n    ALB --> EC2\n    EC2 --> RDS",
+			expectedCodeSnippets: 0,
+			expectedSources:      1,
+		},
+		{
+			name:                 "Response with code snippet",
+			response:             "Here's how to deploy the infrastructure:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n  \n  tags = {\n    Name = \"main-vpc\"\n  }\n}\n```\n\nThis creates the VPC [terraform-guide].",
+			expectedMain:         "Here's how to deploy the infrastructure:",
+			expectedDiagram:      "",
+			expectedCodeSnippets: 1,
+			expectedSources:      1,
+		},
+		{
+			name:                 "Response with both diagram and code",
+			response:             "Complete solution with architecture and implementation:\n\n```mermaid\ngraph TD\n    VPC[VPC]\n    EC2[EC2]\n    VPC --> EC2\n```\n\nImplementation:\n\n```bash\naws ec2 create-vpc --cidr-block 10.0.0.0/16\n```\n\nReferences: [aws-docs] and [best-practices].",
+			expectedMain:         "Complete solution with architecture and implementation:",
+			expectedDiagram:      "graph TD\n    VPC[VPC]\n    EC2[EC2]\n    VPC --> EC2",
+			expectedCodeSnippets: 1,
+			expectedSources:      2,
+		},
+		{
+			name:                 "Response without special blocks",
+			response:             "This is a simple text response with recommendations.\n\t\t\t\nNo diagrams or code needed for this response [simple-guide].",
+			expectedMain:         "This is a simple text response with recommendations.\n\t\t\t\nNo diagrams or code needed for this response [simple-guide].",
+			expectedDiagram:      "",
+			expectedCodeSnippets: 0,
+			expectedSources:      1,
+		},
+		{
+			name:                 "Response with multiple code snippets",
+			response:             "Multi-language deployment:\n\n```terraform\nresource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n}\n```\n\n```bash\n#!/bin/bash\nterraform apply\n```\n\n```yaml\napiVersion: v1\nkind: Pod\n```\n\nSources: [terraform], [bash], [k8s].",
+			expectedMain:         "Multi-language deployment:",
+			expectedDiagram:      "",
+			expectedCodeSnippets: 3,
+			expectedSources:      3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseResponse(tt.response)
+
+			// Check main text contains expected content
+			if !strings.Contains(result.MainText, tt.expectedMain) {
+				t.Errorf("Expected main text to contain '%s', got: %s", tt.expectedMain, result.MainText)
+			}
+
+			// Check diagram code
+			if result.DiagramCode != tt.expectedDiagram {
+				t.Errorf("Expected diagram code '%s', got '%s'", tt.expectedDiagram, result.DiagramCode)
+			}
+
+			// Check code snippets count
+			if len(result.CodeSnippets) != tt.expectedCodeSnippets {
+				t.Errorf("Expected %d code snippets, got %d", tt.expectedCodeSnippets, len(result.CodeSnippets))
+			}
+
+			// Check sources count
+			if len(result.Sources) != tt.expectedSources {
+				t.Errorf("Expected %d sources, got %d", tt.expectedSources, len(result.Sources))
+			}
+		})
+	}
+}
+
+func TestExtractMermaidDiagram(t *testing.T) {
+	tests := []struct {
+		name     string
+		response string
+		expected string
+	}{
+		{
+			name:     "Standard mermaid block",
+			response: "Text before diagram.\n\n```mermaid\ngraph TD\n    A[Start] --> B[Process]\n    B --> C[End]\n```\n\nText after diagram.",
+			expected: "graph TD\n    A[Start] --> B[Process]\n    B --> C[End]",
+		},
+		{
+			name:     "Mermaid block without language identifier but with graph TD",
+			response: "Here's the diagram:\n\n```\ngraph TD\n    VPC[VPC] --> EC2[EC2]\n    EC2 --> RDS[RDS]\n```\n\nThat's it.",
+			expected: "graph TD\n    VPC[VPC] --> EC2[EC2]\n    EC2 --> RDS[RDS]",
+		},
+		{
+			name:     "Complex AWS architecture diagram",
+			response: "```mermaid\ngraph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n            subgraph \"Public Subnet\"\n                ALB[Application Load Balancer]\n                NAT[NAT Gateway]\n            end\n            subgraph \"Private Subnet\"\n                EC2[EC2 Instances]\n                RDS[RDS Database]\n            end\n        end\n        S3[S3 Buckets]\n    end\n    Users[Users] --> ALB\n    ALB --> EC2\n    EC2 --> RDS\n    EC2 --> S3\n```",
+			expected: "graph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n            subgraph \"Public Subnet\"\n                ALB[Application Load Balancer]\n                NAT[NAT Gateway]\n            end\n            subgraph \"Private Subnet\"\n                EC2[EC2 Instances]\n                RDS[RDS Database]\n            end\n        end\n        S3[S3 Buckets]\n    end\n    Users[Users] --> ALB\n    ALB --> EC2\n    EC2 --> RDS\n    EC2 --> S3",
+		},
+		{
+			name:     "No mermaid diagram",
+			response: "Just plain text with no diagrams.",
+			expected: "",
+		},
+		{
+			name:     "Code block but not mermaid",
+			response: "Here's some code:\n\n```javascript\nconsole.log(\"Hello world\");\n```\n\nNo diagrams here.",
+			expected: "",
+		},
+		{
+			name:     "Multiple code blocks with one mermaid",
+			response: "First some Terraform:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```\n\nThen the architecture:\n\n```mermaid\ngraph TD\n    A --> B\n    B --> C\n```\n\nAnd some bash:\n\n```bash\necho \"Done\"\n```",
+			expected: "graph TD\n    A --> B\n    B --> C",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractMermaidDiagram(tt.response)
+			if result != tt.expected {
+				t.Errorf("Expected:\n%s\n\nGot:\n%s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestExtractCodeSnippets(t *testing.T) {
+	tests := []struct {
+		name     string
+		response string
+		expected []CodeSnippet
+	}{
+		{
+			name:     "Single Terraform snippet",
+			response: "Here's the Terraform code:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			expected: []CodeSnippet{
+				{
+					Language: "terraform",
+					Code:     "resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}",
+				},
+			},
+		},
+		{
+			name:     "Multiple language snippets",
+			response: "Terraform configuration:\n\n```terraform\nresource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n}\n```\n\nBash script:\n\n```bash\n#!/bin/bash\nterraform apply\necho \"Deployed\"\n```\n\nYAML config:\n\n```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: web-pod\n```",
+			expected: []CodeSnippet{
+				{
+					Language: "terraform",
+					Code:     "resource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n}",
+				},
+				{
+					Language: "bash",
+					Code:     "#!/bin/bash\nterraform apply\necho \"Deployed\"",
+				},
+				{
+					Language: "yaml",
+					Code:     "apiVersion: v1\nkind: Pod\nmetadata:\n  name: web-pod",
+				},
+			},
+		},
+		{
+			name:     "Mixed with mermaid (should exclude mermaid)",
+			response: "Architecture:\n\n```mermaid\ngraph TD\n    A --> B\n```\n\nImplementation:\n\n```python\nprint(\"Hello\")\n```",
+			expected: []CodeSnippet{
+				{
+					Language: "python",
+					Code:     "print(\"Hello\")",
+				},
+			},
+		},
+		{
+			name:     "No code snippets",
+			response: "Just plain text with no code blocks.",
+			expected: []CodeSnippet{},
+		},
+		{
+			name:     "Empty code block",
+			response: "Empty block:\n\n```bash\n```\n\nShould be ignored.",
+			expected: []CodeSnippet{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractCodeSnippets(tt.response)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d code snippets, got %d", len(tt.expected), len(result))
+				return
+			}
+
+			for i, expected := range tt.expected {
+				if result[i].Language != expected.Language {
+					t.Errorf("Expected language '%s', got '%s'", expected.Language, result[i].Language)
+				}
+				if result[i].Code != expected.Code {
+					t.Errorf("Expected code:\n%s\n\nGot:\n%s", expected.Code, result[i].Code)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractSources(t *testing.T) {
+	tests := []struct {
+		name     string
+		response string
+		expected []string
+	}{
+		{
+			name:     "Single source citation",
+			response: "This information comes from the AWS documentation [aws-docs].",
+			expected: []string{"aws-docs"},
+		},
+		{
+			name:     "Multiple source citations",
+			response: "Based on best practices [best-practices] and AWS documentation [aws-docs], we recommend this approach [terraform-guide].",
+			expected: []string{"best-practices", "aws-docs", "terraform-guide"},
+		},
+		{
+			name:     "Duplicate sources (returns all, deduplication happens in ParseResponse)",
+			response: "First reference [aws-docs] and second reference [aws-docs] and different [azure-docs].",
+			expected: []string{"aws-docs", "aws-docs", "azure-docs"},
+		},
+		{
+			name:     "No source citations",
+			response: "This is just plain text without any citations.",
+			expected: []string{},
+		},
+		{
+			name:     "Empty brackets (should be ignored)",
+			response: "Empty brackets [] should be ignored, but this [valid-source] should not.",
+			expected: []string{"valid-source"},
+		},
+		{
+			name:     "Sources with spaces and special characters",
+			response: "Various sources [source-with-dashes] and [source_with_underscores] and [source with spaces].",
+			expected: []string{"source-with-dashes", "source_with_underscores", "source with spaces"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractSources(tt.response)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d sources, got %d. Expected: %v, Got: %v", len(tt.expected), len(result), tt.expected, result)
+				return
+			}
+
+			// For exact comparison including duplicates and order
+			for i, expected := range tt.expected {
+				if result[i] != expected {
+					t.Errorf("Expected source %d to be '%s', got '%s'", i, expected, result[i])
+				}
+			}
+		})
+	}
+}
+
+func TestRemoveMermaidDiagram(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Remove mermaid block",
+			input:    "Text before.\n\n```mermaid\ngraph TD\n    A --> B\n```\n\nText after.",
+			expected: "Text before.\n\n\n\nText after.",
+		},
+		{
+			name:     "Remove graph TD block without mermaid identifier",
+			input:    "Text before.\n\n```\ngraph TD\n    A --> B\n```\n\nText after.",
+			expected: "Text before.\n\n\n\nText after.",
+		},
+		{
+			name:     "No mermaid to remove",
+			input:    "Just plain text without any diagrams.",
+			expected: "Just plain text without any diagrams.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := removeMermaidDiagram(tt.input)
+			if result != tt.expected {
+				t.Errorf("Expected:\n%s\n\nGot:\n%s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestRemoveCodeSnippets(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Remove single code block",
+			input:    "Text before.\n\n```bash\necho \"hello\"\n```\n\nText after.",
+			expected: "Text before.\n\n\n\nText after.",
+		},
+		{
+			name:     "Remove multiple code blocks",
+			input:    "First block:\n\n```terraform\nresource \"aws_vpc\" \"main\" {}\n```\n\nSecond block:\n\n```bash\nterraform apply\n```\n\nDone.",
+			expected: "First block:\n\n\n\nSecond block:\n\n\n\nDone.",
+		},
+		{
+			name:     "No code blocks to remove",
+			input:    "Just plain text without any code.",
+			expected: "Just plain text without any code.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := removeCodeSnippets(tt.input)
+			if result != tt.expected {
+				t.Errorf("Expected:\n%s\n\nGot:\n%s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPromptValidationWithCodeInstructions(t *testing.T) {
+	// Test that a real generated prompt passes validation including code instructions
+	query := "Deploy a web application to AWS with Terraform"
+	contextItems := []ContextItem{
+		{Content: "Terraform deployment guide", SourceID: "terraform-guide"},
+	}
+	webResults := []string{"Latest Terraform AWS provider updates"}
+
+	prompt := BuildPrompt(query, contextItems, webResults)
+
+	err := ValidatePrompt(prompt)
+	if err != nil {
+		t.Errorf("Generated prompt failed validation: %v", err)
+	}
+
+	// Verify the prompt contains all required validation elements
+	validationRequirements := []string{
+		"User Query:",
+		"Solutions Architect",
+		"[source_id]",
+		"MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS",
+		"graph TD",
+		"```mermaid",
+		"CODE GENERATION INSTRUCTIONS",
+		"terraform",
+		"AWS CLI",
+		"Azure CLI",
+		"PowerShell",
+		"NEVER include hardcoded secrets",
+		"meaningful comments",
+	}
+
+	for _, requirement := range validationRequirements {
+		if !strings.Contains(prompt, requirement) {
+			t.Errorf("Prompt missing validation requirement: %s", requirement)
 		}
 	}
 }

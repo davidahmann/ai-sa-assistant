@@ -33,7 +33,11 @@ func TestIntegrationWithRealMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Find the actual metadata.json file
 	metadataPath := filepath.Join("..", "..", "docs", "metadata.json")
@@ -338,7 +342,11 @@ func TestIntegrationPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to reopen store: %v", err)
 	}
-	defer store2.Close()
+	defer func() {
+		if closeErr := store2.Close(); closeErr != nil {
+			t.Logf("Failed to close store2: %v", closeErr)
+		}
+	}()
 
 	retrieved, err := store2.GetMetadataByDocID("test-persistence.md")
 	if err != nil {
@@ -418,7 +426,9 @@ func TestIntegrationMigration(t *testing.T) {
 		t.Fatal("Data not found after migration")
 	}
 
-	store.Close()
+	if closeErr := store.Close(); closeErr != nil {
+		t.Logf("Failed to close store: %v", closeErr)
+	}
 	t.Log("Migration test passed")
 }
 
@@ -432,7 +442,11 @@ func TestIntegrationBulkOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Create a large dataset
 	const numEntries = 1000
@@ -523,7 +537,9 @@ func TestIntegrationErrorHandling(t *testing.T) {
 	if err != nil {
 		t.Logf("Failed to make directory readonly: %v", err)
 	} else {
-		defer os.Chmod(readOnlyPath, 0755) // Restore permissions for cleanup
+		defer func() {
+			_ = os.Chmod(readOnlyPath, 0755) // Restore permissions for cleanup
+		}()
 
 		dbPath := filepath.Join(readOnlyPath, "readonly.db")
 		_, err = NewStore(dbPath, logger)
@@ -543,7 +559,11 @@ func TestIntegrationConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
 
 	// Ensure schema is initialized by adding a test entry first
 	testEntry := MetadataEntry{

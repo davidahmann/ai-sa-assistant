@@ -30,8 +30,6 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	internalopenai "github.com/your-org/ai-sa-assistant/internal/openai"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 // SynthesisRequest represents the incoming synthesis request

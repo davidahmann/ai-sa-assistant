@@ -1,5 +1,13 @@
 name: CI Pipeline
 
+# Restrict permissions to minimum required (addresses CKV2_GHA_1)
+permissions:
+  contents: read         # For checking out code
+  actions: read         # For downloading artifacts
+  security-events: write # For uploading SARIF files to CodeQL
+  checks: write         # For reporting test results
+  pull-requests: write  # For commenting on PRs with benchmark results
+
 on:
   push:
     branches: [ main ]

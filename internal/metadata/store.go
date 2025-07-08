@@ -18,7 +18,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,7 +164,7 @@ func (s *Store) LoadFromJSON(jsonPath string) error {
 	s.logger.Info("Loading metadata from JSON file", zap.String("json_path", jsonPath))
 
 	// Read JSON file
-	data, err := ioutil.ReadFile(jsonPath)
+	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		return fmt.Errorf("failed to read JSON file: %w", err)
 	}
@@ -187,7 +186,11 @@ func (s *Store) LoadFromJSON(jsonPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			s.logger.Debug("Failed to rollback transaction", zap.Error(rollbackErr))
+		}
+	}()
 
 	// Prepare statement for bulk insert
 	stmt, err := tx.Prepare(`
@@ -198,7 +201,11 @@ func (s *Store) LoadFromJSON(jsonPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
-	defer stmt.Close()
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			s.logger.Debug("Failed to close statement", zap.Error(closeErr))
+		}
+	}()
 
 	// Insert all documents
 	for _, entry := range metadataIndex.Documents {
@@ -331,7 +338,11 @@ func (s *Store) FilterDocuments(filters FilterOptions) ([]string, error) {
 		s.logger.Error("Failed to query metadata", zap.Error(err))
 		return nil, fmt.Errorf("failed to query metadata: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			s.logger.Debug("Failed to close rows", zap.Error(closeErr))
+		}
+	}()
 
 	var docIDs []string
 	for rows.Next() {
@@ -363,7 +374,11 @@ func (s *Store) GetAllMetadata() ([]MetadataEntry, error) {
 		s.logger.Error("Failed to query all metadata", zap.Error(err))
 		return nil, fmt.Errorf("failed to query all metadata: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			s.logger.Debug("Failed to close rows", zap.Error(closeErr))
+		}
+	}()
 
 	var entries []MetadataEntry
 	for rows.Next() {
@@ -445,7 +460,11 @@ func (s *Store) GetStats() (map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get platform stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			s.logger.Debug("Failed to close rows", zap.Error(closeErr))
+		}
+	}()
 
 	for rows.Next() {
 		var platform string
@@ -455,6 +474,9 @@ func (s *Store) GetStats() (map[string]interface{}, error) {
 		}
 		platformStats[platform] = count
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating platform stats: %w", err)
+	}
 	stats["by_platform"] = platformStats
 
 	// Documents by scenario
@@ -463,7 +485,11 @@ func (s *Store) GetStats() (map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get scenario stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			s.logger.Debug("Failed to close rows", zap.Error(closeErr))
+		}
+	}()
 
 	for rows.Next() {
 		var scenario string
@@ -473,6 +499,9 @@ func (s *Store) GetStats() (map[string]interface{}, error) {
 		}
 		scenarioStats[scenario] = count
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating scenario stats: %w", err)
+	}
 	stats["by_scenario"] = scenarioStats
 
 	// Documents by type
@@ -481,7 +510,11 @@ func (s *Store) GetStats() (map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get type stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			s.logger.Debug("Failed to close rows", zap.Error(closeErr))
+		}
+	}()
 
 	for rows.Next() {
 		var docType string
@@ -490,6 +523,9 @@ func (s *Store) GetStats() (map[string]interface{}, error) {
 			return nil, fmt.Errorf("failed to scan type stats: %w", err)
 		}
 		typeStats[docType] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating type stats: %w", err)
 	}
 	stats["by_type"] = typeStats
 

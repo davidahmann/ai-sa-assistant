@@ -171,7 +171,7 @@ func TestAddDocuments_ChromaError(t *testing.T) {
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
 		"/api/v1/collections/test/add": func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(ChromaError{
+			_ = json.NewEncoder(w).Encode(ChromaError{
 				Detail: "Invalid document format",
 				Type:   "ValidationError",
 			})
@@ -224,7 +224,7 @@ func TestSearch_Success(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(expectedResponse)
+			_ = json.NewEncoder(w).Encode(expectedResponse)
 		},
 	})
 	defer server.Close()
@@ -264,10 +264,10 @@ func TestSearch_WithDocIDFilter(t *testing.T) {
 
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
 		"/api/v1/collections/test/query": func(w http.ResponseWriter, r *http.Request) {
-			json.NewDecoder(r.Body).Decode(&receivedRequest)
+			_ = json.NewDecoder(r.Body).Decode(&receivedRequest)
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(SearchResponse{
+			_ = json.NewEncoder(w).Encode(SearchResponse{
 				IDs:       [][]string{{"doc1"}},
 				Documents: [][]string{{"Document 1 content"}},
 				Metadatas: [][]map[string]interface{}{{{}}},
@@ -331,7 +331,7 @@ func TestCreateCollection_Success(t *testing.T) {
 				t.Errorf("Expected POST request, got %s", r.Method)
 			}
 
-			json.NewDecoder(r.Body).Decode(&receivedRequest)
+			_ = json.NewDecoder(r.Body).Decode(&receivedRequest)
 			w.WriteHeader(http.StatusOK)
 		},
 	})
@@ -395,7 +395,7 @@ func TestGetCollection_Success(t *testing.T) {
 				t.Errorf("Expected GET request, got %s", r.Method)
 			}
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(expectedCollection)
+			_ = json.NewEncoder(w).Encode(expectedCollection)
 		},
 	})
 	defer server.Close()
@@ -441,7 +441,7 @@ func TestListCollections_Success(t *testing.T) {
 				t.Errorf("Expected GET request, got %s", r.Method)
 			}
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(expectedCollections)
+			_ = json.NewEncoder(w).Encode(expectedCollections)
 		},
 	})
 	defer server.Close()
@@ -521,7 +521,7 @@ func TestMakeRequest_ChromaError(t *testing.T) {
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
 		"/api/v1/test": func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(ChromaError{
+			_ = json.NewEncoder(w).Encode(ChromaError{
 				Detail: "Invalid request format",
 				Type:   "ValidationError",
 			})
@@ -532,7 +532,14 @@ func TestMakeRequest_ChromaError(t *testing.T) {
 	client := NewClientWithOptions(server.URL, "test", testLogger(), 1, 100*time.Millisecond)
 
 	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/test", server.URL), http.NoBody)
-	_, err := client.makeRequest(req)
+	resp, err := client.makeRequest(req)
+	if resp != nil {
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Logf("Failed to close response body: %v", err)
+			}
+		}()
+	}
 
 	if err == nil {
 		t.Error("Expected makeRequest to return error, got nil")
