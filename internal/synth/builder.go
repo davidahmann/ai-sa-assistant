@@ -988,7 +988,7 @@ graph TD
         OnPremDB[On-Prem Database]
         VPNGateway[VPN Gateway]
     end
-    
+
     subgraph "AWS Cloud"
         subgraph "VPC"
             CloudServers[EC2 Instances]
@@ -996,7 +996,7 @@ graph TD
             CloudVPN[VPN Connection]
         end
     end
-    
+
     OnPremServers --> VPNGateway
     VPNGateway -.-> CloudVPN
     CloudVPN --> CloudServers
