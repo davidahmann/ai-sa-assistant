@@ -5,6 +5,7 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Go 1.23.5
 - Docker & Docker Compose
 - OpenAI API key
@@ -13,17 +14,20 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 ### Setup
 
 1. **Clone and configure:**
+
    ```bash
    cp configs/config.template.yaml configs/config.yaml
    # Edit config.yaml with your API keys
    ```
 
 2. **Launch services:**
+
    ```bash
    docker-compose up --build
    ```
 
 3. **Ingest demo data:**
+
    ```bash
    docker-compose run --rm ingest --docs-path=/app/docs
    ```
@@ -63,6 +67,7 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 ## 🎯 Demo Scenarios
 
 ### 1. AWS Lift-and-Shift Migration
+
 ```
 @SA-Assistant Generate a high-level lift-and-shift plan for migrating 120 on-prem Windows and Linux VMs to AWS, including EC2 instance recommendations, VPC/subnet topology, and the latest AWS MGN best practices from Q2 2025.
 ```
@@ -72,6 +77,7 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 **Showcases**: Metadata filtering (migration + aws), chunk retrieval (EC2 sizing), web search (Q2 2025 MGN updates), synthesis with diagrams.
 
 ### 2. Azure Hybrid Architecture Extension
+
 ```
 @SA-Assistant Outline a hybrid reference architecture connecting our on-prem VMware environment to Azure, covering ExpressRoute configuration, VMware HCX migration, active-active failover, and June 2025 Azure Hybrid announcements.
 ```
@@ -81,6 +87,7 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 **Showcases**: Metadata filtering (hybrid + azure), parallel retrieval (VMware docs + Azure docs), web search (June 2025 announcements), technical synthesis.
 
 ### 3. Azure Disaster Recovery as a Service
+
 ```
 @SA-Assistant Design a DR solution in Azure for critical workloads with RTO = 2 hours and RPO = 15 minutes, including geo-replication options, failover orchestration, and cost-optimized standby.
 ```
@@ -90,6 +97,7 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 **Showcases**: Metadata filtering (disaster-recovery), fallback search (additional DR details), synthesis with technical specifications and cost analysis.
 
 ### 4. Security Compliance Assessment
+
 ```
 @SA-Assistant Summarize HIPAA and GDPR encryption, logging, and policy enforcement requirements for our AWS landing zone, and include any recent AWS compliance feature updates.
 ```
@@ -101,16 +109,18 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 ## ⚙️ Configuration
 
 ### Environment Variables (Override config.yaml)
+
 ```bash
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=sk-...  # pragma: allowlist secret
 TEAMS_WEBHOOK_URL=https://your-org.webhook.office.com/...
 CONFIG_PATH=/path/to/config.yaml
 ```
 
 ### Configuration File Structure
+
 ```yaml
 openai:
-  apikey: "sk-..."
+  apikey: "sk-..."  # pragma: allowlist secret
 teams:
   webhook_url: "https://..."
 services:
@@ -123,11 +133,13 @@ services:
 ## 🧪 Development
 
 ### Running Tests
+
 ```bash
 go test ./...
 ```
 
 ### Code Quality
+
 ```bash
 golangci-lint run
 go fmt ./...
@@ -135,6 +147,7 @@ go mod tidy
 ```
 
 ### Pre-commit Hooks
+
 ```bash
 pre-commit install
 pre-commit run --all-files
@@ -143,17 +156,20 @@ pre-commit run --all-files
 ## 🔧 Key Features
 
 ### Hybrid Retrieval Pipeline
+
 1. **Metadata Filtering**: SQLite-based document filtering by scenario/cloud/tags
 2. **Vector Search**: Semantic search via ChromaDB embeddings
 3. **Fallback Logic**: Automatic retry with broader search if results are insufficient
 4. **Live Web Search**: Conditional web search for fresh information
 
 ### Intelligent Synthesis
+
 - **Multi-modal Output**: Text + Mermaid diagrams + code snippets
 - **Source Citations**: Automatic citation extraction and validation
 - **Context-aware Prompting**: Structured prompts with internal docs and web results
 
 ### Teams Integration
+
 - **Rich Adaptive Cards**: Professional formatting with images, code blocks, and sources
 - **Feedback Mechanism**: 👍/👎 buttons for continuous improvement
 - **Async Processing**: Non-blocking webhook handling
@@ -189,6 +205,7 @@ graph TD
 ### Common Issues
 
 1. **ChromaDB Connection Failed**
+
    ```bash
    curl http://localhost:8000/api/v1/heartbeat
    ```
@@ -204,6 +221,7 @@ graph TD
    - Review adaptive card schema
 
 ### Health Checks
+
 ```bash
 # Service health
 curl http://localhost:8081/health  # Retrieve

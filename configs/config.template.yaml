@@ -7,7 +7,7 @@
 openai:
   # OpenAI API Key - REQUIRED
   # Environment variable: OPENAI_API_KEY or SA_ASSISTANT_OPENAI_APIKEY
-  apikey: "sk-..."
+  apikey: "sk-..."  # pragma: allowlist secret
 
   # OpenAI API Endpoint - Optional, defaults to official OpenAI endpoint
   # Environment variable: OPENAI_ENDPOINT or SA_ASSISTANT_OPENAI_ENDPOINT
@@ -17,7 +17,7 @@ openai:
 teams:
   # Teams Webhook URL - REQUIRED for bot functionality
   # Environment variable: TEAMS_WEBHOOK_URL or SA_ASSISTANT_TEAMS_WEBHOOK_URL
-  webhook_url: "https://your-org.webhook.office.com/webhookb2/..."
+  webhook_url: "https://your-org.webhook.office.com/webhookb2/..."  # pragma: allowlist secret
 
 # Internal Service URLs - Used for microservice communication
 # Environment variables: SA_ASSISTANT_SERVICES_*

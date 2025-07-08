@@ -28,10 +28,10 @@ func TestLoadConfig(t *testing.T) {
 
 	configContent := `
 openai:
-  apikey: "sk-test-key"
+  apikey: "sk-test-key"  # pragma: allowlist secret
   endpoint: "https://api.openai.com/v1"
 teams:
-  webhook_url: "https://test.webhook.com/test"
+  webhook_url: "https://test.webhook.com/test"  # pragma: allowlist secret
 services:
   retrieve_url: "http://retrieve:8081"
   websearch_url: "http://websearch:8083"
@@ -455,10 +455,10 @@ func TestConfigValidation(t *testing.T) {
 func TestMaskSensitiveValues(t *testing.T) {
 	config := &Config{
 		OpenAI: OpenAIConfig{
-			APIKey: "sk-test-1234567890abcdef",
+			APIKey: "sk-test-1234567890abcdef", // pragma: allowlist secret
 		},
 		Teams: TeamsConfig{
-			WebhookURL: "https://test.webhook.com/secret-token-123456789",
+			WebhookURL: "https://test.webhook.com/secret-token-123456789", // pragma: allowlist secret
 		},
 	}
 
@@ -525,9 +525,9 @@ func TestLoadWithOptions(t *testing.T) {
 
 	configContent := `
 openai:
-  apikey: "sk-test-key"
+  apikey: "sk-test-key"  # pragma: allowlist secret
 teams:
-  webhook_url: "https://test.webhook.com/test"
+  webhook_url: "https://test.webhook.com/test"  # pragma: allowlist secret
 chroma:
   url: "http://chromadb:8000"
 metadata:
@@ -557,7 +557,7 @@ metadata:
 openai:
   apikey: ""
 teams:
-  webhook_url: "https://test.webhook.com/test"
+  webhook_url: "https://test.webhook.com/test"  # pragma: allowlist secret
 chroma:
   url: "http://chromadb:8000"
 metadata:
@@ -586,9 +586,9 @@ func TestDefaultValues(t *testing.T) {
 
 	configContent := `
 openai:
-  apikey: "sk-test-key"
+  apikey: "sk-test-key"  # pragma: allowlist secret
 teams:
-  webhook_url: "https://test.webhook.com/test"
+  webhook_url: "https://test.webhook.com/test"  # pragma: allowlist secret
 `
 
 	err := os.WriteFile(configPath, []byte(configContent), 0644)

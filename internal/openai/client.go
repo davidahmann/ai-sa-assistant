@@ -27,7 +27,7 @@ import (
 
 const (
 	// EmbeddingModel defines the model to use for embeddings
-	EmbeddingModel = openai.SmallEmbedding3
+	EmbeddingModel = "text-embedding-3-small"
 	// ExpectedEmbeddingDimensions defines the expected embedding dimensions
 	ExpectedEmbeddingDimensions = 1536
 	// MaxRetries defines the maximum number of retry attempts
@@ -278,7 +278,7 @@ func (c *Client) createEmbeddingsWithRetry(ctx context.Context, texts []string) 
 func (c *Client) createEmbeddings(ctx context.Context, texts []string) ([][]float32, openai.Usage, error) {
 	req := openai.EmbeddingRequest{
 		Input: texts,
-		Model: c.model,
+		Model: openai.EmbeddingModel(c.model),
 	}
 
 	c.logger.Debug("Sending embedding request to OpenAI",
@@ -317,14 +317,10 @@ func (c *Client) handleAPIError(err error) error {
 			return fmt.Errorf("invalid API key or unauthorized access: %w", err)
 		case http.StatusTooManyRequests:
 			// Rate limit error - retryable
-			retryAfter := BaseRetryDelay
-			if apiErr.RetryAfter != nil {
-				retryAfter = time.Duration(*apiErr.RetryAfter) * time.Second
-			}
 			return &RetryableError{
 				StatusCode: apiErr.HTTPStatusCode,
 				Message:    apiErr.Message,
-				RetryAfter: retryAfter,
+				RetryAfter: BaseRetryDelay, // Use exponential backoff
 			}
 		case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 			// Server error - retryable

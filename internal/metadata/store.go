@@ -22,7 +22,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
@@ -95,7 +94,7 @@ func (s *Store) initSchema() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
-		
+
 		CREATE INDEX IF NOT EXISTS idx_platform ON metadata(platform);
 		CREATE INDEX IF NOT EXISTS idx_scenario ON metadata(scenario);
 		CREATE INDEX IF NOT EXISTS idx_type ON metadata(type);
@@ -128,11 +127,11 @@ type MetadataEntry struct {
 
 // MetadataIndex represents the root structure of metadata.json
 type MetadataIndex struct {
-	SchemaVersion   string          `json:"schema_version"`
-	Description     string          `json:"description"`
-	LastUpdated     string          `json:"last_updated"`
-	Documents       []MetadataEntry `json:"documents"`
-	MetadataSchema  interface{}     `json:"metadata_schema"`
+	SchemaVersion  string          `json:"schema_version"`
+	Description    string          `json:"description"`
+	LastUpdated    string          `json:"last_updated"`
+	Documents      []MetadataEntry `json:"documents"`
+	MetadataSchema interface{}     `json:"metadata_schema"`
 }
 
 // AddMetadata adds a metadata entry to the database
@@ -150,7 +149,7 @@ func (s *Store) AddMetadata(entry MetadataEntry) error {
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`
 
-	_, err = s.db.Exec(query, entry.DocID, entry.Title, entry.Platform, entry.Scenario, entry.Type, 
+	_, err = s.db.Exec(query, entry.DocID, entry.Title, entry.Platform, entry.Scenario, entry.Type,
 		entry.SourceURL, entry.Path, string(tagsJSON), entry.Difficulty, entry.EstimatedTime)
 	if err != nil {
 		s.logger.Error("Failed to insert metadata", zap.Error(err), zap.String("doc_id", entry.DocID))
@@ -177,7 +176,7 @@ func (s *Store) LoadFromJSON(jsonPath string) error {
 		return fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
 
-	s.logger.Info("Parsed metadata index", 
+	s.logger.Info("Parsed metadata index",
 		zap.String("schema_version", metadataIndex.SchemaVersion),
 		zap.String("description", metadataIndex.Description),
 		zap.String("last_updated", metadataIndex.LastUpdated),
@@ -223,7 +222,7 @@ func (s *Store) LoadFromJSON(jsonPath string) error {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	s.logger.Info("Successfully loaded metadata from JSON", 
+	s.logger.Info("Successfully loaded metadata from JSON",
 		zap.String("json_path", jsonPath),
 		zap.Int("documents_loaded", len(metadataIndex.Documents)))
 
@@ -307,7 +306,7 @@ func (s *Store) FilterDocuments(filters FilterOptions) ([]string, error) {
 			tagConditions[i] = "json_extract(tags, '$') LIKE ?"
 			args = append(args, "%\""+tag+"\"%")
 		}
-		
+
 		if filters.AndFilters {
 			conditions = append(conditions, "("+strings.Join(tagConditions, " AND ")+")")
 		} else {
@@ -543,7 +542,7 @@ func (s *Store) Migrate() error {
 
 	// Update schema version
 	if currentVersion < len(migrations) {
-		_, err = s.db.Exec("PRAGMA user_version = ?", len(migrations))
+		_, err = s.db.Exec(fmt.Sprintf("PRAGMA user_version = %d", len(migrations)))
 		if err != nil {
 			return fmt.Errorf("failed to update schema version: %w", err)
 		}
