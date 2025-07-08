@@ -1,5 +1,7 @@
 FROM golang:1.23.5-alpine AS builder
 
+RUN apk --no-cache add gcc musl-dev sqlite-dev
+
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download

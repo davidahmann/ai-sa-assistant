@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   chromadb:
     image: chromadb/chroma:latest
@@ -7,11 +5,8 @@ services:
       - "8000:8000"
     volumes:
       - chromadb_data:/chroma/.chroma/
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    # Note: Health check removed due to minimal container lacking network tools
+    # API accessibility is validated externally via http://localhost:8000/api/v2/heartbeat
 
   retrieve:
     build:
@@ -23,8 +18,7 @@ services:
       - ./configs:/app/configs
       - ./metadata.db:/app/metadata.db
     depends_on:
-      chromadb:
-        condition: service_healthy
+      - chromadb
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
 
@@ -75,8 +69,7 @@ services:
       - ./docs:/app/docs
       - ./metadata.db:/app/metadata.db
     depends_on:
-      chromadb:
-        condition: service_healthy
+      - chromadb
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
     profiles:

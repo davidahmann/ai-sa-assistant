@@ -1,0 +1,403 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a prerelease?'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Validate release
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            IS_PRERELEASE="${{ github.event.inputs.prerelease }}"
+          else
+            VERSION="${{ github.ref_name }}"
+            # Remove 'v' prefix if present
+            VERSION="${VERSION#v}"
+            # Check if it's a prerelease (contains alpha, beta, rc)
+            if [[ "$VERSION" =~ (alpha|beta|rc) ]]; then
+              IS_PRERELEASE=true
+            else
+              IS_PRERELEASE=false
+            fi
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "Invalid version format: $VERSION"
+            exit 1
+          fi
+
+      - name: Check if version exists
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git tag -l | grep -q "^v${VERSION}$"; then
+            echo "Version v${VERSION} already exists"
+            exit 1
+          fi
+
+      - name: Update VERSION file
+        run: |
+          echo "${{ steps.version.outputs.version }}" > VERSION
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add VERSION
+          git commit -m "Update VERSION to ${{ steps.version.outputs.version }}" || true
+
+  # Build and test
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    needs: validate
+    strategy:
+      matrix:
+        service: [ingest, retrieve, websearch, synthesize, teamsbot]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23.5'
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build binary
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ needs.validate.outputs.version }}" -o dist/${{ matrix.service }}-linux-amd64 ./cmd/${{ matrix.service }}
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ needs.validate.outputs.version }}" -o dist/${{ matrix.service }}-darwin-amd64 ./cmd/${{ matrix.service }}
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ needs.validate.outputs.version }}" -o dist/${{ matrix.service }}-windows-amd64.exe ./cmd/${{ matrix.service }}
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v3
+        with:
+          name: binaries-${{ matrix.service }}
+          path: dist/
+
+  # Build Docker images
+  docker:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    strategy:
+      matrix:
+        service: [ingest, retrieve, websearch, synthesize, teamsbot]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: cmd/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ needs.validate.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+      - name: Sign container image
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.2.0'
+
+      - name: Sign the published Docker image
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ needs.validate.outputs.version }}
+
+  # Generate release notes
+  release-notes:
+    name: Generate Release Notes
+    runs-on: ubuntu-latest
+    needs: validate
+    outputs:
+      release_notes: ${{ steps.notes.outputs.release_notes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$" | head -n1)
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+
+          echo "# Release Notes - v${VERSION}" > release_notes.md
+          echo "" >> release_notes.md
+          echo "## What's Changed" >> release_notes.md
+          echo "" >> release_notes.md
+
+          # Get commits since last tag
+          git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..HEAD --grep="^feat" --grep="^fix" --grep="^docs" --grep="^refactor" --grep="^perf" --grep="^test" --grep="^build" --grep="^ci" >> release_notes.md
+
+          echo "" >> release_notes.md
+          echo "## Docker Images" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "- \`ghcr.io/${{ github.repository }}-ingest:${VERSION}\`" >> release_notes.md
+          echo "- \`ghcr.io/${{ github.repository }}-retrieve:${VERSION}\`" >> release_notes.md
+          echo "- \`ghcr.io/${{ github.repository }}-websearch:${VERSION}\`" >> release_notes.md
+          echo "- \`ghcr.io/${{ github.repository }}-synthesize:${VERSION}\`" >> release_notes.md
+          echo "- \`ghcr.io/${{ github.repository }}-teamsbot:${VERSION}\`" >> release_notes.md
+
+          echo "" >> release_notes.md
+          echo "## Installation" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "1. Download the appropriate binary for your platform" >> release_notes.md
+          echo "2. Or use Docker Compose:" >> release_notes.md
+          echo "   \`\`\`bash" >> release_notes.md
+          echo "   docker-compose up -d" >> release_notes.md
+          echo "   \`\`\`" >> release_notes.md
+
+          echo "" >> release_notes.md
+          echo "## Demo Scenarios" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "This release supports all 4 demo scenarios:" >> release_notes.md
+          echo "1. AWS Lift-and-Shift Migration" >> release_notes.md
+          echo "2. Azure Hybrid Architecture Extension" >> release_notes.md
+          echo "3. Azure Disaster Recovery as a Service" >> release_notes.md
+          echo "4. Security Compliance Assessment" >> release_notes.md
+
+          # Read the content into output
+          RELEASE_NOTES=$(cat release_notes.md)
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-notes
+          path: release_notes.md
+
+  # Create GitHub release
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate, build, docker, release-notes]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+
+          # Copy binaries
+          for service in ingest retrieve websearch synthesize teamsbot; do
+            cp binaries-${service}/* release-assets/
+          done
+
+          # Create checksums
+          cd release-assets
+          sha256sum * > checksums.txt
+          cd ..
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.validate.outputs.version }}
+          name: Release v${{ needs.validate.outputs.version }}
+          body: ${{ needs.release-notes.outputs.release_notes }}
+          draft: false
+          prerelease: ${{ needs.validate.outputs.is_prerelease }}
+          files: |
+            release-assets/*
+            release-notes/release_notes.md
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Update docker-compose.yml with new version
+  update-compose:
+    name: Update Docker Compose
+    runs-on: ubuntu-latest
+    needs: [validate, docker]
+    if: ${{ needs.validate.outputs.is_prerelease == 'false' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Update docker-compose.yml
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          sed -i "s|image: ghcr.io/${{ github.repository }}-\([^:]*\):.*|image: ghcr.io/${{ github.repository }}-\1:${VERSION}|g" docker-compose.yml
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Update Docker Compose to use v${{ needs.validate.outputs.version }}"
+          title: "Update Docker Compose to v${{ needs.validate.outputs.version }}"
+          body: |
+            This PR updates the docker-compose.yml file to use the newly released version v${{ needs.validate.outputs.version }}.
+
+            ## Changes
+            - Updated all service images to use v${{ needs.validate.outputs.version }}
+
+            ## Testing
+            - [ ] Verify all services start correctly
+            - [ ] Run demo scenarios to ensure compatibility
+
+            This PR is auto-generated by the release workflow.
+          branch: update-compose-v${{ needs.validate.outputs.version }}
+          delete-branch: true
+
+  # Deploy to demo environment
+  deploy-demo:
+    name: Deploy to Demo Environment
+    runs-on: ubuntu-latest
+    needs: [validate, docker]
+    if: ${{ needs.validate.outputs.is_prerelease == 'false' }}
+    environment: demo
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup demo environment
+        run: |
+          echo "Deploying v${{ needs.validate.outputs.version }} to demo environment"
+          # In a real environment, this would deploy to your demo infrastructure
+          # For now, we'll just create a deployment record
+
+          cat > deployment-record.json << EOF
+          {
+            "version": "${{ needs.validate.outputs.version }}",
+            "deployed_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+            "commit": "${{ github.sha }}",
+            "environment": "demo",
+            "services": ["ingest", "retrieve", "websearch", "synthesize", "teamsbot"]
+          }
+          EOF
+
+      - name: Upload deployment record
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-record
+          path: deployment-record.json
+
+  # Notify teams
+  notify:
+    name: Notify Teams
+    runs-on: ubuntu-latest
+    needs: [validate, github-release, deploy-demo]
+    if: always()
+    steps:
+      - name: Send release notification
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const version = "${{ needs.validate.outputs.version }}";
+            const isPrerelease = "${{ needs.validate.outputs.is_prerelease }}" === "true";
+            const releaseSuccess = "${{ needs.github-release.result }}" === "success";
+            const deploySuccess = "${{ needs.deploy-demo.result }}" === "success";
+
+            const payload = {
+              text: `🚀 Release v${version} ${releaseSuccess ? 'Success' : 'Failed'}`,
+              attachments: [{
+                color: releaseSuccess ? 'good' : 'danger',
+                fields: [{
+                  title: 'Version',
+                  value: `v${version}`,
+                  short: true
+                }, {
+                  title: 'Type',
+                  value: isPrerelease ? 'Prerelease' : 'Release',
+                  short: true
+                }, {
+                  title: 'GitHub Release',
+                  value: releaseSuccess ? '✅ Success' : '❌ Failed',
+                  short: true
+                }, {
+                  title: 'Demo Deployment',
+                  value: deploySuccess ? '✅ Success' : '❌ Failed',
+                  short: true
+                }],
+                actions: [{
+                  type: 'button',
+                  text: 'View Release',
+                  url: `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/tag/v${version}`
+                }]
+              }]
+            };
+
+            console.log('Release notification:', JSON.stringify(payload, null, 2));
+
+            // In a real environment, you would send this to Slack/Teams
+            // fetch('YOUR_WEBHOOK_URL', {
+            //   method: 'POST',
+            //   headers: { 'Content-Type': 'application/json' },
+            //   body: JSON.stringify(payload)
+            // });

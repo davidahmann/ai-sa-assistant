@@ -58,7 +58,6 @@ B. Quick Issue Analysis
 echo "🔍 Reviewing issue #$ARGUMENTS…"
 gh issue view $ARGUMENTS --json title,body,state,labels
 
-
 Understand the context and scope of the issue.
 
 Review the existing microservice architecture.
@@ -101,7 +100,7 @@ D. Quick Testing Script
 
 This script is designed for our Go monorepo structure. It runs formatters, linters, and tests across the entire project to ensure that changes (especially in the internal/ directory) do not break other services.
 
-#!/bin/bash
+# !/bin/bash
 set -e
 
 echo "Running Go formatter..."
@@ -114,7 +113,6 @@ echo "Running all Go unit tests..."
 go test -v ./...
 
 echo "✅ All local checks passed."
-
 
 GitHub issue updated with a summary of the work completed.
 
@@ -129,8 +127,9 @@ No breaking changes introduced to API contracts between services.
 Basic functionality verified manually with docker-compose.
 
 F. Close Issue
-
+Do not commit or push any code
 If the issue has been fully implemented and all acceptance criteria are met, close the issue and add a descriptive comment summarizing the work using the gh CLI.
 
-# Example:
+# Example
+
 gh issue close $ARGUMENTS --comment "Fixed the issue by adding error handling in the synthesize service. All unit tests pass and the Teams card now displays a user-friendly error message on failure."

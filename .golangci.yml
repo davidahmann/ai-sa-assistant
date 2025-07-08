@@ -1,0 +1,222 @@
+run:
+  timeout: 5m
+  go: '1.23.5'
+  modules-download-mode: readonly
+  build-tags:
+    - integration
+    - demo
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  uniq-by-line: true
+  sort-results: true
+
+linters:
+  enable:
+    - bodyclose
+    - deadcode
+    - depguard
+    - dogsled
+    - dupl
+    - errcheck
+    - exhaustive
+    - funlen
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - gofmt
+    - goimports
+    - golint
+    - gomnd
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - interfacer
+    - lll
+    - maligned
+    - misspell
+    - nakedret
+    - nestif
+    - nolintlint
+    - rowserrcheck
+    - scopelint
+    - staticcheck
+    - structcheck
+    - stylecheck
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - varcheck
+    - whitespace
+
+  disable:
+    - gochecknoglobals
+    - gochecknoinits
+    - godot
+    - godox
+    - goerr113
+    - gofumpt
+    - goheader
+    - gomodguardguard
+    - gomodguard
+    - prealloc
+    - testpackage
+    - wsl
+
+linters-settings:
+  depguard:
+    list-type: blacklist
+    packages:
+      - github.com/sirupsen/logrus
+    packages-with-error-message:
+      - github.com/sirupsen/logrus: "Use go.uber.org/zap instead"
+
+  dupl:
+    threshold: 100
+
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  exhaustive:
+    default-signifies-exhaustive: false
+
+  funlen:
+    lines: 100
+    statements: 50
+
+  gocognit:
+    min-complexity: 15
+
+  goconst:
+    min-len: 2
+    min-occurrences: 3
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - dupImport
+      - ifElseChain
+      - octalLiteral
+      - whyNoLint
+      - wrapperFunc
+
+  gocyclo:
+    min-complexity: 15
+
+  goimports:
+    local-prefixes: github.com/your-org/ai-sa-assistant
+
+  golint:
+    min-confidence: 0
+
+  gomnd:
+    settings:
+      mnd:
+        checks: argument,case,condition,operation,return,assign
+
+  gosec:
+    includes:
+      - G401
+      - G501
+      - G502
+    excludes:
+      - G204
+      - G304
+
+  govet:
+    check-shadowing: true
+    settings:
+      printf:
+        funcs:
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Infof
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Warnf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Errorf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
+
+  lll:
+    line-length: 120
+
+  maligned:
+    suggest-new: true
+
+  misspell:
+    locale: US
+
+  nakedret:
+    max-func-lines: 30
+
+  nestif:
+    min-complexity: 4
+
+  nolintlint:
+    allow-leading-space: true
+    allow-unused: false
+    require-explanation: false
+    require-specific: false
+
+  rowserrcheck:
+    packages:
+      - github.com/jmoiron/sqlx
+
+  staticcheck:
+    go: '1.23.5'
+
+  stylecheck:
+    go: '1.23.5'
+
+  unparam:
+    check-exported: false
+
+  unused:
+    go: '1.23.5'
+
+  whitespace:
+    multi-if: false
+    multi-func: false
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gomnd
+        - funlen
+        - gocognit
+        - gocyclo
+        - dupl
+        - gosec
+
+    - path: cmd/
+      linters:
+        - funlen
+        - gocognit
+        - gocyclo
+
+    - path: internal/
+      linters:
+        - gomnd
+
+    - linters:
+        - lll
+      source: "^//go:generate "
+
+  exclude:
+    - 'declaration of "(err|ctx)" shadows declaration at'
+    - 'G104: Errors unhandled'
+    - 'package comment should be of the form'
+    - 'should not use dot imports'
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false

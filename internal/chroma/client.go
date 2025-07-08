@@ -4,23 +4,39 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
 	"net/http"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Client wraps the ChromaDB REST API
 type Client struct {
-	baseURL    string
-	collection string
-	httpClient *http.Client
+	baseURL        string
+	collection     string
+	httpClient     *http.Client
+	logger         *zap.Logger
+	maxRetries     int
+	baseRetryDelay time.Duration
 }
 
-// NewClient creates a new ChromaDB client
+// NewClient creates a new ChromaDB client with default settings
 func NewClient(baseURL, collection string) *Client {
+	logger, _ := zap.NewProduction()
+	return NewClientWithOptions(baseURL, collection, logger, 3, time.Second)
+}
+
+// NewClientWithOptions creates a new ChromaDB client with custom settings
+func NewClientWithOptions(baseURL, collection string, logger *zap.Logger, maxRetries int, baseRetryDelay time.Duration) *Client {
 	return &Client{
-		baseURL:    baseURL,
-		collection: collection,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		baseURL:        baseURL,
+		collection:     collection,
+		httpClient:     &http.Client{Timeout: 30 * time.Second},
+		logger:         logger,
+		maxRetries:     maxRetries,
+		baseRetryDelay: baseRetryDelay,
 	}
 }
 
@@ -61,49 +77,141 @@ type SearchResponse struct {
 	Distances [][]float64                `json:"distances"`
 }
 
-// AddDocuments adds documents with embeddings to ChromaDB
-func (c *Client) AddDocuments(documents []Document, embeddings [][]float32) error {
-	url := fmt.Sprintf("%s/api/v1/collections/%s/add", c.baseURL, c.collection)
+// Collection represents a ChromaDB collection
+type Collection struct {
+	Name     string                 `json:"name"`
+	ID       string                 `json:"id"`
+	Metadata map[string]interface{} `json:"metadata"`
+}
 
-	// Prepare request payload
-	var metadatas []map[string]string
-	var ids []string
+// CreateCollectionRequest represents a request to create a collection
+type CreateCollectionRequest struct {
+	Name     string                 `json:"name"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
 
-	for _, doc := range documents {
-		metadatas = append(metadatas, doc.Metadata)
-		ids = append(ids, doc.ID)
+// ChromaError represents an error response from ChromaDB
+type ChromaError struct {
+	Detail string `json:"detail"`
+	Type   string `json:"type"`
+}
+
+func (e ChromaError) Error() string {
+	return fmt.Sprintf("ChromaDB error [%s]: %s", e.Type, e.Detail)
+}
+
+// retryWithBackoff executes a function with exponential backoff retry logic
+func (c *Client) retryWithBackoff(operation func() error, operationName string) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= c.maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(math.Pow(2, float64(attempt-1))) * c.baseRetryDelay
+			c.logger.Info("Retrying operation after delay",
+				zap.String("operation", operationName),
+				zap.Int("attempt", attempt),
+				zap.Duration("delay", delay))
+			time.Sleep(delay)
+		}
+
+		if err := operation(); err != nil {
+			lastErr = err
+			c.logger.Warn("Operation failed, will retry",
+				zap.String("operation", operationName),
+				zap.Int("attempt", attempt),
+				zap.Error(err))
+			continue
+		}
+
+		if attempt > 0 {
+			c.logger.Info("Operation succeeded after retry",
+				zap.String("operation", operationName),
+				zap.Int("attempt", attempt))
+		}
+		return nil
 	}
 
-	payload := map[string]interface{}{
-		"documents":  documents,
-		"metadatas":  metadatas,
-		"ids":        ids,
-		"embeddings": embeddings,
-	}
+	c.logger.Error("Operation failed after all retries",
+		zap.String("operation", operationName),
+		zap.Int("max_retries", c.maxRetries),
+		zap.Error(lastErr))
+	return fmt.Errorf("operation failed after %d retries: %w", c.maxRetries, lastErr)
+}
 
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
+// makeRequest performs an HTTP request with structured error handling
+func (c *Client) makeRequest(req *http.Request) (*http.Response, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ChromaDB returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 
-	return nil
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+
+		var chromaErr ChromaError
+		if json.Unmarshal(body, &chromaErr) == nil {
+			return nil, chromaErr
+		}
+
+		return nil, fmt.Errorf("ChromaDB returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return resp, nil
+}
+
+// AddDocuments adds documents with embeddings to ChromaDB
+func (c *Client) AddDocuments(documents []Document, embeddings [][]float32) error {
+	c.logger.Info("Adding documents to ChromaDB",
+		zap.String("collection", c.collection),
+		zap.Int("document_count", len(documents)),
+		zap.Int("embedding_count", len(embeddings)))
+
+	return c.retryWithBackoff(func() error {
+		url := fmt.Sprintf("%s/api/v1/collections/%s/add", c.baseURL, c.collection)
+
+		// Prepare request payload
+		var metadatas []map[string]string
+		var ids []string
+		var docTexts []string
+
+		for _, doc := range documents {
+			metadatas = append(metadatas, doc.Metadata)
+			ids = append(ids, doc.ID)
+			docTexts = append(docTexts, doc.Content)
+		}
+
+		payload := map[string]interface{}{
+			"documents":  docTexts,
+			"metadatas":  metadatas,
+			"ids":        ids,
+			"embeddings": embeddings,
+		}
+
+		jsonPayload, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.makeRequest(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		c.logger.Info("Successfully added documents",
+			zap.String("collection", c.collection),
+			zap.Int("document_count", len(documents)))
+
+		return nil
+	}, "AddDocuments")
 }
 
 // Search performs a vector search in ChromaDB

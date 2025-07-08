@@ -1,35 +1,76 @@
-# AI-Powered Cloud SA Assistant Configuration
+# AI-Powered Cloud SA Assistant Configuration Template
 # Copy this file to config.yaml and fill in your values
-# Environment variables will override these values
+# Environment variables will override these values with SA_ASSISTANT_ prefix
+# For example: SA_ASSISTANT_OPENAI_APIKEY or use standard names like OPENAI_API_KEY
 
+# OpenAI Configuration (REQUIRED)
 openai:
-  apikey: "sks..."  # Can be overridden by OPENAI_API_KEY env var
+  # OpenAI API Key - REQUIRED
+  # Environment variable: OPENAI_API_KEY or SA_ASSISTANT_OPENAI_APIKEY
+  apikey: "sk-..."
 
+  # OpenAI API Endpoint - Optional, defaults to official OpenAI endpoint
+  # Environment variable: OPENAI_ENDPOINT or SA_ASSISTANT_OPENAI_ENDPOINT
+  endpoint: "https://api.openai.com/v1"
+
+# Microsoft Teams Configuration (REQUIRED)
 teams:
-  webhook_url: "https://your-org.webhook.office.com/..."  # Can be overridden by TEAMS_WEBHOOK_URL env var
+  # Teams Webhook URL - REQUIRED for bot functionality
+  # Environment variable: TEAMS_WEBHOOK_URL or SA_ASSISTANT_TEAMS_WEBHOOK_URL
+  webhook_url: "https://your-org.webhook.office.com/webhookb2/..."
 
+# Internal Service URLs - Used for microservice communication
+# Environment variables: SA_ASSISTANT_SERVICES_*
 services:
-  # Internal service URLs for microservice communication
-  retrieve_url: "http://retrieve:8080"
-  websearch_url: "http://websearch:8080"
-  synthesize_url: "http://synthesize:8080"
+  # Retrieval service endpoint
+  retrieve_url: "http://retrieve:8081"
 
+  # Web search service endpoint
+  websearch_url: "http://websearch:8083"
+
+  # Synthesis service endpoint
+  synthesize_url: "http://synthesize:8082"
+
+# ChromaDB Configuration
+# Environment variables: SA_ASSISTANT_CHROMA_*
 chroma:
+  # ChromaDB server URL
+  # Environment variable: CHROMA_URL or SA_ASSISTANT_CHROMA_URL
   url: "http://chromadb:8000"
+
+  # ChromaDB collection name for storing embeddings
   collection_name: "cloud_assistant"
 
+# Metadata Database Configuration
+# Environment variables: SA_ASSISTANT_METADATA_*
 metadata:
+  # SQLite database path for metadata storage
+  # Environment variable: METADATA_DB_PATH or SA_ASSISTANT_METADATA_DB_PATH
   db_path: "./metadata.db"
 
-# Retrieval settings
+# Retrieval Engine Configuration
+# Environment variables: SA_ASSISTANT_RETRIEVAL_*
 retrieval:
+  # Maximum number of chunks to retrieve for context
+  # Must be greater than 0
   max_chunks: 5
+
+  # Minimum number of chunks before triggering fallback search
+  # Must be greater than or equal to 0
   fallback_threshold: 3
+
+  # Minimum confidence threshold for chunk relevance
+  # Must be between 0 and 1
   confidence_threshold: 0.7
 
-# Web search settings
+# Web Search Configuration
+# Environment variables: SA_ASSISTANT_WEBSEARCH_*
 websearch:
+  # Maximum number of web search results to include
+  # Must be greater than 0
   max_results: 3
+
+  # Keywords that trigger web search for fresh content
   freshness_keywords:
     - "latest"
     - "recent"
@@ -38,37 +79,130 @@ websearch:
     - "current"
     - "announced"
     - "release"
+    - "breaking"
     - "Q1 2025"
     - "Q2 2025"
     - "Q3 2025"
     - "Q4 2025"
+    - "January 2025"
+    - "February 2025"
+    - "March 2025"
+    - "April 2025"
+    - "May 2025"
     - "June 2025"
     - "July 2025"
+    - "August 2025"
+    - "September 2025"
+    - "October 2025"
+    - "November 2025"
+    - "December 2025"
     - "2025"
     - "2024"
     - "reinvent"
     - "ignite"
     - "build"
+    - "connect"
+    - "summit"
+    - "conference"
     - "preview"
+    - "beta"
+    - "alpha"
     - "ga"
     - "general availability"
     - "compliance feature"
     - "security update"
+    - "patch"
+    - "hotfix"
+    - "vulnerability"
+    - "advisory"
 
-# Synthesis settings
+# AI Synthesis Configuration
+# Environment variables: SA_ASSISTANT_SYNTHESIS_*
 synthesis:
+  # OpenAI model to use for synthesis
+  # Recommended: gpt-4o, gpt-4o-mini for cost optimization
   model: "gpt-4o"
+
+  # Maximum tokens in generated response
+  # Must be greater than 0
   max_tokens: 2000
+
+  # Temperature for response generation (creativity vs consistency)
+  # Must be between 0 and 2 (0 = more deterministic, 2 = more creative)
   temperature: 0.3
 
-# Logging configuration
+# Logging Configuration
+# Environment variables: SA_ASSISTANT_LOGGING_* or LOG_*
 logging:
-  level: "info"  # debug, info, warn, error
-  format: "json"  # json, text
-  output: "stdout"  # stdout, file
+  # Log level: debug, info, warn, error
+  # Environment variable: LOG_LEVEL or SA_ASSISTANT_LOGGING_LEVEL
+  level: "info"
 
-# Feedback storage
+  # Log format: json, text
+  # Environment variable: LOG_FORMAT or SA_ASSISTANT_LOGGING_FORMAT
+  format: "json"
+
+  # Log output: stdout, file
+  # Environment variable: LOG_OUTPUT or SA_ASSISTANT_LOGGING_OUTPUT
+  output: "stdout"
+
+# Feedback Storage Configuration
+# Environment variables: SA_ASSISTANT_FEEDBACK_*
 feedback:
-  storage_type: "file"  # file, sqlite
+  # Storage type: file, sqlite
+  storage_type: "file"
+
+  # File path for file-based feedback storage
   file_path: "./feedback.log"
+
+  # SQLite database path for sqlite-based feedback storage
   db_path: "./feedback.db"
+
+# Development & Production Profiles
+# The configuration system automatically detects environment via:
+# ENVIRONMENT or ENV environment variables
+# Default: development
+
+# Development-specific overrides (when ENVIRONMENT=development)
+# These values are automatically applied in development mode
+development:
+  logging:
+    level: "debug"
+    format: "text"
+
+  synthesis:
+    temperature: 0.1  # More deterministic for testing
+
+# Production-specific overrides (when ENVIRONMENT=production)
+# These values are automatically applied in production mode
+production:
+  logging:
+    level: "info"
+    format: "json"
+
+  synthesis:
+    temperature: 0.3  # Balanced for production use
+
+# Environment Variable Quick Reference:
+# ====================================
+# Required:
+#   OPENAI_API_KEY - OpenAI API key
+#   TEAMS_WEBHOOK_URL - Microsoft Teams webhook URL
+#
+# Optional:
+#   CONFIG_PATH - Custom configuration file path
+#   ENVIRONMENT - Environment profile (development, production)
+#   LOG_LEVEL - Logging level (debug, info, warn, error)
+#   LOG_FORMAT - Logging format (json, text)
+#   LOG_OUTPUT - Logging output (stdout, file)
+#   CHROMA_URL - ChromaDB server URL
+#   METADATA_DB_PATH - Metadata database path
+#
+# Service Discovery:
+#   SA_ASSISTANT_SERVICES_RETRIEVE_URL - Retrieval service URL
+#   SA_ASSISTANT_SERVICES_WEBSEARCH_URL - Web search service URL
+#   SA_ASSISTANT_SERVICES_SYNTHESIZE_URL - Synthesis service URL
+#
+# All configuration values can be overridden with environment variables using
+# the SA_ASSISTANT_ prefix and replacing dots with underscores.
+# Example: openai.apikey -> SA_ASSISTANT_OPENAI_APIKEY

@@ -1,30 +1,286 @@
-[
-  {
-    "doc_id": "aws-lift-shift-guide.md",
-    "scenario": "migration",
-    "cloud": "aws",
-    "category": "playbook",
-    "tags": "migration,lift-and-shift,aws-mgn,ec2,replication,vpc"
-  },
-  {
-    "doc_id": "azure-hybrid-architecture.md",
-    "scenario": "hybrid",
-    "cloud": "azure",
-    "category": "playbook",
-    "tags": "hybrid,expressroute,vmware,hcx,migration,connectivity"
-  },
-  {
-    "doc_id": "azure-disaster-recovery.md",
-    "scenario": "disaster-recovery",
-    "cloud": "azure",
-    "category": "playbook",
-    "tags": "disaster-recovery,rto,rpo,site-recovery,failover,backup"
-  },
-  {
-    "doc_id": "security-compliance.md",
-    "scenario": "security",
-    "cloud": "multi-cloud",
-    "category": "playbook",
-    "tags": "security,compliance,hipaa,gdpr,encryption,logging,governance"
+{
+  "schema_version": "1.0",
+  "description": "Metadata index for AI SA Assistant document filtering and retrieval",
+  "last_updated": "2025-07-08",
+  "documents": [
+    {
+      "doc_id": "aws-lift-shift-guide.md",
+      "title": "AWS Lift and Shift Migration Guide",
+      "platform": "aws",
+      "scenario": "migration",
+      "type": "playbook",
+      "source_url": "internal",
+      "path": "docs/playbooks/aws-lift-shift-guide.md",
+      "tags": ["migration", "lift-and-shift", "aws-mgn", "ec2", "replication", "vpc", "automation", "cost-optimization"],
+      "difficulty": "intermediate",
+      "estimated_time": "4-12 weeks"
+    },
+    {
+      "doc_id": "azure-hybrid-architecture-guide.md",
+      "title": "Azure Hybrid Architecture Guide",
+      "platform": "azure",
+      "scenario": "hybrid",
+      "type": "playbook",
+      "source_url": "internal",
+      "path": "docs/playbooks/azure-hybrid-architecture-guide.md",
+      "tags": ["hybrid", "expressroute", "vmware", "hcx", "migration", "connectivity", "networking"],
+      "difficulty": "advanced",
+      "estimated_time": "8-16 weeks"
+    },
+    {
+      "doc_id": "azure-hybrid-architecture.md",
+      "title": "Azure Hybrid Architecture Implementation Guide",
+      "platform": "azure",
+      "scenario": "hybrid",
+      "type": "playbook",
+      "source_url": "internal",
+      "path": "docs/playbooks/azure-hybrid-architecture.md",
+      "tags": ["hybrid", "expressroute", "vmware", "hcx", "migration", "connectivity", "peering", "bgp"],
+      "difficulty": "advanced",
+      "estimated_time": "8-16 weeks"
+    },
+    {
+      "doc_id": "azure-disaster-recovery.md",
+      "title": "Azure Disaster Recovery Solution Guide",
+      "platform": "azure",
+      "scenario": "disaster-recovery",
+      "type": "playbook",
+      "source_url": "internal",
+      "path": "docs/playbooks/azure-disaster-recovery.md",
+      "tags": ["disaster-recovery", "rto", "rpo", "site-recovery", "failover", "backup", "traffic-manager", "storage-replication", "powershell", "azure-cli", "orchestration"],
+      "difficulty": "advanced",
+      "estimated_time": "6-12 weeks"
+    },
+    {
+      "doc_id": "security-compliance.md",
+      "title": "Security Compliance and Cloud Adoption Guide",
+      "platform": "multi-cloud",
+      "scenario": "security-compliance",
+      "type": "playbook",
+      "source_url": "internal",
+      "path": "docs/playbooks/security-compliance.md",
+      "tags": ["security", "compliance", "hipaa", "gdpr", "pci-dss", "soc2", "pbmm", "encryption", "logging", "governance", "monitoring"],
+      "difficulty": "advanced",
+      "estimated_time": "12-24 weeks"
+    },
+    {
+      "doc_id": "aws-lift-shift-runbook.md",
+      "title": "AWS Lift-and-Shift Migration Runbook",
+      "platform": "aws",
+      "scenario": "migration",
+      "type": "runbook",
+      "source_url": "internal",
+      "path": "docs/runbooks/aws-lift-shift-runbook.md",
+      "tags": ["runbook", "migration", "mgn", "step-by-step", "operational", "troubleshooting"],
+      "difficulty": "intermediate",
+      "estimated_time": "4-6 hours"
+    },
+    {
+      "doc_id": "azure-hybrid-runbook.md",
+      "title": "Azure Hybrid Architecture Deployment Runbook",
+      "platform": "azure",
+      "scenario": "hybrid",
+      "type": "runbook",
+      "source_url": "internal",
+      "path": "docs/runbooks/azure-hybrid-runbook.md",
+      "tags": ["runbook", "hybrid", "expressroute", "vmware-hcx", "step-by-step", "operational", "powershell"],
+      "difficulty": "advanced",
+      "estimated_time": "6-8 hours"
+    },
+    {
+      "doc_id": "azure-dr-runbook.md",
+      "title": "Azure Disaster Recovery Deployment Runbook",
+      "platform": "azure",
+      "scenario": "disaster-recovery",
+      "type": "runbook",
+      "source_url": "internal",
+      "path": "docs/runbooks/azure-dr-runbook.md",
+      "tags": ["runbook", "disaster-recovery", "site-recovery", "rto", "rpo", "operational", "powershell"],
+      "difficulty": "advanced",
+      "estimated_time": "3-4 hours"
+    },
+    {
+      "doc_id": "aws-compliance-runbook.md",
+      "title": "AWS Security Compliance Implementation Runbook",
+      "platform": "aws",
+      "scenario": "security-compliance",
+      "type": "runbook",
+      "source_url": "internal",
+      "path": "docs/runbooks/aws-compliance-runbook.md",
+      "tags": ["runbook", "compliance", "hipaa", "gdpr", "security", "operational", "aws-cli"],
+      "difficulty": "advanced",
+      "estimated_time": "4-5 hours"
+    },
+    {
+      "doc_id": "aws-migration-sow.md",
+      "title": "AWS Cloud Migration Services - Statement of Work",
+      "platform": "aws",
+      "scenario": "migration",
+      "type": "sow",
+      "source_url": "internal",
+      "path": "docs/sows/aws-migration-sow.md",
+      "tags": ["sow", "migration", "commercial", "pricing", "timeline", "deliverables"],
+      "difficulty": "intermediate",
+      "estimated_time": "12-16 weeks"
+    },
+    {
+      "doc_id": "azure-hybrid-sow.md",
+      "title": "Azure Hybrid Cloud Solutions - Statement of Work",
+      "platform": "azure",
+      "scenario": "hybrid",
+      "type": "sow",
+      "source_url": "internal",
+      "path": "docs/sows/azure-hybrid-sow.md",
+      "tags": ["sow", "hybrid", "commercial", "pricing", "timeline", "deliverables"],
+      "difficulty": "advanced",
+      "estimated_time": "16-20 weeks"
+    },
+    {
+      "doc_id": "azure-dr-sow.md",
+      "title": "Azure Disaster Recovery Services - Statement of Work",
+      "platform": "azure",
+      "scenario": "disaster-recovery",
+      "type": "sow",
+      "source_url": "internal",
+      "path": "docs/sows/azure-dr-sow.md",
+      "tags": ["sow", "disaster-recovery", "commercial", "pricing", "timeline", "deliverables"],
+      "difficulty": "advanced",
+      "estimated_time": "12-16 weeks"
+    },
+    {
+      "doc_id": "aws-compliance-sow.md",
+      "title": "AWS Security & Compliance Services - Statement of Work",
+      "platform": "aws",
+      "scenario": "security-compliance",
+      "type": "sow",
+      "source_url": "internal",
+      "path": "docs/sows/aws-compliance-sow.md",
+      "tags": ["sow", "compliance", "security", "commercial", "pricing", "timeline", "deliverables"],
+      "difficulty": "advanced",
+      "estimated_time": "16-24 weeks"
+    },
+    {
+      "doc_id": "docker-setup.md",
+      "title": "AI SA Assistant - Docker Setup and Validation",
+      "platform": "infrastructure",
+      "scenario": "deployment",
+      "type": "technical-guide",
+      "source_url": "internal",
+      "path": "docs/docker-setup.md",
+      "tags": ["docker", "deployment", "chromadb", "infrastructure", "troubleshooting"],
+      "difficulty": "intermediate",
+      "estimated_time": "1-2 hours"
+    },
+    {
+      "doc_id": "aws-migration-best-practices.md",
+      "title": "AWS Application Migration Service Best Practices",
+      "platform": "aws",
+      "scenario": "migration",
+      "type": "vendor-guide",
+      "source_url": "https://docs.aws.amazon.com/mgn/latest/ug/best-practices.html",
+      "path": "external",
+      "tags": ["aws-mgn", "best-practices", "migration", "vendor", "official"],
+      "difficulty": "intermediate",
+      "estimated_time": "2-4 hours"
+    },
+    {
+      "doc_id": "azure-expressroute-documentation.md",
+      "title": "Azure ExpressRoute Documentation",
+      "platform": "azure",
+      "scenario": "hybrid",
+      "type": "vendor-guide",
+      "source_url": "https://docs.microsoft.com/en-us/azure/expressroute/",
+      "path": "external",
+      "tags": ["expressroute", "networking", "hybrid", "vendor", "official"],
+      "difficulty": "advanced",
+      "estimated_time": "4-6 hours"
+    },
+    {
+      "doc_id": "azure-site-recovery-documentation.md",
+      "title": "Azure Site Recovery Documentation",
+      "platform": "azure",
+      "scenario": "disaster-recovery",
+      "type": "vendor-guide",
+      "source_url": "https://docs.microsoft.com/en-us/azure/site-recovery/",
+      "path": "external",
+      "tags": ["site-recovery", "disaster-recovery", "vendor", "official"],
+      "difficulty": "advanced",
+      "estimated_time": "3-5 hours"
+    },
+    {
+      "doc_id": "aws-security-best-practices.md",
+      "title": "AWS Security Best Practices",
+      "platform": "aws",
+      "scenario": "security-compliance",
+      "type": "vendor-guide",
+      "source_url": "https://docs.aws.amazon.com/security/",
+      "path": "external",
+      "tags": ["security", "compliance", "aws", "vendor", "official"],
+      "difficulty": "advanced",
+      "estimated_time": "4-8 hours"
+    },
+    {
+      "doc_id": "azure-security-documentation.md",
+      "title": "Azure Security Documentation",
+      "platform": "azure",
+      "scenario": "security-compliance",
+      "type": "vendor-guide",
+      "source_url": "https://docs.microsoft.com/en-us/azure/security/",
+      "path": "external",
+      "tags": ["security", "compliance", "azure", "vendor", "official"],
+      "difficulty": "advanced",
+      "estimated_time": "4-8 hours"
+    },
+    {
+      "doc_id": "vmware-hcx-documentation.md",
+      "title": "VMware HCX Documentation",
+      "platform": "multi-cloud",
+      "scenario": "hybrid",
+      "type": "vendor-guide",
+      "source_url": "https://docs.vmware.com/en/VMware-HCX/",
+      "path": "external",
+      "tags": ["vmware", "hcx", "hybrid", "migration", "vendor", "official"],
+      "difficulty": "advanced",
+      "estimated_time": "6-8 hours"
+    }
+  ],
+  "metadata_schema": {
+    "required_fields": {
+      "doc_id": "Unique identifier for the document (filename)",
+      "title": "Human-readable title of the document",
+      "platform": "Target platform (aws, azure, multi-cloud, infrastructure)",
+      "scenario": "Use case scenario (migration, hybrid, disaster-recovery, security-compliance, deployment)",
+      "type": "Document type (playbook, runbook, sow, technical-guide, vendor-guide)",
+      "source_url": "Source URL for external docs or 'internal' for synthetic docs",
+      "path": "File path or 'external' for vendor docs",
+      "tags": "Array of searchable tags for advanced filtering",
+      "difficulty": "Complexity level (beginner, intermediate, advanced)",
+      "estimated_time": "Time estimate for implementation or reading"
+    },
+    "filtering_capabilities": {
+      "by_platform": ["aws", "azure", "multi-cloud", "infrastructure"],
+      "by_scenario": ["migration", "hybrid", "disaster-recovery", "security-compliance", "deployment"],
+      "by_type": ["playbook", "runbook", "sow", "technical-guide", "vendor-guide"],
+      "by_difficulty": ["beginner", "intermediate", "advanced"],
+      "by_tags": "Supports tag-based filtering for granular search"
+    },
+    "demo_scenario_mapping": {
+      "Demo 1 - AWS Lift-and-Shift": {
+        "filters": "platform=aws AND scenario=migration",
+        "primary_docs": ["aws-lift-shift-guide.md", "aws-lift-shift-runbook.md", "aws-migration-sow.md"]
+      },
+      "Demo 2 - Azure Hybrid Architecture": {
+        "filters": "platform=azure AND scenario=hybrid",
+        "primary_docs": ["azure-hybrid-architecture.md", "azure-hybrid-runbook.md", "azure-hybrid-sow.md"]
+      },
+      "Demo 3 - Azure Disaster Recovery": {
+        "filters": "platform=azure AND scenario=disaster-recovery",
+        "primary_docs": ["azure-disaster-recovery.md", "azure-dr-runbook.md", "azure-dr-sow.md"]
+      },
+      "Demo 4 - Security Compliance": {
+        "filters": "scenario=security-compliance",
+        "primary_docs": ["security-compliance.md", "aws-compliance-runbook.md", "aws-compliance-sow.md"]
+      }
+    }
   }
-]
+}
