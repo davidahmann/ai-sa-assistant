@@ -1,0 +1,74 @@
+# AI-Powered Cloud SA Assistant Configuration
+# Copy this file to config.yaml and fill in your values
+# Environment variables will override these values
+
+openai:
+  apikey: "sks..."  # Can be overridden by OPENAI_API_KEY env var
+
+teams:
+  webhook_url: "https://your-org.webhook.office.com/..."  # Can be overridden by TEAMS_WEBHOOK_URL env var
+
+services:
+  # Internal service URLs for microservice communication
+  retrieve_url: "http://retrieve:8080"
+  websearch_url: "http://websearch:8080"
+  synthesize_url: "http://synthesize:8080"
+
+chroma:
+  url: "http://chromadb:8000"
+  collection_name: "cloud_assistant"
+
+metadata:
+  db_path: "./metadata.db"
+
+# Retrieval settings
+retrieval:
+  max_chunks: 5
+  fallback_threshold: 3
+  confidence_threshold: 0.7
+
+# Web search settings
+websearch:
+  max_results: 3
+  freshness_keywords:
+    - "latest"
+    - "recent"
+    - "update"
+    - "new"
+    - "current"
+    - "announced"
+    - "release"
+    - "Q1 2025"
+    - "Q2 2025"
+    - "Q3 2025"
+    - "Q4 2025"
+    - "June 2025"
+    - "July 2025"
+    - "2025"
+    - "2024"
+    - "reinvent"
+    - "ignite"
+    - "build"
+    - "preview"
+    - "ga"
+    - "general availability"
+    - "compliance feature"
+    - "security update"
+
+# Synthesis settings
+synthesis:
+  model: "gpt-4o"
+  max_tokens: 2000
+  temperature: 0.3
+
+# Logging configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json, text
+  output: "stdout"  # stdout, file
+
+# Feedback storage
+feedback:
+  storage_type: "file"  # file, sqlite
+  file_path: "./feedback.log"
+  db_path: "./feedback.db"

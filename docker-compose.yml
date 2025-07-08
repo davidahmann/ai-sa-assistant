@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - chromadb_data:/chroma/.chroma/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  retrieve:
+    build:
+      context: .
+      dockerfile: cmd/retrieve/Dockerfile
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./configs:/app/configs
+      - ./metadata.db:/app/metadata.db
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
+
+  websearch:
+    build:
+      context: .
+      dockerfile: cmd/websearch/Dockerfile
+    ports:
+      - "8083:8080"
+    volumes:
+      - ./configs:/app/configs
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
+
+  synthesize:
+    build:
+      context: .
+      dockerfile: cmd/synthesize/Dockerfile
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./configs:/app/configs
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
+
+  teamsbot:
+    build:
+      context: .
+      dockerfile: cmd/teamsbot/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./configs:/app/configs
+      - ./feedback.log:/app/feedback.log
+    depends_on:
+      - retrieve
+      - websearch
+      - synthesize
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
+
+  ingest:
+    build:
+      context: .
+      dockerfile: cmd/ingest/Dockerfile
+    volumes:
+      - ./configs:/app/configs
+      - ./docs:/app/docs
+      - ./metadata.db:/app/metadata.db
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
+    profiles:
+      - ingest
+
+volumes:
+  chromadb_data:

@@ -1,0 +1,31 @@
+repos:
+  # Standard hooks for cleaning files
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace         # Trims trailing whitespace
+      - id: end-of-file-fixer            # Ensures files end in a newline
+      - id: check-yaml                   # Checks YAML file syntax
+      - id: check-json                   # Checks JSON file syntax
+      - id: check-added-large-files      # Prevents committing large files
+      - id: detect-private-key         # Looks for private keys
+
+  # Go-specific hooks
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.62.2
+    hooks:
+      - id: golangci-lint
+        args: [--fix] # Auto-fix issues where possible
+
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt        # Enforces go fmt
+      - id: go-mod-tidy   # Enforces go mod tidy
+
+  # Secret scanning (generic)
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: Detect hardcoded secrets

@@ -1,0 +1,30 @@
+[
+  {
+    "doc_id": "aws-lift-shift-guide.md",
+    "scenario": "migration",
+    "cloud": "aws",
+    "category": "playbook",
+    "tags": "migration,lift-and-shift,aws-mgn,ec2,replication,vpc"
+  },
+  {
+    "doc_id": "azure-hybrid-architecture.md",
+    "scenario": "hybrid",
+    "cloud": "azure",
+    "category": "playbook",
+    "tags": "hybrid,expressroute,vmware,hcx,migration,connectivity"
+  },
+  {
+    "doc_id": "azure-disaster-recovery.md",
+    "scenario": "disaster-recovery",
+    "cloud": "azure",
+    "category": "playbook",
+    "tags": "disaster-recovery,rto,rpo,site-recovery,failover,backup"
+  },
+  {
+    "doc_id": "security-compliance.md",
+    "scenario": "security",
+    "cloud": "multi-cloud",
+    "category": "playbook",
+    "tags": "security,compliance,hipaa,gdpr,encryption,logging,governance"
+  }
+]
