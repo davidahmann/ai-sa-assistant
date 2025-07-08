@@ -79,8 +79,10 @@ func findSentenceBreak(text string) string {
 
 // ParseMarkdown extracts and cleans text content from a markdown file
 func ParseMarkdown(content string) string {
-	// Remove excessive newlines
-	content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
+	// Remove excessive newlines (keep doing until no more triple newlines)
+	for strings.Contains(content, "\n\n\n") {
+		content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
+	}
 
 	// Remove markdown headers (###, ##, #)
 	lines := strings.Split(content, "\n")

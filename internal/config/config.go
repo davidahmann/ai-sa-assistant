@@ -77,9 +77,10 @@ type MetadataConfig struct {
 
 // RetrievalConfig contains retrieval-specific settings
 type RetrievalConfig struct {
-	MaxChunks           int     `mapstructure:"max_chunks"`
-	FallbackThreshold   int     `mapstructure:"fallback_threshold"`
-	ConfidenceThreshold float64 `mapstructure:"confidence_threshold"`
+	MaxChunks              int     `mapstructure:"max_chunks"`
+	FallbackThreshold      int     `mapstructure:"fallback_threshold"`
+	ConfidenceThreshold    float64 `mapstructure:"confidence_threshold"`
+	FallbackScoreThreshold float64 `mapstructure:"fallback_score_threshold"`
 }
 
 // WebSearchConfig contains web search configuration
@@ -203,6 +204,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("retrieval.max_chunks", 5)
 	v.SetDefault("retrieval.fallback_threshold", 3)
 	v.SetDefault("retrieval.confidence_threshold", 0.7)
+	v.SetDefault("retrieval.fallback_score_threshold", 0.7)
 
 	// Web search defaults
 	v.SetDefault("websearch.max_results", 3)
@@ -338,6 +340,13 @@ func validateConfig(config *Config) error {
 		errors = append(errors, ValidationError{
 			Field:   "retrieval.confidence_threshold",
 			Message: "confidence_threshold must be between 0 and 1",
+		})
+	}
+
+	if config.Retrieval.FallbackScoreThreshold < 0 || config.Retrieval.FallbackScoreThreshold > 1 {
+		errors = append(errors, ValidationError{
+			Field:   "retrieval.fallback_score_threshold",
+			Message: "fallback_score_threshold must be between 0 and 1",
 		})
 	}
 

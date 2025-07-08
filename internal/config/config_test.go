@@ -45,6 +45,7 @@ retrieval:
   max_chunks: 10
   fallback_threshold: 5
   confidence_threshold: 0.8
+  fallback_score_threshold: 0.6
 websearch:
   max_results: 5
   freshness_keywords: ["latest", "recent"]
@@ -181,9 +182,10 @@ func TestConfigValidation(t *testing.T) {
 					DBPath: "./test_metadata.db",
 				},
 				Retrieval: RetrievalConfig{
-					MaxChunks:           5,
-					FallbackThreshold:   3,
-					ConfidenceThreshold: 0.7,
+					MaxChunks:              5,
+					FallbackThreshold:      3,
+					ConfidenceThreshold:    0.7,
+					FallbackScoreThreshold: 0.7,
 				},
 				WebSearch: WebSearchConfig{
 					MaxResults: 3,
@@ -221,9 +223,10 @@ func TestConfigValidation(t *testing.T) {
 					DBPath: "./test_metadata.db",
 				},
 				Retrieval: RetrievalConfig{
-					MaxChunks:           5,
-					FallbackThreshold:   3,
-					ConfidenceThreshold: 0.7,
+					MaxChunks:              5,
+					FallbackThreshold:      3,
+					ConfidenceThreshold:    0.7,
+					FallbackScoreThreshold: 0.7,
 				},
 				WebSearch: WebSearchConfig{
 					MaxResults: 3,
@@ -259,9 +262,10 @@ func TestConfigValidation(t *testing.T) {
 					DBPath: "./test_metadata.db",
 				},
 				Retrieval: RetrievalConfig{
-					MaxChunks:           5,
-					FallbackThreshold:   3,
-					ConfidenceThreshold: 0.7,
+					MaxChunks:              5,
+					FallbackThreshold:      3,
+					ConfidenceThreshold:    0.7,
+					FallbackScoreThreshold: 0.7,
 				},
 				WebSearch: WebSearchConfig{
 					MaxResults: 3,
@@ -371,9 +375,10 @@ func TestConfigValidation(t *testing.T) {
 					DBPath: "./test_metadata.db",
 				},
 				Retrieval: RetrievalConfig{
-					MaxChunks:           5,
-					FallbackThreshold:   3,
-					ConfidenceThreshold: 0.7,
+					MaxChunks:              5,
+					FallbackThreshold:      3,
+					ConfidenceThreshold:    0.7,
+					FallbackScoreThreshold: 0.7,
 				},
 				WebSearch: WebSearchConfig{
 					MaxResults: 3,
@@ -409,9 +414,10 @@ func TestConfigValidation(t *testing.T) {
 					DBPath: "./test_metadata.db",
 				},
 				Retrieval: RetrievalConfig{
-					MaxChunks:           5,
-					FallbackThreshold:   3,
-					ConfidenceThreshold: 0.7,
+					MaxChunks:              5,
+					FallbackThreshold:      3,
+					ConfidenceThreshold:    0.7,
+					FallbackScoreThreshold: 0.7,
 				},
 				WebSearch: WebSearchConfig{
 					MaxResults: 3,
@@ -430,6 +436,45 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectedError: true,
 			errorContains: "temperature must be between 0 and 2",
+		},
+		{
+			name: "Invalid fallback score threshold",
+			config: Config{
+				OpenAI: OpenAIConfig{
+					APIKey: "sk-test-key",
+				},
+				Teams: TeamsConfig{
+					WebhookURL: "https://test.webhook.com/test",
+				},
+				Chroma: ChromaConfig{
+					URL: "http://chromadb:8000",
+				},
+				Metadata: MetadataConfig{
+					DBPath: "./test_metadata.db",
+				},
+				Retrieval: RetrievalConfig{
+					MaxChunks:              5,
+					FallbackThreshold:      3,
+					ConfidenceThreshold:    0.7,
+					FallbackScoreThreshold: 1.5,
+				},
+				WebSearch: WebSearchConfig{
+					MaxResults: 3,
+				},
+				Synthesis: SynthesisConfig{
+					MaxTokens:   2000,
+					Temperature: 0.3,
+				},
+				Logging: LoggingConfig{
+					Level:  "info",
+					Format: "json",
+				},
+				Feedback: FeedbackConfig{
+					StorageType: "file",
+				},
+			},
+			expectedError: true,
+			errorContains: "fallback_score_threshold must be between 0 and 1",
 		},
 	}
 
