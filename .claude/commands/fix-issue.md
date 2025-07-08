@@ -101,6 +101,7 @@ D. Quick Testing Script
 This script is designed for our Go monorepo structure. It runs formatters, linters, and tests across the entire project to ensure that changes (especially in the internal/ directory) do not break other services.
 
 # !/bin/bash
+
 set -e
 
 echo "Running Go formatter..."

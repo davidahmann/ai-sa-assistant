@@ -1,43 +1,43 @@
-FAIL	github.com/your-org/ai-sa-assistant/cmd/ingest [build failed]
+?   	github.com/your-org/ai-sa-assistant/cmd/ingest	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/cmd/retrieve	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/cmd/synthesize	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/cmd/teamsbot	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/cmd/websearch	[no test files]
-FAIL	github.com/your-org/ai-sa-assistant/internal/chroma [build failed]
+?   	github.com/your-org/ai-sa-assistant/internal/chroma	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/internal/chunker	[no test files]
 PASS
-ok  	github.com/your-org/ai-sa-assistant/internal/config	0.163s
+ok  	github.com/your-org/ai-sa-assistant/internal/config	0.165s
 ?   	github.com/your-org/ai-sa-assistant/internal/metadata	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/internal/openai	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/internal/synth	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/internal/teams	[no test files]
 --- FAIL: TestLoadTesting (0.00s)
-    performance_test.go:151: Load test error: goroutine 9, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 7, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 1, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 8, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:151: Load test error: goroutine 0, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 3, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 9, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:151: Load test error: goroutine 5, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 1, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:151: Load test error: goroutine 6, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:151: Load test error: goroutine 2, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 3, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 7, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 8, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:151: Load test error: goroutine 4, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
 --- FAIL: TestMemoryUsage (0.00s)
     performance_test.go:205: Failed to call webhook on request 1: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
 --- FAIL: TestServiceScaling (0.00s)
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Design an Azure hybrid architecture': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Design an Azure hybrid architecture': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Design an Azure hybrid architecture': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Design an Azure hybrid architecture': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
 FAIL
 exit status 1
-FAIL	github.com/your-org/ai-sa-assistant/tests/performance	0.148s
+FAIL	github.com/your-org/ai-sa-assistant/tests/performance	0.155s
 FAIL
