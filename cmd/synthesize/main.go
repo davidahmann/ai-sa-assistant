@@ -24,6 +24,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sashabaranov/go-openai"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	internalopenai "github.com/your-org/ai-sa-assistant/internal/openai"
 	"github.com/your-org/ai-sa-assistant/internal/synth"

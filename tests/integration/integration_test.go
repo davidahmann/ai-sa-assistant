@@ -166,7 +166,7 @@ func TestIngestionPipeline(t *testing.T) {
 
 	// This test requires a running ChromaDB instance and valid OpenAI API key
 	// It will test the complete ingestion flow with real services
-	
+
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -253,7 +253,7 @@ func TestIngestionPipeline(t *testing.T) {
 		}
 
 		// Clean up - delete the test collection
-		req, _ := http.NewRequest("DELETE", "http://localhost:8000/api/v1/collections/test_ingestion_collection", nil)
+		req, _ := http.NewRequest("DELETE", "http://localhost:8000/api/v1/collections/test_ingestion_collection", http.NoBody)
 		resp, err = client.Do(req)
 		if err != nil {
 			t.Logf("Failed to clean up test collection: %v", err)
@@ -267,7 +267,7 @@ func TestIngestionPipeline(t *testing.T) {
 	t.Run("IngestionPipeline_MetadataStore", func(t *testing.T) {
 		// This would typically test SQLite database operations
 		// For now, we'll test that the retrieve service can filter documents
-		
+
 		filterReq := map[string]interface{}{
 			"query": "test query",
 			"filters": map[string]string{

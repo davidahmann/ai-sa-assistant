@@ -24,24 +24,24 @@ import (
 
 func TestConfigurationValidation(t *testing.T) {
 	tests := []struct {
-		name                       string
-		fallbackThreshold          int
-		fallbackScoreThreshold     float64
-		expectedFallbackThreshold  int
+		name                           string
+		fallbackThreshold              int
+		fallbackScoreThreshold         float64
+		expectedFallbackThreshold      int
 		expectedFallbackScoreThreshold float64
 	}{
 		{
-			name:                       "Default configuration values",
-			fallbackThreshold:          3,
-			fallbackScoreThreshold:     0.7,
-			expectedFallbackThreshold:  3,
+			name:                           "Default configuration values",
+			fallbackThreshold:              3,
+			fallbackScoreThreshold:         0.7,
+			expectedFallbackThreshold:      3,
 			expectedFallbackScoreThreshold: 0.7,
 		},
 		{
-			name:                       "Custom configuration values",
-			fallbackThreshold:          5,
-			fallbackScoreThreshold:     0.8,
-			expectedFallbackThreshold:  5,
+			name:                           "Custom configuration values",
+			fallbackThreshold:              5,
+			fallbackScoreThreshold:         0.8,
+			expectedFallbackThreshold:      5,
 			expectedFallbackScoreThreshold: 0.8,
 		},
 	}
@@ -105,7 +105,7 @@ func TestSearchRequestValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var searchReq SearchRequest
 			err := json.Unmarshal([]byte(tt.requestBody), &searchReq)
-			
+
 			if tt.expectedValid {
 				if err != nil {
 					t.Errorf("Expected valid JSON, got error: %v", err)
