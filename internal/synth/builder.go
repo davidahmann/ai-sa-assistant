@@ -634,6 +634,8 @@ func buildCodeGenerationInstructions(_ QueryType) string {
 		buildAWSCLIInstructions() +
 		buildAzureCLIInstructions() +
 		buildPowerShellInstructions() +
+		buildYAMLJSONInstructions() +
+		buildCodeSecurityRequirements() +
 		buildCodeTestingInstructions()
 }
 
@@ -791,7 +793,7 @@ az vm create \
 
 // buildPowerShellInstructions creates PowerShell-specific code generation instructions
 func buildPowerShellInstructions() string {
-	return `#### PowerShell (Azure PowerShell)
+	return `#### PowerShell (Azure/Windows Automation)
 - Use for Windows-centric Azure automation
 - Include error handling and progress indicators
 - Use meaningful variable names and parameter validation
@@ -842,6 +844,55 @@ catch {
 finally {
     Write-Host "Cleanup completed" -ForegroundColor Blue
 }
+` + "```" + `
+
+`
+}
+
+// buildYAMLJSONInstructions creates YAML/JSON configuration file instructions
+func buildYAMLJSONInstructions() string {
+	return `#### YAML/JSON Configuration Files
+- Use for Kubernetes manifests, CI/CD pipelines, and configuration management
+- Follow proper indentation and structure guidelines
+- Include metadata and labels for proper organization
+- Add validation and schema references where applicable
+- Format: ` + "`yaml`" + ` or ` + "`json`" + `
+
+Example YAML Pattern:
+` + "```yaml" + `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: production
+  labels:
+    app: web-service
+    environment: production
+data:
+  database_url: "postgresql://db.example.com:5432/prod"
+  cache_enabled: "true"
+  log_level: "info"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-service
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-service
+  template:
+    metadata:
+      labels:
+        app: web-service
+    spec:
+      containers:
+      - name: web
+        image: nginx:1.21
+        ports:
+        - containerPort: 80
 ` + "```" + `
 
 `
@@ -899,6 +950,60 @@ graph TD
 - Include Azure-specific components (Application Gateway, Traffic Manager)
 - Show resource relationships and dependencies
 
+Example Azure Pattern:
+` + "```" + `
+graph TD
+    subgraph "Azure Subscription"
+        subgraph "Resource Group"
+            subgraph "Virtual Network: 10.1.0.0/16"
+                subgraph "Public Subnet"
+                    AG[Application Gateway]
+                    LB[Load Balancer]
+                end
+                subgraph "Private Subnet"
+                    VM[Virtual Machines]
+                    SQL[SQL Database]
+                end
+            end
+            Storage[Storage Account]
+        end
+    end
+    Users[Users] --> AG
+    AG --> VM
+    VM --> SQL
+    VM --> Storage
+` + "```" + `
+
+#### Hybrid Cloud Architecture Diagrams
+- Show connections between on-premises and cloud environments
+- Include VPN or ExpressRoute connections
+- Separate subgraphs for different environments
+- Show data synchronization and backup flows
+
+Example Hybrid Pattern:
+` + "```" + `
+graph TD
+    subgraph "On-Premises"
+        OnPremServers[Legacy Servers]
+        OnPremDB[On-Prem Database]
+        VPNGateway[VPN Gateway]
+    end
+    
+    subgraph "AWS Cloud"
+        subgraph "VPC"
+            CloudServers[EC2 Instances]
+            CloudDB[RDS Database]
+            CloudVPN[VPN Connection]
+        end
+    end
+    
+    OnPremServers --> VPNGateway
+    VPNGateway -.-> CloudVPN
+    CloudVPN --> CloudServers
+    OnPremDB -.-> CloudDB
+    CloudServers --> CloudDB
+` + "```" + `
+
 `
 }
 
@@ -951,6 +1056,64 @@ Always format Mermaid diagrams exactly like this:
 graph TD
     [Your diagram content here]
 ` + "```" + `
+
+`
+}
+
+// buildCodeSecurityRequirements creates security and quality requirements for code generation
+func buildCodeSecurityRequirements() string {
+	return `### Code Quality and Security Requirements
+- NEVER include hardcoded secrets, API keys, passwords, or sensitive data
+- Use environment variables, parameter stores, or secret management services for sensitive configuration
+- Implement least-privilege access principles
+- Include meaningful comments explaining complex logic
+- Add error handling and validation for all inputs
+- Use secure defaults and encryption configurations
+- Include proper indentation and structure for readability
+- Follow language-specific security best practices
+
+### Security Best Practices
+- Enable encryption in transit and at rest
+- Implement proper authentication and authorization
+- Use secure communication protocols (HTTPS, TLS)
+- Apply principle of least privilege for access controls
+- Regular security patching and updates
+- Implement logging and monitoring for security events
+
+### Code Block Formatting Requirements
+- Use proper language identifiers for syntax highlighting
+- Include descriptive comments within code blocks
+- Follow consistent indentation and formatting standards
+- Add line breaks for readability in complex configurations
+- Use meaningful variable and resource names
+
+### Conditional Code Generation Based on Platform
+- Detect platform context from query (AWS, Azure, GCP, hybrid)
+- Adapt code examples to the specific cloud provider
+- Include platform-specific best practices and conventions
+- Use appropriate tooling and services for each platform
+- Provide cross-platform alternatives when applicable
+
+### Error Handling Patterns
+- Implement try-catch blocks for exception handling
+- Add validation for input parameters and configurations
+- Include graceful degradation for service failures
+- Provide clear error messages and logging
+- Implement retry logic with exponential backoff
+
+### Documentation Requirements
+- Include inline documentation for complex operations
+- Add parameter descriptions and usage examples
+- Include troubleshooting steps and common issues
+- Document any prerequisites or dependencies
+- Provide clear installation and configuration instructions
+
+### Fallback Instructions for Non-Technical Queries
+- For non-technical queries, focus on explanatory content
+- Provide conceptual overviews instead of code implementations
+- Include high-level architectural guidance
+- Offer business-focused recommendations and considerations
+- Suggest when technical implementation would be beneficial
 
 `
 }
