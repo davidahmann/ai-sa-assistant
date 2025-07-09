@@ -41,6 +41,8 @@ const (
 	HealthCheckTimeout = 5 * time.Second
 	// SearchRequestTimeout defines the timeout for search requests
 	SearchRequestTimeout = 30 * time.Second
+	// OpenAIEmbeddingDimension is the standard OpenAI embedding dimension
+	OpenAIEmbeddingDimension = 1536
 )
 
 // SearchRequest represents the JSON payload for search requests
@@ -124,7 +126,7 @@ func main() {
 	)
 
 	// Initialize service dependencies
-	deps, err := initializeDependencies(cfg, logger)
+	deps, err := initializeDependencies(cfg, logger, testMode)
 	if err != nil {
 		logger.Fatal("Failed to initialize dependencies", zap.Error(err))
 	}
@@ -204,7 +206,7 @@ func initializeLogger(cfg *config.Config) (*zap.Logger, error) {
 }
 
 // initializeDependencies initializes all service dependencies
-func initializeDependencies(cfg *config.Config, logger *zap.Logger) (*ServiceDependencies, error) {
+func initializeDependencies(cfg *config.Config, logger *zap.Logger, testMode bool) (*ServiceDependencies, error) {
 	logger.Info("Initializing service dependencies")
 
 	// Initialize metadata store
@@ -220,10 +222,16 @@ func initializeDependencies(cfg *config.Config, logger *zap.Logger) (*ServiceDep
 		logger,
 	)
 
-	// Initialize OpenAI client
-	openaiClient, err := openai.NewClient(cfg.OpenAI.APIKey, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize OpenAI client: %w", err)
+	// Initialize OpenAI client (skip in test mode)
+	var openaiClient *openai.Client
+	if testMode {
+		logger.Info("Skipping OpenAI client initialization in test mode")
+		openaiClient = nil
+	} else {
+		openaiClient, err = openai.NewClient(cfg.OpenAI.APIKey, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize OpenAI client: %w", err)
+		}
 	}
 
 	logger.Info("Service dependencies initialized successfully")
@@ -258,8 +266,17 @@ func setupHealthChecks(manager *health.Manager, deps *ServiceDependencies) {
 		}
 	})
 
-	// OpenAI health check
+	// OpenAI health check (skip in test mode)
 	manager.AddCheckerFunc("openai", func(ctx context.Context) health.CheckResult {
+		if deps.OpenAIClient == nil {
+			return health.CheckResult{
+				Status:    health.StatusHealthy,
+				Timestamp: time.Now(),
+				Metadata: map[string]interface{}{
+					"test_mode": true,
+				},
+			}
+		}
 		if _, err := deps.OpenAIClient.EmbedQuery(ctx, "health check"); err != nil {
 			return health.CheckResult{
 				Status:    health.StatusUnhealthy,
@@ -359,6 +376,14 @@ func applyMetadataFilters(searchReq SearchRequest, deps *ServiceDependencies) ([
 
 // generateQueryEmbedding generates an embedding for the search query
 func generateQueryEmbedding(ctx context.Context, query string, deps *ServiceDependencies) ([]float32, error) {
+	if deps.OpenAIClient == nil {
+		// Return a mock embedding for test mode
+		mockEmbedding := make([]float32, OpenAIEmbeddingDimension)
+		for i := range mockEmbedding {
+			mockEmbedding[i] = 0.1 // Simple mock values
+		}
+		return mockEmbedding, nil
+	}
 	return deps.OpenAIClient.EmbedQuery(ctx, query)
 }
 
