@@ -131,6 +131,39 @@ func NewClient(apiKey string, logger *zap.Logger) (*Client, error) {
 	return client, nil
 }
 
+// NewClientWithConfig creates a new OpenAI client with custom configuration (for testing)
+// This function skips validation and is primarily intended for testing with mock servers
+func NewClientWithConfig(config openai.ClientConfig, logger *zap.Logger) *Client {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	// Initialize resilience components
+	cbConfig := resilience.DefaultCircuitBreakerConfig("openai")
+	cbConfig.MaxFailures = resilience.DefaultMaxRetries
+	cbConfig.ResetTimeout = resilience.DefaultResetTimeoutSeconds * time.Second
+	circuitBreaker := resilience.NewCircuitBreaker(cbConfig, logger)
+
+	errorHandler := resilience.NewErrorHandler(logger)
+	timeoutManager := resilience.NewTimeoutManager(resilience.DefaultTimeoutConfig())
+
+	client := &Client{
+		client:         openai.NewClientWithConfig(config),
+		logger:         logger,
+		model:          EmbeddingModel,
+		circuitBreaker: circuitBreaker,
+		errorHandler:   errorHandler,
+		timeoutManager: timeoutManager,
+	}
+
+	logger.Debug("OpenAI client initialized with custom config",
+		zap.String("model", EmbeddingModel),
+		zap.String("base_url", config.BaseURL),
+	)
+
+	return client
+}
+
 // validateConnection validates the OpenAI API connection
 func (c *Client) validateConnection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), ValidationTimeout)

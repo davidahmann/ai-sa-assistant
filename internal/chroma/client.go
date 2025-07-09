@@ -85,6 +85,32 @@ func NewClientWithOptions(baseURL, collection string, logger *zap.Logger) *Clien
 	}
 }
 
+// NewClientForTesting creates a new ChromaDB client without circuit breaker for testing
+func NewClientForTesting(baseURL, collection string, logger *zap.Logger) *Client {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	// Initialize resilience components but with high thresholds for testing
+	cbConfig := resilience.DefaultCircuitBreakerConfig("chromadb-test")
+	cbConfig.MaxFailures = 1000 // Very high threshold to prevent opening during tests
+	cbConfig.ResetTimeout = 1 * time.Second
+	circuitBreaker := resilience.NewCircuitBreaker(cbConfig, logger)
+
+	errorHandler := resilience.NewErrorHandler(logger)
+	timeoutManager := resilience.NewTimeoutManager(resilience.DefaultTimeoutConfig())
+
+	return &Client{
+		baseURL:        baseURL,
+		collection:     collection,
+		httpClient:     &http.Client{Timeout: DefaultHTTPTimeout},
+		logger:         logger,
+		circuitBreaker: circuitBreaker,
+		errorHandler:   errorHandler,
+		timeoutManager: timeoutManager,
+	}
+}
+
 // Document represents a document in ChromaDB
 type Document struct {
 	ID       string            `json:"id"`
@@ -409,22 +435,15 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 			return resilience.NewInternalError("failed to create health check request", err)
 		}
 
-		resp, err := c.httpClient.Do(req)
+		resp, err := c.makeRequest(req)
 		if err != nil {
-			return c.errorHandler.WrapError(err, "checking ChromaDB health")
+			return err
 		}
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
 				c.logger.Debug("Failed to close response body", zap.Error(err))
 			}
 		}()
-
-		if resp.StatusCode != http.StatusOK {
-			return resilience.NewServiceUnavailableError(
-				"ChromaDB health check failed",
-				fmt.Errorf("status %d", resp.StatusCode),
-			)
-		}
 
 		c.logger.Info("Health check successful")
 		return nil
