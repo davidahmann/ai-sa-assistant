@@ -12,6 +12,7 @@ permissions:
   contents: read
   security-events: write
   actions: read
+  issues: write
 
 jobs:
   # Go vulnerability scanning
@@ -50,7 +51,7 @@ jobs:
           fi
 
       - name: Upload vulnerability report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: govulncheck-report
           path: govulncheck-results.json
@@ -85,7 +86,7 @@ jobs:
           go list -m all >> dependency-report.md
 
       - name: Upload dependency report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dependency-report
           path: dependency-report.md
@@ -108,7 +109,7 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          base: main
+          base: ${{ github.event.repository.default_branch }}
           head: HEAD
           extra_args: --debug --only-verified
 
@@ -126,7 +127,7 @@ jobs:
           go-version: '1.23.5'
 
       - name: Run gosec
-        uses: securecodewarrior/github-action-gosec@master
+        uses: securecodewarrior/github-action-gosec@v1
         with:
           args: '-fmt sarif -out gosec-results.sarif ./...'
 
@@ -186,7 +187,7 @@ jobs:
           severity-cutoff: high
 
       - name: Upload Grype scan results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: grype-results-${{ matrix.service }}
           path: anchore-reports/
@@ -221,7 +222,7 @@ jobs:
           done
 
       - name: Upload license report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: licenses-report
           path: licenses-report.txt
@@ -246,7 +247,7 @@ jobs:
           output-file: sbom.spdx.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: sbom.spdx.json
@@ -341,7 +342,7 @@ jobs:
     if: always()
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
 
       - name: Generate security report
         run: |
@@ -368,7 +369,7 @@ jobs:
           echo "- Implement security controls in Docker containers" >> security-report.md
 
       - name: Upload security report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: security-report
           path: security-report.md
