@@ -252,9 +252,7 @@ func TestAddDocuments(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err)
-				if tt.errorCheck != nil {
-					tt.errorCheck(t, err)
-				}
+				validateError(t, err, tt.errorCheck)
 			} else {
 				require.NoError(t, err)
 			}
@@ -352,9 +350,7 @@ func TestSearch(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err)
-				if tt.errorCheck != nil {
-					tt.errorCheck(t, err)
-				}
+				validateError(t, err, tt.errorCheck)
 			} else {
 				require.NoError(t, err)
 				assert.Len(t, results, tt.expectedCount)
@@ -449,9 +445,7 @@ func TestHealthCheck(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err)
-				if tt.errorCheck != nil {
-					tt.errorCheck(t, err)
-				}
+				validateError(t, err, tt.errorCheck)
 			} else {
 				require.NoError(t, err)
 			}
@@ -459,12 +453,10 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
-// TestCollectionOperations tests collection management operations
-func TestCollectionOperations(t *testing.T) {
+// TestCreateCollection tests collection creation
+func TestCreateCollection(t *testing.T) {
 	logger := zap.NewNop() // Use nop logger for faster tests
-
-	t.Run("CreateCollection", func(t *testing.T) {
-		tests := []struct {
+	tests := []struct {
 			name        string
 			collName    string
 			metadata    map[string]interface{}
@@ -518,10 +510,12 @@ func TestCollectionOperations(t *testing.T) {
 				}
 			})
 		}
-	})
+}
 
-	t.Run("GetCollection", func(t *testing.T) {
-		tests := []struct {
+// TestGetCollection tests collection retrieval
+func TestGetCollection(t *testing.T) {
+	logger := zap.NewNop() // Use nop logger for faster tests
+	tests := []struct {
 			name        string
 			collName    string
 			serverResp  func(w http.ResponseWriter, r *http.Request)
@@ -583,9 +577,12 @@ func TestCollectionOperations(t *testing.T) {
 			})
 		}
 	})
+}
 
-	t.Run("ListCollections", func(t *testing.T) {
-		tests := []struct {
+// TestListCollections tests collection listing
+func TestListCollections(t *testing.T) {
+	logger := zap.NewNop() // Use nop logger for faster tests
+	tests := []struct {
 			name        string
 			serverResp  func(w http.ResponseWriter, r *http.Request)
 			expectError bool
@@ -645,9 +642,12 @@ func TestCollectionOperations(t *testing.T) {
 			})
 		}
 	})
+}
 
-	t.Run("DeleteCollection", func(t *testing.T) {
-		tests := []struct {
+// TestDeleteCollection tests collection deletion
+func TestDeleteCollection(t *testing.T) {
+	logger := zap.NewNop() // Use nop logger for faster tests
+	tests := []struct {
 			name        string
 			collName    string
 			serverResp  func(w http.ResponseWriter, r *http.Request)
@@ -696,7 +696,13 @@ func TestCollectionOperations(t *testing.T) {
 				}
 			})
 		}
-	})
+}
+
+// validateError is a helper function to reduce nested if complexity
+func validateError(t *testing.T, err error, errorCheck func(*testing.T, error)) {
+	if errorCheck != nil {
+		errorCheck(t, err)
+	}
 }
 
 // TestErrorHandling tests various error scenarios

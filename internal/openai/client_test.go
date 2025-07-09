@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/sashabaranov/go-openai"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -431,35 +432,37 @@ func TestErrorHandling(t *testing.T) {
 			_, err := c.EmbedQuery(ctx, "test")
 
 			if tt.expectErr {
-				if err == nil {
-					t.Error("Expected error")
-					return
-				}
-				if tt.retryable {
-					// For retryable errors, we expect user-friendly messages after retries are exhausted
-					expectedMessages := []string{
-						"rate limit exceeded",
-						"too many requests",
-						"service temporarily unavailable",
-						"service is temporarily unavailable",
-						"Authentication failed",
-						"operation failed after",
-					}
-					found := false
-					for _, msg := range expectedMessages {
-						if strings.Contains(strings.ToLower(err.Error()), strings.ToLower(msg)) {
-							found = true
-							break
-						}
-					}
-					if !found {
-						t.Errorf("Expected user-friendly error message for retryable error, got: %v", err)
-					}
-				}
+				require.Error(t, err)
+				validateEmbedError(t, err, tt.retryable)
 			} else if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+// validateEmbedError is a helper function to reduce nested if complexity
+func validateEmbedError(t *testing.T, err error, retryable bool) {
+	if retryable {
+		// For retryable errors, we expect user-friendly messages after retries are exhausted
+		expectedMessages := []string{
+			"rate limit exceeded",
+			"too many requests",
+			"service temporarily unavailable",
+			"service is temporarily unavailable",
+			"Authentication failed",
+			"operation failed after",
+		}
+		found := false
+		for _, msg := range expectedMessages {
+			if strings.Contains(strings.ToLower(err.Error()), strings.ToLower(msg)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected user-friendly error message for retryable error, got: %v", err)
+		}
 	}
 }
 
