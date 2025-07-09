@@ -457,243 +457,243 @@ func TestHealthCheck(t *testing.T) {
 func TestCreateCollection(t *testing.T) {
 	logger := zap.NewNop() // Use nop logger for faster tests
 	tests := []struct {
-			name        string
-			collName    string
-			metadata    map[string]interface{}
-			serverResp  func(w http.ResponseWriter, r *http.Request)
-			expectError bool
-		}{
-			{
-				name:     "successful creation",
-				collName: "new-collection",
-				metadata: map[string]interface{}{"created": "2024-01-01"},
-				serverResp: func(w http.ResponseWriter, r *http.Request) {
-					assert.Equal(t, "POST", r.Method)
-					assert.Equal(t, "/api/v1/collections", r.URL.Path)
-					assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		name        string
+		collName    string
+		metadata    map[string]interface{}
+		serverResp  func(w http.ResponseWriter, r *http.Request)
+		expectError bool
+	}{
+		{
+			name:     "successful creation",
+			collName: "new-collection",
+			metadata: map[string]interface{}{"created": "2024-01-01"},
+			serverResp: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "POST", r.Method)
+				assert.Equal(t, "/api/v1/collections", r.URL.Path)
+				assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write([]byte(`{"name": "new-collection", "id": "new-collection-id"}`))
-				},
-				expectError: false,
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"name": "new-collection", "id": "new-collection-id"}`))
 			},
-			{
-				name:     "creation error",
-				collName: "existing-collection",
-				metadata: nil,
-				serverResp: func(w http.ResponseWriter, _ *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusBadRequest)
-					_, _ = w.Write([]byte(`{"detail": "Collection already exists", "type": "invalid_request"}`))
-				},
-				expectError: true,
+			expectError: false,
+		},
+		{
+			name:     "creation error",
+			collName: "existing-collection",
+			metadata: nil,
+			serverResp: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"detail": "Collection already exists", "type": "invalid_request"}`))
 			},
-		}
+			expectError: true,
+		},
+	}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
-					"POST:/api/v1/collections": tt.serverResp,
-				})
-				defer server.Close()
-
-				client := NewClientForTesting(server.URL, "test-collection", logger)
-				ctx := context.Background()
-
-				err := client.CreateCollection(ctx, tt.collName, tt.metadata)
-
-				if tt.expectError {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
-				}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
+				"POST:/api/v1/collections": tt.serverResp,
 			})
-		}
+			defer server.Close()
+
+			client := NewClientForTesting(server.URL, "test-collection", logger)
+			ctx := context.Background()
+
+			err := client.CreateCollection(ctx, tt.collName, tt.metadata)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 // TestGetCollection tests collection retrieval
 func TestGetCollection(t *testing.T) {
 	logger := zap.NewNop() // Use nop logger for faster tests
 	tests := []struct {
-			name        string
-			collName    string
-			serverResp  func(w http.ResponseWriter, r *http.Request)
-			expectError bool
-			validate    func(t *testing.T, collection *Collection)
-		}{
-			{
-				name:     "successful get",
-				collName: "test-collection",
-				serverResp: func(w http.ResponseWriter, r *http.Request) {
-					assert.Equal(t, "GET", r.Method)
-					assert.Equal(t, "/api/v1/collections/test-collection", r.URL.Path)
+		name        string
+		collName    string
+		serverResp  func(w http.ResponseWriter, r *http.Request)
+		expectError bool
+		validate    func(t *testing.T, collection *Collection)
+	}{
+		{
+			name:     "successful get",
+			collName: "test-collection",
+			serverResp: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "GET", r.Method)
+				assert.Equal(t, "/api/v1/collections/test-collection", r.URL.Path)
 
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write([]byte(createMockCollectionResponse()))
-				},
-				expectError: false,
-				validate: func(t *testing.T, collection *Collection) {
-					assert.NotNil(t, collection)
-					assert.Equal(t, "test-collection", collection.Name)
-					assert.Equal(t, "test-collection-id", collection.ID)
-					assert.NotNil(t, collection.Metadata)
-				},
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(createMockCollectionResponse()))
 			},
-			{
-				name:     "collection not found",
-				collName: "nonexistent-collection",
-				serverResp: func(w http.ResponseWriter, _ *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusNotFound)
-					_, _ = w.Write([]byte(`{"detail": "Collection not found", "type": "not_found"}`))
-				},
-				expectError: true,
+			expectError: false,
+			validate: func(t *testing.T, collection *Collection) {
+				assert.NotNil(t, collection)
+				assert.Equal(t, "test-collection", collection.Name)
+				assert.Equal(t, "test-collection-id", collection.ID)
+				assert.NotNil(t, collection.Metadata)
 			},
-		}
+		},
+		{
+			name:     "collection not found",
+			collName: "nonexistent-collection",
+			serverResp: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"detail": "Collection not found", "type": "not_found"}`))
+			},
+			expectError: true,
+		},
+	}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
-					fmt.Sprintf("GET:/api/v1/collections/%s", tt.collName): tt.serverResp,
-				})
-				defer server.Close()
-
-				client := NewClientForTesting(server.URL, "test-collection", logger)
-				ctx := context.Background()
-
-				collection, err := client.GetCollection(ctx, tt.collName)
-
-				if tt.expectError {
-					require.Error(t, err)
-					assert.Nil(t, collection)
-				} else {
-					require.NoError(t, err)
-					if tt.validate != nil {
-						tt.validate(t, collection)
-					}
-				}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
+				fmt.Sprintf("GET:/api/v1/collections/%s", tt.collName): tt.serverResp,
 			})
-		}
+			defer server.Close()
+
+			client := NewClientForTesting(server.URL, "test-collection", logger)
+			ctx := context.Background()
+
+			collection, err := client.GetCollection(ctx, tt.collName)
+
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Nil(t, collection)
+			} else {
+				require.NoError(t, err)
+				if tt.validate != nil {
+					tt.validate(t, collection)
+				}
+			}
+		})
+	}
 }
 
 // TestListCollections tests collection listing
 func TestListCollections(t *testing.T) {
 	logger := zap.NewNop() // Use nop logger for faster tests
 	tests := []struct {
-			name        string
-			serverResp  func(w http.ResponseWriter, r *http.Request)
-			expectError bool
-			validate    func(t *testing.T, collections []Collection)
-		}{
-			{
-				name: "successful list",
-				serverResp: func(w http.ResponseWriter, r *http.Request) {
-					assert.Equal(t, "GET", r.Method)
-					assert.Equal(t, "/api/v1/collections", r.URL.Path)
+		name        string
+		serverResp  func(w http.ResponseWriter, r *http.Request)
+		expectError bool
+		validate    func(t *testing.T, collections []Collection)
+	}{
+		{
+			name: "successful list",
+			serverResp: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "GET", r.Method)
+				assert.Equal(t, "/api/v1/collections", r.URL.Path)
 
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write([]byte(createMockCollectionsResponse()))
-				},
-				expectError: false,
-				validate: func(t *testing.T, collections []Collection) {
-					assert.Len(t, collections, 2)
-					assert.Equal(t, "collection1", collections[0].Name)
-					assert.Equal(t, "collection2", collections[1].Name)
-				},
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(createMockCollectionsResponse()))
 			},
-			{
-				name: "empty list",
-				serverResp: func(w http.ResponseWriter, _ *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write([]byte(`[]`))
-				},
-				expectError: false,
-				validate: func(t *testing.T, collections []Collection) {
-					assert.Len(t, collections, 0)
-				},
+			expectError: false,
+			validate: func(t *testing.T, collections []Collection) {
+				assert.Len(t, collections, 2)
+				assert.Equal(t, "collection1", collections[0].Name)
+				assert.Equal(t, "collection2", collections[1].Name)
 			},
-		}
+		},
+		{
+			name: "empty list",
+			serverResp: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`[]`))
+			},
+			expectError: false,
+			validate: func(t *testing.T, collections []Collection) {
+				assert.Len(t, collections, 0)
+			},
+		},
+	}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
-					"GET:/api/v1/collections": tt.serverResp,
-				})
-				defer server.Close()
-
-				client := NewClientForTesting(server.URL, "test-collection", logger)
-				ctx := context.Background()
-
-				collections, err := client.ListCollections(ctx)
-
-				if tt.expectError {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
-					if tt.validate != nil {
-						tt.validate(t, collections)
-					}
-				}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
+				"GET:/api/v1/collections": tt.serverResp,
 			})
-		}
+			defer server.Close()
+
+			client := NewClientForTesting(server.URL, "test-collection", logger)
+			ctx := context.Background()
+
+			collections, err := client.ListCollections(ctx)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				if tt.validate != nil {
+					tt.validate(t, collections)
+				}
+			}
+		})
+	}
 }
 
 // TestDeleteCollection tests collection deletion
 func TestDeleteCollection(t *testing.T) {
 	logger := zap.NewNop() // Use nop logger for faster tests
 	tests := []struct {
-			name        string
-			collName    string
-			serverResp  func(w http.ResponseWriter, r *http.Request)
-			expectError bool
-		}{
-			{
-				name:     "successful deletion",
-				collName: "test-collection",
-				serverResp: func(w http.ResponseWriter, r *http.Request) {
-					assert.Equal(t, "DELETE", r.Method)
-					assert.Equal(t, "/api/v1/collections/test-collection", r.URL.Path)
+		name        string
+		collName    string
+		serverResp  func(w http.ResponseWriter, r *http.Request)
+		expectError bool
+	}{
+		{
+			name:     "successful deletion",
+			collName: "test-collection",
+			serverResp: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "DELETE", r.Method)
+				assert.Equal(t, "/api/v1/collections/test-collection", r.URL.Path)
 
-					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write([]byte(`{"success": true}`))
-				},
-				expectError: false,
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"success": true}`))
 			},
-			{
-				name:     "collection not found",
-				collName: "nonexistent-collection",
-				serverResp: func(w http.ResponseWriter, _ *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusNotFound)
-					_, _ = w.Write([]byte(`{"detail": "Collection not found", "type": "not_found"}`))
-				},
-				expectError: true,
+			expectError: false,
+		},
+		{
+			name:     "collection not found",
+			collName: "nonexistent-collection",
+			serverResp: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"detail": "Collection not found", "type": "not_found"}`))
 			},
-		}
+			expectError: true,
+		},
+	}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
-					fmt.Sprintf("DELETE:/api/v1/collections/%s", tt.collName): tt.serverResp,
-				})
-				defer server.Close()
-
-				client := NewClientForTesting(server.URL, "test-collection", logger)
-				ctx := context.Background()
-
-				err := client.DeleteCollection(ctx, tt.collName)
-
-				if tt.expectError {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
-				}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
+				fmt.Sprintf("DELETE:/api/v1/collections/%s", tt.collName): tt.serverResp,
 			})
-		}
+			defer server.Close()
+
+			client := NewClientForTesting(server.URL, "test-collection", logger)
+			ctx := context.Background()
+
+			err := client.DeleteCollection(ctx, tt.collName)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 // validateError is a helper function to reduce nested if complexity
