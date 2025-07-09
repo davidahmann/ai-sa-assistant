@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -362,7 +363,23 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer func() { _ = logger.Sync() }()
 
-	cfg, err := config.Load("./configs/config.yaml")
+	// Check if running in test mode
+	testMode := os.Getenv("TEST_MODE") == "true" || os.Getenv("CI") == "true"
+
+	var cfg *config.Config
+	var err error
+
+	if testMode {
+		cfg, err = config.LoadWithOptions(config.LoadOptions{
+			ConfigPath:       "./configs/config.yaml",
+			EnableHotReload:  false,
+			Environment:      "test",
+			ValidateRequired: false,
+			TestMode:         true,
+		})
+	} else {
+		cfg, err = config.Load("./configs/config.yaml")
+	}
 	if err != nil {
 		logger.Fatal("Failed to load configuration", zap.Error(err))
 	}

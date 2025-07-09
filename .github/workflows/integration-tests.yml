@@ -52,24 +52,24 @@ jobs:
       run: |
         echo "Building services..."
         mkdir -p bin
-        
+
         # Build retrieve service (needs CGO for SQLite)
         echo "Building retrieve service..."
         CGO_ENABLED=1 go build -o bin/retrieve ./cmd/retrieve
-        
+
         # Build other services
         echo "Building websearch service..."
         CGO_ENABLED=0 go build -o bin/websearch ./cmd/websearch
-        
+
         echo "Building synthesize service..."
         CGO_ENABLED=0 go build -o bin/synthesize ./cmd/synthesize
-        
+
         echo "Building teamsbot service..."
         CGO_ENABLED=0 go build -o bin/teamsbot ./cmd/teamsbot
-        
+
         # Make binaries executable
         chmod +x bin/*
-        
+
         echo "Build complete. Binary sizes:"
         ls -la bin/
 
@@ -77,13 +77,26 @@ jobs:
       run: |
         mkdir -p configs
         mkdir -p data
-        
+
         # Create metadata database directory
         touch data/metadata.db
-        
+
+        # Use real secrets if available, otherwise use mock values
+        OPENAI_KEY="${{ secrets.OPENAI_API_KEY }}"
+        TEAMS_WEBHOOK="${{ secrets.TEAMS_WEBHOOK_URL }}"
+
+        # Set defaults if secrets are not available
+        if [ -z "$OPENAI_KEY" ]; then
+          OPENAI_KEY="test-key-for-ci-fallback"
+        fi
+
+        if [ -z "$TEAMS_WEBHOOK" ]; then
+          TEAMS_WEBHOOK="https://webhook.example.com/test"
+        fi
+
         cat > configs/config.yaml << EOF
         openai:
-          api_key: "test-key-for-ci"
+          api_key: "$OPENAI_KEY"
           model: "gpt-4"
           embedding_model: "text-embedding-3-small"
 
@@ -105,13 +118,13 @@ jobs:
             port: 8080
 
         teams:
-          webhook_url: "https://webhook.example.com/test"
+          webhook_url: "$TEAMS_WEBHOOK"
 
         logging:
           level: "info"
           format: "json"
         EOF
-        
+
         echo "Configuration created:"
         cat configs/config.yaml
 
@@ -119,57 +132,59 @@ jobs:
       run: |
         echo "Starting services..."
         mkdir -p logs
-        
+
         # Start retrieve service
         echo "Starting retrieve service..."
         ./bin/retrieve --config=configs/config.yaml > logs/retrieve.log 2>&1 &
         RETRIEVE_PID=$!
         echo "Retrieve service started with PID: $RETRIEVE_PID"
-        
-        # Start websearch service  
+
+        # Start websearch service
         echo "Starting websearch service..."
         ./bin/websearch --config=configs/config.yaml > logs/websearch.log 2>&1 &
         WEBSEARCH_PID=$!
         echo "Websearch service started with PID: $WEBSEARCH_PID"
-        
+
         # Start synthesize service
         echo "Starting synthesize service..."
         ./bin/synthesize --config=configs/config.yaml > logs/synthesize.log 2>&1 &
         SYNTHESIZE_PID=$!
         echo "Synthesize service started with PID: $SYNTHESIZE_PID"
-        
+
         # Start teamsbot service
         echo "Starting teamsbot service..."
         ./bin/teamsbot --config=configs/config.yaml > logs/teamsbot.log 2>&1 &
         TEAMSBOT_PID=$!
         echo "Teamsbot service started with PID: $TEAMSBOT_PID"
-        
+
         # Give services time to start
         sleep 15
-        
+
         # Check if processes are still running
         echo "Checking service processes..."
         ps aux | grep -E "(retrieve|websearch|synthesize|teamsbot)" | grep -v grep || echo "Some services may not be running"
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        TEST_MODE: "true"
+        CONFIG_PATH: configs/config.yaml
 
     - name: Wait for ChromaDB to be ready
       run: |
         echo "Waiting for ChromaDB to be ready..."
         timeout 120 bash -c 'until curl -f http://localhost:8000/api/v1/heartbeat; do echo "ChromaDB not ready yet..."; sleep 5; done'
         echo "ChromaDB is ready!"
-        
+
     - name: Wait for services to be ready
       run: |
         echo "Waiting for services to be ready..."
-        
+
         # Function to check service and show logs on failure
         check_service() {
           local service_name=$1
           local port=$2
           local log_file=$3
-          
+
           echo "Checking $service_name on port $port..."
           if timeout 60 bash -c "until curl -f http://localhost:$port/health; do echo '$service_name not ready...'; sleep 2; done"; then
             echo "$service_name is ready!"
@@ -182,15 +197,15 @@ jobs:
             return 1
           fi
         }
-        
+
         # Check each service
         FAILED_SERVICES=()
-        
+
         check_service "Retrieve" 8081 "logs/retrieve.log" || FAILED_SERVICES+=("retrieve")
-        check_service "Synthesize" 8082 "logs/synthesize.log" || FAILED_SERVICES+=("synthesize") 
+        check_service "Synthesize" 8082 "logs/synthesize.log" || FAILED_SERVICES+=("synthesize")
         check_service "Websearch" 8083 "logs/websearch.log" || FAILED_SERVICES+=("websearch")
         check_service "Teamsbot" 8080 "logs/teamsbot.log" || FAILED_SERVICES+=("teamsbot")
-        
+
         if [ ${#FAILED_SERVICES[@]} -gt 0 ]; then
           echo "❌ Failed services: ${FAILED_SERVICES[*]}"
           echo "=== Process list ==="
@@ -198,7 +213,7 @@ jobs:
           echo "==================="
           exit 1
         fi
-        
+
         echo "✅ All services are ready!"
 
     - name: Run integration tests
@@ -211,6 +226,7 @@ jobs:
         TEST_CHROMADB_URL: "http://localhost:8000"
         TEST_TIMEOUT: "60s"
         TEST_VERBOSE: "true"
+        TEST_MODE: "true"
 
     - name: Run demo scenario tests
       run: |
@@ -218,6 +234,7 @@ jobs:
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        TEST_MODE: "true"
 
     - name: Run performance tests
       run: |
@@ -225,11 +242,14 @@ jobs:
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        TEST_MODE: "true"
 
     - name: Generate test coverage report
       run: |
         go test -v -tags=integration -coverprofile=coverage.out ./tests/integration/...
         go tool cover -html=coverage.out -o coverage.html
+      env:
+        TEST_MODE: "true"
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -251,23 +271,23 @@ jobs:
       if: always()
       run: |
         mkdir -p test-artifacts
-        
+
         # Create coverage.html if it doesn't exist
         if [ ! -f coverage.html ]; then
           echo "<html><body><h1>Coverage report not generated</h1></body></html>" > coverage.html
         fi
-        
+
         # Create test_metadata.db if it doesn't exist
         if [ ! -f test_metadata.db ]; then
           touch test_metadata.db
         fi
-        
+
         # Create logs directory if it doesn't exist
         if [ ! -d logs ]; then
           mkdir -p logs
           echo "No logs generated during test run" > logs/test.log
         fi
-        
+
         # Copy files to artifacts directory
         cp coverage.html test-artifacts/ || true
         cp test_metadata.db test-artifacts/ || true

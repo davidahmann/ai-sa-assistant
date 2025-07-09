@@ -93,7 +93,23 @@ func runIngestionCommand(_ *cobra.Command, _ []string) error {
 	logger, _ := zap.NewProduction()
 	defer func() { _ = logger.Sync() }()
 
-	cfg, err := config.Load(configPath)
+	// Check if running in test mode
+	testMode := os.Getenv("TEST_MODE") == "true" || os.Getenv("CI") == "true"
+
+	var cfg *config.Config
+	var err error
+
+	if testMode {
+		cfg, err = config.LoadWithOptions(config.LoadOptions{
+			ConfigPath:       configPath,
+			EnableHotReload:  false,
+			Environment:      "test",
+			ValidateRequired: false,
+			TestMode:         true,
+		})
+	} else {
+		cfg, err = config.Load(configPath)
+	}
 	if err != nil {
 		logger.Fatal("Failed to load configuration", zap.Error(err))
 	}

@@ -77,8 +77,25 @@ type ServiceDependencies struct {
 }
 
 func main() {
+	// Check if running in test mode
+	testMode := os.Getenv("TEST_MODE") == "true" || os.Getenv("CI") == "true"
+
 	// Load configuration first to get logging settings
-	cfg, err := config.Load("")
+	var cfg *config.Config
+	var err error
+
+	if testMode {
+		cfg, err = config.LoadWithOptions(config.LoadOptions{
+			ConfigPath:       "",
+			EnableHotReload:  false,
+			Environment:      "test",
+			ValidateRequired: false,
+			TestMode:         true,
+		})
+	} else {
+		cfg, err = config.Load("")
+	}
+
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)

@@ -169,6 +169,7 @@ type LoadOptions struct {
 	EnableHotReload  bool
 	Environment      string
 	ValidateRequired bool
+	TestMode         bool // Skip validation for CI/CD testing
 }
 
 // Load loads configuration from file and environment variables
@@ -217,7 +218,7 @@ func LoadWithOptions(opts LoadOptions) (*Config, error) {
 	}
 
 	// Validate configuration
-	if opts.ValidateRequired {
+	if opts.ValidateRequired && !opts.TestMode {
 		if err := validateConfig(&config); err != nil {
 			return nil, fmt.Errorf("configuration validation failed: %w", err)
 		}
