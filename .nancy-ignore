@@ -1,12 +1,9 @@
-# Nancy vulnerability exceptions
-# Add CVE IDs here that should be ignored during dependency scanning
+# Nancy ignore file for dependency vulnerabilities
+# This file lists vulnerabilities that are acknowledged but not fixed
+# Each line should contain a vulnerability ID and optional comment
 
-# Example (remove these lines in production):
-# CVE-2023-1234  # Temporary exception for dependency X until version Y is available
-# CVE-2023-5678  # False positive for dependency Z in our specific use case
+# Add any specific CVEs to ignore here if needed
+# CVE-2023-1234 # Reason for ignoring
 
-# Instructions:
-# 1. Only add exceptions with proper justification
-# 2. Include expiration dates for temporary exceptions
-# 3. Review and update regularly
-# 4. Document mitigation strategies for each exception
+# Note: This is a demo project, some vulnerabilities may be acceptable
+# for demonstration purposes but should be addressed in production

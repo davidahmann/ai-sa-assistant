@@ -10,11 +10,15 @@ COPY . .
 WORKDIR /app/cmd/ingest
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o /app/ingest .
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates sqlite
-WORKDIR /root/
+FROM alpine:3.19
+RUN apk --no-cache add ca-certificates sqlite && \
+    addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup
 
-COPY --from=builder /app/ingest .
-COPY --from=builder /app/configs/ ./configs/
+WORKDIR /app
+USER appuser
+
+COPY --from=builder --chown=appuser:appgroup /app/ingest ./
+COPY --from=builder --chown=appuser:appgroup /app/configs/ ./configs/
 
 CMD ["./ingest"]

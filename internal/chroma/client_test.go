@@ -576,7 +576,6 @@ func TestGetCollection(t *testing.T) {
 				}
 			})
 		}
-	})
 }
 
 // TestListCollections tests collection listing
@@ -641,7 +640,6 @@ func TestListCollections(t *testing.T) {
 				}
 			})
 		}
-	})
 }
 
 // TestDeleteCollection tests collection deletion

@@ -8,12 +8,16 @@ COPY . .
 WORKDIR /app/cmd/synthesize
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/synthesize .
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
+FROM alpine:3.19
+RUN apk --no-cache add ca-certificates && \
+    addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup
 
-COPY --from=builder /app/synthesize .
-COPY --from=builder /app/configs/ ./configs/
+WORKDIR /app
+USER appuser
+
+COPY --from=builder --chown=appuser:appgroup /app/synthesize ./
+COPY --from=builder --chown=appuser:appgroup /app/configs/ ./configs/
 
 EXPOSE 8080
 CMD ["./synthesize"]
