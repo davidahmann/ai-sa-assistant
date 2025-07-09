@@ -27,6 +27,8 @@ import (
 
 // TestServiceHealthEndpoints tests that all services respond to health checks
 func TestServiceHealthEndpoints(t *testing.T) {
+	skipIfNoServices(t)
+
 	services := map[string]string{
 		"retrieve":   "http://localhost:8081/health",
 		"websearch":  "http://localhost:8083/health",
@@ -64,6 +66,8 @@ func TestServiceHealthEndpoints(t *testing.T) {
 
 // TestServiceInteraction tests basic interaction between services
 func TestServiceInteraction(t *testing.T) {
+	skipIfNoServices(t)
+
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}

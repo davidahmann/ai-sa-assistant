@@ -1,0 +1,101 @@
+{
+  "text": "@SA-Assistant Summarize HIPAA and GDPR encryption, logging, and policy enforcement requirements for our AWS landing zone, and include any recent AWS compliance feature updates.",
+  "type": "message",
+  "user": {
+    "id": "e2e-test-user",
+    "name": "E2E Test User"
+  },
+  "channel": {
+    "id": "e2e-test-channel",
+    "name": "E2E Test Channel"
+  },
+  "timestamp": "2025-01-01T00:00:00Z",
+  "expected_response": {
+    "contains_keywords": [
+      "HIPAA",
+      "GDPR",
+      "compliance",
+      "encryption",
+      "logging",
+      "policy enforcement",
+      "AWS",
+      "landing zone",
+      "security",
+      "audit"
+    ],
+    "contains_code_snippets": [
+      "aws",
+      "cli",
+      "cloudformation",
+      "terraform"
+    ],
+    "contains_diagram": true,
+    "diagram_keywords": [
+      "compliance",
+      "encryption",
+      "logging",
+      "monitoring",
+      "AWS",
+      "security"
+    ],
+    "expected_sources": [
+      "security-compliance",
+      "aws-compliance",
+      "aws-security"
+    ],
+    "max_response_time_seconds": 30,
+    "min_response_length": 500,
+    "web_search_triggers": [
+      "recent",
+      "AWS compliance feature updates"
+    ],
+    "security_compliance_specific_content": {
+      "hipaa_keywords": [
+        "HIPAA",
+        "PHI",
+        "protected health information",
+        "encryption at rest",
+        "encryption in transit",
+        "access controls",
+        "audit logging"
+      ],
+      "gdpr_keywords": [
+        "GDPR",
+        "personal data",
+        "data protection",
+        "privacy",
+        "consent",
+        "data subject rights",
+        "data processing"
+      ],
+      "aws_security_keywords": [
+        "CloudTrail",
+        "Config",
+        "GuardDuty",
+        "Security Hub",
+        "KMS",
+        "IAM",
+        "VPC",
+        "WAF"
+      ],
+      "compliance_implementation_keywords": [
+        "landing zone",
+        "baseline",
+        "controls",
+        "governance",
+        "monitoring",
+        "incident response",
+        "remediation"
+      ],
+      "executive_checklist_keywords": [
+        "compliance status",
+        "action items",
+        "checklist",
+        "requirements",
+        "implementation",
+        "timeline",
+        "responsible party"
+      ]
+    }
+  }
+}

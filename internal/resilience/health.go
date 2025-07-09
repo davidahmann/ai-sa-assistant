@@ -281,10 +281,14 @@ func (hm *HealthMonitor) CreateHealthCheckHandler() http.HandlerFunc {
 		// Set appropriate status code
 		statusCode := http.StatusOK
 		switch report.Status {
+		case HealthStatusHealthy:
+			statusCode = http.StatusOK
 		case HealthStatusUnhealthy:
 			statusCode = http.StatusServiceUnavailable
 		case HealthStatusDegraded:
 			statusCode = http.StatusOK // Still serving requests
+		case HealthStatusUnknown:
+			statusCode = http.StatusServiceUnavailable // Treat unknown as unhealthy
 		}
 
 		// Write response
@@ -308,22 +312,22 @@ func (hm *HealthMonitor) CreateReadinessHandler() http.HandlerFunc {
 		// Readiness check should fail if service is unhealthy
 		if report.Status == HealthStatusUnhealthy {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, "Service not ready: %v", report.Errors)
+			_, _ = fmt.Fprintf(w, "Service not ready: %v", report.Errors)
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "Ready")
+		_, _ = fmt.Fprint(w, "Ready")
 	}
 }
 
 // CreateLivenessHandler creates an HTTP handler for liveness checks
 func (hm *HealthMonitor) CreateLivenessHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		// Liveness check should only fail if the service is completely broken
 		// For now, we'll always return healthy if we can respond
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "Alive")
+		_, _ = fmt.Fprint(w, "Alive")
 	}
 }
 
@@ -349,7 +353,7 @@ func HTTPHealthCheck(url string, timeout time.Duration) HealthCheckFunc {
 				Message: fmt.Sprintf("Request failed: %v", err),
 			}
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return HealthCheckResult{

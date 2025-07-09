@@ -67,8 +67,8 @@ func NewClientWithOptions(baseURL, collection string, logger *zap.Logger) *Clien
 
 	// Initialize resilience components
 	cbConfig := resilience.DefaultCircuitBreakerConfig("chromadb")
-	cbConfig.MaxFailures = 3
-	cbConfig.ResetTimeout = 60 * time.Second
+	cbConfig.MaxFailures = resilience.DefaultMaxRetries
+	cbConfig.ResetTimeout = resilience.DefaultResetTimeoutSeconds * time.Second
 	circuitBreaker := resilience.NewCircuitBreaker(cbConfig, logger)
 
 	errorHandler := resilience.NewErrorHandler(logger)
@@ -146,7 +146,11 @@ func (e Error) Error() string {
 }
 
 // executeWithResilience executes a function with circuit breaker, timeout, and retry logic
-func (c *Client) executeWithResilience(ctx context.Context, operation func(context.Context) error, operationName string) error {
+func (c *Client) executeWithResilience(
+	ctx context.Context,
+	operation func(context.Context) error,
+	_ string,
+) error {
 	return c.circuitBreaker.Execute(ctx, func(ctx context.Context) error {
 		return c.timeoutManager.Execute(ctx, func(ctx context.Context) error {
 			return resilience.SimpleRetry(ctx, c.logger, operation)
@@ -267,7 +271,12 @@ func (c *Client) AddDocuments(ctx context.Context, documents []Document, embeddi
 }
 
 // Search performs a vector search in ChromaDB
-func (c *Client) Search(ctx context.Context, queryEmbedding []float32, nResults int, docIDs []string) ([]SearchResult, error) {
+func (c *Client) Search(
+	ctx context.Context,
+	queryEmbedding []float32,
+	nResults int,
+	docIDs []string,
+) ([]SearchResult, error) {
 	c.logger.Info("Performing vector search",
 		zap.String("collection", c.collection),
 		zap.Int("n_results", nResults),
@@ -411,7 +420,10 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 		}()
 
 		if resp.StatusCode != http.StatusOK {
-			return resilience.NewServiceUnavailableError("ChromaDB health check failed", fmt.Errorf("status %d", resp.StatusCode))
+			return resilience.NewServiceUnavailableError(
+				"ChromaDB health check failed",
+				fmt.Errorf("status %d", resp.StatusCode),
+			)
 		}
 
 		c.logger.Info("Health check successful")

@@ -322,7 +322,7 @@ func TestErrorHandler_WriteErrorResponse(t *testing.T) {
 	}
 }
 
-func TestErrorHandler_LogError(t *testing.T) {
+func TestErrorHandler_LogError(_ *testing.T) {
 	// This test mainly verifies that LogError doesn't panic
 	// In a real scenario, you'd want to use a test logger to verify log content
 	logger := zap.NewNop()

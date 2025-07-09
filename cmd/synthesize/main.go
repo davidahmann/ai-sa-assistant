@@ -199,7 +199,7 @@ func setupHealthChecks(manager *health.Manager, cfg *config.Config, openaiClient
 	})
 
 	// Synthesis configuration health check
-	manager.AddCheckerFunc("synthesis_config", func(ctx context.Context) health.CheckResult {
+	manager.AddCheckerFunc("synthesis_config", func(_ context.Context) health.CheckResult {
 		// Validate synthesis configuration
 		if cfg.Synthesis.Model == "" {
 			return health.CheckResult{

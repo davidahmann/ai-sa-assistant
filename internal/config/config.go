@@ -87,7 +87,8 @@ type OpenAIConfig struct {
 
 // TeamsConfig contains Microsoft Teams configuration
 type TeamsConfig struct {
-	WebhookURL string `mapstructure:"webhook_url"`
+	WebhookURL    string `mapstructure:"webhook_url"`
+	WebhookSecret string `mapstructure:"webhook_secret"`
 }
 
 // ServicesConfig contains internal service URLs
@@ -326,14 +327,15 @@ func setConfigFile(v *viper.Viper, configPath string) error {
 func setEnvironmentMappings(v *viper.Viper) {
 	// Map common environment variables
 	envMappings := map[string]string{
-		"OPENAI_API_KEY":    "openai.apikey", // pragma: allowlist secret
-		"OPENAI_ENDPOINT":   "openai.endpoint",
-		"TEAMS_WEBHOOK_URL": "teams.webhook_url",
-		"CHROMA_URL":        "chroma.url",
-		"METADATA_DB_PATH":  "metadata.db_path",
-		"LOG_LEVEL":         "logging.level",
-		"LOG_FORMAT":        "logging.format",
-		"LOG_OUTPUT":        "logging.output",
+		"OPENAI_API_KEY":       "openai.apikey", // pragma: allowlist secret
+		"OPENAI_ENDPOINT":      "openai.endpoint",
+		"TEAMS_WEBHOOK_URL":    "teams.webhook_url",
+		"TEAMS_WEBHOOK_SECRET": "teams.webhook_secret", // pragma: allowlist secret
+		"CHROMA_URL":           "chroma.url",
+		"METADATA_DB_PATH":     "metadata.db_path",
+		"LOG_LEVEL":            "logging.level",
+		"LOG_FORMAT":           "logging.format",
+		"LOG_OUTPUT":           "logging.output",
 	}
 
 	for envVar, configKey := range envMappings {
@@ -514,6 +516,9 @@ func (c *Config) MaskSensitiveValues() *Config {
 	}
 	if masked.Teams.WebhookURL != "" {
 		masked.Teams.WebhookURL = maskValue(masked.Teams.WebhookURL)
+	}
+	if masked.Teams.WebhookSecret != "" {
+		masked.Teams.WebhookSecret = maskValue(masked.Teams.WebhookSecret)
 	}
 
 	return &masked

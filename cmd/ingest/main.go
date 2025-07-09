@@ -139,12 +139,12 @@ func runIngestionPipeline(
 	chromaClient := chroma.NewClient(cfg.Chroma.URL, cfg.Chroma.CollectionName)
 
 	// Health check ChromaDB
-	if err := chromaClient.HealthCheck(); err != nil {
+	if err := chromaClient.HealthCheck(ctx); err != nil {
 		return nil, fmt.Errorf("ChromaDB health check failed: %w", err)
 	}
 
 	// Create collection if it doesn't exist
-	if err := chromaClient.CreateCollection(cfg.Chroma.CollectionName, map[string]interface{}{
+	if err := chromaClient.CreateCollection(ctx, cfg.Chroma.CollectionName, map[string]interface{}{
 		"description": "AI SA Assistant document embeddings",
 		"created_at":  time.Now().Format(time.RFC3339),
 	}); err != nil {
@@ -336,7 +336,7 @@ func (p *IngestionPipeline) processDocument(
 	}
 
 	// Store in ChromaDB
-	if err := p.chromaClient.AddDocuments(documents, embeddings); err != nil {
+	if err := p.chromaClient.AddDocuments(ctx, documents, embeddings); err != nil {
 		return 0, fmt.Errorf("failed to store documents in ChromaDB: %w", err)
 	}
 

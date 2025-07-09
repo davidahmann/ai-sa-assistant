@@ -17,22 +17,26 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
+	"github.com/your-org/ai-sa-assistant/internal/feedback"
 	"github.com/your-org/ai-sa-assistant/internal/health"
-	"github.com/your-org/ai-sa-assistant/internal/synth"
 	"github.com/your-org/ai-sa-assistant/internal/teams"
 	"go.uber.org/zap"
+)
+
+const (
+	// HealthCheckTimeout is the timeout for health check requests
+	HealthCheckTimeout = 10 * time.Second
 )
 
 func main() {
@@ -43,6 +47,30 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to load configuration", zap.Error(err))
 	}
+
+	// Initialize feedback logger
+	feedbackConfig := feedback.Config{
+		StorageType: "file", // Default to file storage
+		FilePath:    "./logs/feedback.jsonl",
+		DBPath:      "./data/feedback.db",
+	}
+
+	// Override with config values if available
+	if cfg.Feedback.StorageType != "" {
+		feedbackConfig.StorageType = cfg.Feedback.StorageType
+	}
+	if cfg.Feedback.FilePath != "" {
+		feedbackConfig.FilePath = cfg.Feedback.FilePath
+	}
+	if cfg.Feedback.DBPath != "" {
+		feedbackConfig.DBPath = cfg.Feedback.DBPath
+	}
+
+	feedbackLogger, err := feedback.NewLogger(feedbackConfig, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize feedback logger", zap.Error(err))
+	}
+	defer func() { _ = feedbackLogger.Close() }()
 
 	// Initialize diagram renderer
 	diagramConfig := diagram.RendererConfig{
@@ -68,17 +96,24 @@ func main() {
 	healthManager := health.NewManager("teamsbot", "1.0.0", logger)
 	setupHealthChecks(healthManager, cfg, diagramRenderer)
 
+	// Initialize message parser and webhook validator
+	messageParser := teams.NewMessageParser(logger)
+	webhookValidator := teams.NewWebhookValidator(cfg.Teams.WebhookSecret, logger)
+
+	// Initialize orchestrator
+	orchestrator := teams.NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+
 	// Health check endpoint
 	router.GET("/health", gin.WrapH(healthManager.HTTPHandler()))
 
 	// Teams webhook endpoint
 	router.POST("/teams-webhook", func(c *gin.Context) {
-		handleTeamsWebhook(c, cfg, diagramRenderer, logger)
+		handleTeamsWebhook(c, cfg, orchestrator, messageParser, webhookValidator, logger)
 	})
 
 	// Feedback endpoint
 	router.POST("/teams-feedback", func(c *gin.Context) {
-		handleFeedback(c, cfg, logger)
+		handleFeedback(c, cfg, feedbackLogger, logger)
 	})
 
 	logger.Info("Starting teamsbot service",
@@ -92,107 +127,128 @@ func main() {
 	}
 }
 
-// TeamsMessage represents a Teams webhook message
-type TeamsMessage struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
+// handleTeamsWebhook handles incoming Teams webhook messages with enhanced parsing and validation
+func handleTeamsWebhook(
+	c *gin.Context,
+	cfg *config.Config,
+	orchestrator *teams.Orchestrator,
+	messageParser *teams.MessageParser,
+	webhookValidator *teams.WebhookValidator,
+	logger *zap.Logger,
+) {
+	// Read request body for validation
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		logger.Error("Failed to read request body", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
 
-// handleTeamsWebhook handles incoming Teams webhook messages
-func handleTeamsWebhook(c *gin.Context, cfg *config.Config, diagramRenderer *diagram.Renderer, logger *zap.Logger) {
-	var message TeamsMessage
+	// Restore body for JSON parsing
+	c.Request.Body = io.NopCloser(strings.NewReader(string(body)))
+
+	// Validate webhook security
+	validationResult := webhookValidator.ValidateWebhook(c.Request, body)
+	webhookValidator.LogValidationAttempt(c.Request, validationResult)
+
+	if !validationResult.Valid {
+		logger.Warn("Webhook validation failed", zap.String("error", validationResult.ErrorMessage))
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Webhook validation failed",
+			"details": validationResult.ErrorMessage,
+		})
+		return
+	}
+
+	// Parse Teams message
+	var message teams.Message
 	if err := c.ShouldBindJSON(&message); err != nil {
 		logger.Error("Failed to parse Teams message", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid message format"})
 		return
 	}
 
-	// Extract user query from message text
-	query := strings.TrimSpace(message.Text)
-	if query == "" {
-		logger.Warn("Empty query received from Teams")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Empty query"})
+	// Parse and validate message content
+	parsedQuery, err := messageParser.ParseMessage(&message)
+	if err != nil {
+		logger.Error("Failed to parse Teams message content", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid message content",
+			"details": err.Error(),
+		})
 		return
 	}
 
-	// Remove bot mention if present
-	query = strings.TrimPrefix(query, "@SA-Assistant")
-	query = strings.TrimSpace(query)
+	// Check if message should be processed
+	if !messageParser.ShouldProcessMessage(parsedQuery) {
+		logger.Debug("Message does not require processing",
+			zap.Bool("is_direct_message", parsedQuery.IsDirectMessage),
+			zap.Bool("bot_mentioned", parsedQuery.IsBotMentioned))
+		c.JSON(http.StatusOK, gin.H{"message": "Message acknowledged but not processed"})
+		return
+	}
 
-	logger.Info("Processing Teams query", zap.String("query", query))
+	logger.Info("Processing Teams query",
+		zap.String("query", parsedQuery.Query),
+		zap.String("user_id", parsedQuery.UserID),
+		zap.String("conversation_id", parsedQuery.ConversationID),
+		zap.Bool("is_direct_message", parsedQuery.IsDirectMessage),
+		zap.Bool("bot_mentioned", parsedQuery.IsBotMentioned))
 
-	// Process the query through the full pipeline
-	const queryTimeout = 60 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	// Process the query asynchronously to meet Teams webhook timeout requirements
+	const webhookTimeout = 18 * time.Second // Leave 2 seconds buffer for response processing
+	ctx, cancel := context.WithTimeout(context.Background(), webhookTimeout)
 	defer cancel()
 
-	response, err := processQuery(ctx, query, cfg, diagramRenderer, logger)
-	if err != nil {
-		logger.Error("Failed to process query", zap.Error(err))
-		sendErrorResponse(c, cfg, query, err, logger)
-		return
-	}
+	// Channel to receive orchestration result
+	resultChan := make(chan *teams.OrchestrationResult, 1)
 
-	// Send response back to Teams
-	if err := sendTeamsResponse(c, cfg, query, response, logger); err != nil {
-		logger.Error("Failed to send Teams response", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send response"})
-		return
-	}
+	// Start async processing
+	go func() {
+		result := orchestrator.ProcessQuery(ctx, parsedQuery.Query)
+		resultChan <- result
+	}()
 
-	c.JSON(http.StatusOK, gin.H{"message": "Query processed successfully"})
-}
-
-// processQuery processes a user query through the full RAG pipeline
-func processQuery(
-	ctx context.Context,
-	query string,
-	cfg *config.Config,
-	diagramRenderer *diagram.Renderer,
-	logger *zap.Logger,
-) (*synth.SynthesisResponse, error) {
-	// Step 1: Call retrieve service
-	retrieveResponse, err := callRetrieveService(ctx, query, cfg, logger)
-	if err != nil {
-		return nil, fmt.Errorf("retrieve service failed: %w", err)
-	}
-
-	// Step 2: Conditionally call websearch service
-	var webResults []string
-	if needsFreshness(query, cfg.WebSearch.FreshnessKeywords) {
-		webResults, err = callWebSearchService(ctx, query, cfg, logger)
-		if err != nil {
-			logger.Warn("Web search failed, continuing without web results", zap.Error(err))
-		}
-	}
-
-	// Step 3: Convert retrieve chunks to synthesis format and call synthesize service
-	contextItems := convertRetrieveChunksToContextItems(retrieveResponse.Chunks)
-	synthesizeRequest := createSynthesizeRequest(query, contextItems, webResults)
-
-	synthesizeResponse, err := callSynthesizeService(ctx, synthesizeRequest, cfg, logger)
-	if err != nil {
-		return nil, fmt.Errorf("synthesize service failed: %w", err)
-	}
-
-	// Step 4: Render diagram if present
-	if synthesizeResponse.DiagramCode != "" {
-		diagramURL, fallbackText, err := diagramRenderer.RenderDiagramWithFallback(ctx, synthesizeResponse.DiagramCode)
-		if err != nil {
-			logger.Warn("Failed to render diagram", zap.Error(err))
+	// Wait for result or timeout
+	select {
+	case result := <-resultChan:
+		if result.Error != nil {
+			logger.Error("Failed to process query", zap.Error(result.Error))
+			sendErrorResponseWithResult(c, cfg, parsedQuery.Query, result, logger)
+			return
 		}
 
-		// If we have a fallback text, append it to the main text
-		if fallbackText != "" {
-			synthesizeResponse.MainText += "\n\n" + fallbackText
-			synthesizeResponse.DiagramCode = "" // Clear diagram code since we're using fallback
+		// Send response back to Teams
+		if err := sendTeamsResponseWithResult(c, cfg, parsedQuery.Query, result, logger); err != nil {
+			logger.Error("Failed to send Teams response", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send response"})
+			return
 		}
 
-		// Store diagram URL for use in Adaptive Card
-		synthesizeResponse.DiagramURL = diagramURL
-	}
+		c.JSON(http.StatusOK, gin.H{
+			"message":           "Query processed successfully",
+			"execution_time_ms": result.ExecutionTimeMs,
+			"services_used":     result.ServicesUsed,
+			"fallback_used":     result.FallbackUsed,
+			"security_level":    validationResult.SecurityLevel,
+			"user_id":           parsedQuery.UserID,
+		})
 
-	return synthesizeResponse, nil
+	case <-ctx.Done():
+		logger.Error("Query processing timed out",
+			zap.String("query", parsedQuery.Query),
+			zap.String("user_id", parsedQuery.UserID))
+
+		// Send timeout response to Teams
+		timeoutResult := &teams.OrchestrationResult{
+			Error:           fmt.Errorf("query processing timed out"),
+			FallbackUsed:    true,
+			ExecutionTimeMs: webhookTimeout.Milliseconds(),
+		}
+
+		sendErrorResponseWithResult(c, cfg, parsedQuery.Query, timeoutResult, logger)
+		c.JSON(http.StatusRequestTimeout, gin.H{"error": "Query processing timed out"})
+	}
 }
 
 // RetrieveResponse represents the response from the retrieve service
@@ -211,144 +267,6 @@ type RetrieveChunk struct {
 	DocID    string                 `json:"doc_id"`
 	SourceID string                 `json:"source_id"`
 	Metadata map[string]interface{} `json:"metadata"`
-}
-
-// callRetrieveService calls the retrieve service to get context
-func callRetrieveService(
-	ctx context.Context,
-	query string,
-	cfg *config.Config,
-	_ *zap.Logger,
-) (*RetrieveResponse, error) {
-	reqBody := map[string]string{"query": query}
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", cfg.Services.RetrieveURL+"/search", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("retrieve service returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var retrieveResponse RetrieveResponse
-	if err := json.NewDecoder(resp.Body).Decode(&retrieveResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &retrieveResponse, nil
-}
-
-// callWebSearchService calls the web search service
-func callWebSearchService(ctx context.Context, query string, cfg *config.Config, _ *zap.Logger) ([]string, error) {
-	reqBody := map[string]string{"query": query}
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", cfg.Services.WebSearchURL+"/search", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("web search service returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var webResponse struct {
-		Results []string `json:"results"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&webResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return webResponse.Results, nil
-}
-
-// callSynthesizeService calls the synthesize service
-func callSynthesizeService(
-	ctx context.Context,
-	request SynthesizeRequest,
-	cfg *config.Config,
-	_ *zap.Logger,
-) (*synth.SynthesisResponse, error) {
-	jsonBody, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		"POST",
-		cfg.Services.SynthesizeURL+"/synthesize",
-		bytes.NewBuffer(jsonBody),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("synthesize service returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var synthesizeResponse synth.SynthesisResponse
-	if err := json.NewDecoder(resp.Body).Decode(&synthesizeResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &synthesizeResponse, nil
-}
-
-// convertRetrieveChunksToContextItems converts retrieve chunks to synthesis context items
-func convertRetrieveChunksToContextItems(chunks []RetrieveChunk) []synth.ContextItem {
-	contextItems := make([]synth.ContextItem, len(chunks))
-	for i, chunk := range chunks {
-		// Use SourceID if available, otherwise fall back to DocID
-		sourceID := chunk.SourceID
-		if sourceID == "" {
-			sourceID = chunk.DocID
-		}
-
-		contextItems[i] = synth.ContextItem{
-			Content:  chunk.Text,
-			SourceID: sourceID,
-			Score:    chunk.Score,
-			Priority: 1,
-		}
-	}
-	return contextItems
 }
 
 // SynthesizeChunkItem represents a chunk item for synthesis request
@@ -372,116 +290,31 @@ type SynthesizeRequest struct {
 	WebResults []SynthesizeWebResult `json:"web_results"`
 }
 
-// createSynthesizeRequest creates a synthesis request from context and web results
-func createSynthesizeRequest(query string, contextItems []synth.ContextItem, webResults []string) SynthesizeRequest {
-	// Convert context items to chunk items
-	chunks := make([]SynthesizeChunkItem, len(contextItems))
-	for i, item := range contextItems {
-		chunks[i] = SynthesizeChunkItem{
-			Text:     item.Content,
-			DocID:    item.SourceID, // Use SourceID as DocID for backwards compatibility
-			SourceID: item.SourceID,
-		}
-	}
-
-	// Convert web results to structured format
-	webResultItems := make([]SynthesizeWebResult, len(webResults))
-	for i, result := range webResults {
-		// Parse web result format: "Title: <title>\nSnippet: <snippet>\nURL: <url>"
-		lines := strings.Split(result, "\n")
-		var title, snippet, url string
-		for _, line := range lines {
-			switch {
-			case strings.HasPrefix(line, "Title: "):
-				title = strings.TrimPrefix(line, "Title: ")
-			case strings.HasPrefix(line, "Snippet: "):
-				snippet = strings.TrimPrefix(line, "Snippet: ")
-			case strings.HasPrefix(line, "URL: "):
-				url = strings.TrimPrefix(line, "URL: ")
-			}
-		}
-		webResultItems[i] = SynthesizeWebResult{
-			Title:   title,
-			Snippet: snippet,
-			URL:     url,
-		}
-	}
-
-	return SynthesizeRequest{
-		Query:      query,
-		Chunks:     chunks,
-		WebResults: webResultItems,
-	}
-}
-
-// needsFreshness checks if the query needs fresh web search results
-func needsFreshness(query string, keywords []string) bool {
-	queryLower := strings.ToLower(query)
-	for _, keyword := range keywords {
-		if strings.Contains(queryLower, strings.ToLower(keyword)) {
-			return true
-		}
-	}
-	return false
-}
-
-// sendTeamsResponse sends the response back to Teams
-func sendTeamsResponse(
+// sendErrorResponseWithResult sends an error response to Teams with orchestration result context
+func sendErrorResponseWithResult(
 	_ *gin.Context,
 	cfg *config.Config,
 	query string,
-	response *synth.SynthesisResponse,
-	logger *zap.Logger,
-) error {
-	// Generate Adaptive Card
-	cardJSON, err := teams.GenerateCard(*response, query, response.DiagramURL)
-	if err != nil {
-		return fmt.Errorf("failed to generate adaptive card: %w", err)
-	}
-
-	// Create Teams webhook payload
-	payload, err := teams.CreateTeamsPayload(cardJSON)
-	if err != nil {
-		return fmt.Errorf("failed to create teams payload: %w", err)
-	}
-
-	// Send to Teams webhook
-	req, err := http.NewRequest("POST", cfg.Teams.WebhookURL, strings.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("failed to create webhook request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send webhook: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("teams webhook returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	logger.Info("Successfully sent Teams response", zap.String("query", query))
-	return nil
-}
-
-// sendErrorResponse sends an error response to Teams
-func sendErrorResponse(
-	_ *gin.Context,
-	cfg *config.Config,
-	_ string,
-	err error,
+	result *teams.OrchestrationResult,
 	logger *zap.Logger,
 ) {
-	errorMessage := fmt.Sprintf(
-		"I encountered an error processing your request: %s",
-		err.Error(),
-	)
+	var errorMessage string
+	if result.FallbackUsed {
+		errorMessage = fmt.Sprintf(
+			"I encountered some issues while processing your query: %s. "+
+				"I've provided a fallback response based on available information.",
+			query,
+		)
+	} else {
+		errorMessage = fmt.Sprintf(
+			"I encountered an error processing your request: %s. Services tested: %s. Execution time: %dms",
+			result.Error.Error(),
+			strings.Join(result.ServicesTested, ", "),
+			result.ExecutionTimeMs,
+		)
+	}
 
-	cardJSON, cardErr := teams.GenerateSimpleCard("Error", errorMessage)
+	cardJSON, cardErr := teams.GenerateSimpleCard("Service Error", errorMessage)
 	if cardErr != nil {
 		logger.Error("Failed to generate error card", zap.Error(cardErr))
 		return
@@ -514,47 +347,167 @@ func sendErrorResponse(
 	}
 }
 
+// sendTeamsResponseWithResult sends the response back to Teams with orchestration result
+func sendTeamsResponseWithResult(
+	_ *gin.Context,
+	cfg *config.Config,
+	query string,
+	result *teams.OrchestrationResult,
+	logger *zap.Logger,
+) error {
+	// Generate Adaptive Card
+	cardJSON, err := teams.GenerateCard(*result.Response, query, result.Response.DiagramURL)
+	if err != nil {
+		return fmt.Errorf("failed to generate adaptive card: %w", err)
+	}
+
+	// Create Teams webhook payload
+	payload, err := teams.CreateTeamsPayload(cardJSON)
+	if err != nil {
+		return fmt.Errorf("failed to create teams payload: %w", err)
+	}
+
+	// Send to Teams webhook
+	req, err := http.NewRequest("POST", cfg.Teams.WebhookURL, strings.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create webhook request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send webhook: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("teams webhook returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	logger.Info("Successfully sent Teams response",
+		zap.String("query", query),
+		zap.Int64("execution_time_ms", result.ExecutionTimeMs),
+		zap.Strings("services_used", result.ServicesUsed),
+		zap.Bool("fallback_used", result.FallbackUsed))
+
+	return nil
+}
+
 // FeedbackRequest represents a feedback request
 type FeedbackRequest struct {
-	Query    string `json:"query"`
-	Feedback string `json:"feedback"`
+	Query      string `json:"query"`
+	ResponseID string `json:"response_id,omitempty"`
+	Feedback   string `json:"feedback"`
+	Timestamp  string `json:"timestamp,omitempty"`
 }
 
 // handleFeedback handles feedback submissions
-func handleFeedback(c *gin.Context, _ *config.Config, logger *zap.Logger) {
-	var feedback FeedbackRequest
-	if err := c.ShouldBindJSON(&feedback); err != nil {
+func handleFeedback(c *gin.Context, _ *config.Config, feedbackLogger *feedback.Logger, logger *zap.Logger) {
+	var feedbackRequest FeedbackRequest
+	if err := c.ShouldBindJSON(&feedbackRequest); err != nil {
 		logger.Error("Failed to parse feedback", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid feedback format"})
 		return
 	}
 
-	// Log the feedback
-	logger.Info("Received feedback",
-		zap.String("query", feedback.Query),
-		zap.String("feedback", feedback.Feedback))
+	// Privacy controls: sanitize sensitive information from query
+	sanitizedQuery := sanitizeFeedbackQuery(feedbackRequest.Query)
 
-	// TODO: Store feedback in database or file based on configuration
-	// For now, just log it
+	// Validate feedback type
+	if feedbackRequest.Feedback != "positive" && feedbackRequest.Feedback != "negative" {
+		logger.Error("Invalid feedback type", zap.String("feedback", feedbackRequest.Feedback))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid feedback type"})
+		return
+	}
+
+	// Store feedback using the feedback logger with enhanced context
+	userID := extractUserIDFromRequest(c)
+	sessionID := feedbackRequest.ResponseID // Use response_id as session correlation
+
+	if err := feedbackLogger.LogFeedbackWithContext(
+		sanitizedQuery,
+		feedbackRequest.Feedback,
+		userID,
+		sessionID,
+	); err != nil {
+		logger.Error("Failed to log feedback", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store feedback"})
+		return
+	}
+
+	logger.Info("Received and stored feedback",
+		zap.String("query", sanitizedQuery),
+		zap.String("feedback", feedbackRequest.Feedback),
+		zap.String("response_id", feedbackRequest.ResponseID),
+		zap.String("user_id", userID))
 
 	c.JSON(http.StatusOK, gin.H{"message": "Feedback received"})
+}
+
+// sanitizeFeedbackQuery removes sensitive information from queries before logging
+func sanitizeFeedbackQuery(query string) string {
+	// Remove potential sensitive patterns
+	sensitivePatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)password[:\s=]+[^\s]+`),
+		regexp.MustCompile(`(?i)api[_-]?key[:\s=]+[^\s]+`),
+		regexp.MustCompile(`(?i)secret[:\s=]+[^\s]+`),
+		regexp.MustCompile(`(?i)token[:\s=]+[^\s]+`),
+		regexp.MustCompile(`(?i)credential[s]?[:\s=]+[^\s]+`),
+		regexp.MustCompile(`[A-Za-z0-9+/]{20,}={0,2}`), // Base64 encoded strings
+		regexp.MustCompile(`[0-9a-fA-F]{32,}`),         // Hex strings (potential keys)
+	}
+
+	sanitized := query
+	for _, pattern := range sensitivePatterns {
+		sanitized = pattern.ReplaceAllString(sanitized, "[REDACTED]")
+	}
+
+	// Limit length to prevent abuse
+	const maxQueryLength = 500
+	if len(sanitized) > maxQueryLength {
+		sanitized = sanitized[:maxQueryLength] + "..."
+	}
+
+	return sanitized
+}
+
+// extractUserIDFromRequest extracts user ID from request headers or context
+func extractUserIDFromRequest(c *gin.Context) string {
+	// Try to extract from Teams context if available
+	if userID := c.GetHeader("X-Teams-User-ID"); userID != "" {
+		return userID
+	}
+
+	// Try to extract from authentication headers
+	if userID := c.GetHeader("X-User-ID"); userID != "" {
+		return userID
+	}
+
+	// Try to extract from client IP as fallback
+	if clientIP := c.ClientIP(); clientIP != "" {
+		return fmt.Sprintf("ip:%s", clientIP)
+	}
+
+	return "anonymous"
 }
 
 // setupHealthChecks configures health checks for the teamsbot service
 func setupHealthChecks(manager *health.Manager, cfg *config.Config, diagramRenderer *diagram.Renderer) {
 	// Retrieve service health check
 	manager.AddChecker("retrieve", health.HTTPHealthChecker(cfg.Services.RetrieveURL+"/health", &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: HealthCheckTimeout,
 	}))
 
 	// Synthesize service health check
 	manager.AddChecker("synthesize", health.HTTPHealthChecker(cfg.Services.SynthesizeURL+"/health", &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: HealthCheckTimeout,
 	}))
 
 	// WebSearch service health check
 	manager.AddChecker("websearch", health.HTTPHealthChecker(cfg.Services.WebSearchURL+"/health", &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: HealthCheckTimeout,
 	}))
 
 	// Diagram renderer health check
@@ -578,7 +531,7 @@ func setupHealthChecks(manager *health.Manager, cfg *config.Config, diagramRende
 	})
 
 	// Teams webhook configuration health check
-	manager.AddCheckerFunc("teams_webhook", func(ctx context.Context) health.CheckResult {
+	manager.AddCheckerFunc("teams_webhook", func(_ context.Context) health.CheckResult {
 		if cfg.Teams.WebhookURL == "" {
 			return health.CheckResult{
 				Status:    health.StatusUnhealthy,
@@ -597,7 +550,7 @@ func setupHealthChecks(manager *health.Manager, cfg *config.Config, diagramRende
 	})
 
 	// Service endpoints configuration health check
-	manager.AddCheckerFunc("service_endpoints", func(ctx context.Context) health.CheckResult {
+	manager.AddCheckerFunc("service_endpoints", func(_ context.Context) health.CheckResult {
 		var errors []string
 
 		if cfg.Services.RetrieveURL == "" {
@@ -630,5 +583,6 @@ func setupHealthChecks(manager *health.Manager, cfg *config.Config, diagramRende
 	})
 
 	// Set timeout for health checks
-	manager.SetTimeout(15 * time.Second)
+	const healthCheckTimeoutSeconds = 15
+	manager.SetTimeout(healthCheckTimeoutSeconds * time.Second)
 }

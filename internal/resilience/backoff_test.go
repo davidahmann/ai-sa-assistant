@@ -48,7 +48,7 @@ func TestWithExponentialBackoff_Success(t *testing.T) {
 	config := DefaultBackoffConfig()
 
 	attempts := 0
-	fn := func(ctx context.Context) error {
+	fn := func(_ context.Context) error {
 		attempts++
 		return nil
 	}
@@ -70,7 +70,7 @@ func TestWithExponentialBackoff_SuccessAfterRetry(t *testing.T) {
 	config.BaseDelay = 10 * time.Millisecond // Speed up test
 
 	attempts := 0
-	fn := func(ctx context.Context) error {
+	fn := func(_ context.Context) error {
 		attempts++
 		if attempts < 3 {
 			return errors.New("temporary error")
@@ -104,7 +104,7 @@ func TestWithExponentialBackoff_ExhaustRetries(t *testing.T) {
 
 	attempts := 0
 	testError := errors.New("persistent error")
-	fn := func(ctx context.Context) error {
+	fn := func(_ context.Context) error {
 		attempts++
 		return testError
 	}
@@ -132,7 +132,7 @@ func TestWithExponentialBackoff_NonRetryableError(t *testing.T) {
 	}
 
 	attempts := 0
-	fn := func(ctx context.Context) error {
+	fn := func(_ context.Context) error {
 		attempts++
 		return errors.New("non-retryable")
 	}
@@ -156,7 +156,7 @@ func TestWithExponentialBackoff_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	attempts := 0
-	fn := func(ctx context.Context) error {
+	fn := func(_ context.Context) error {
 		attempts++
 		if attempts == 1 {
 			return errors.New("first error")
@@ -185,7 +185,7 @@ func TestSimpleRetry(t *testing.T) {
 	logger := zap.NewNop()
 
 	attempts := 0
-	fn := func(ctx context.Context) error {
+	fn := func(_ context.Context) error {
 		attempts++
 		if attempts < 2 {
 			return errors.New("temporary error")
@@ -209,7 +209,7 @@ func TestRetryWithMaxAttempts(t *testing.T) {
 	maxRetries := 1
 
 	attempts := 0
-	fn := func(ctx context.Context) error {
+	fn := func(_ context.Context) error {
 		attempts++
 		return errors.New("persistent error")
 	}
@@ -230,7 +230,7 @@ func TestRetryWithBaseDelay(t *testing.T) {
 	baseDelay := 5 * time.Millisecond
 
 	attempts := 0
-	fn := func(ctx context.Context) error {
+	fn := func(_ context.Context) error {
 		attempts++
 		if attempts < 2 {
 			return errors.New("temporary error")

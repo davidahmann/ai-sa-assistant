@@ -1,0 +1,90 @@
+{
+  "text": "@SA-Assistant Design a DR solution in Azure for critical workloads with RTO = 2 hours and RPO = 15 minutes, including geo-replication options, failover orchestration, and cost-optimized standby.",
+  "type": "message",
+  "user": {
+    "id": "e2e-test-user",
+    "name": "E2E Test User"
+  },
+  "channel": {
+    "id": "e2e-test-channel",
+    "name": "E2E Test Channel"
+  },
+  "timestamp": "2025-01-01T00:00:00Z",
+  "expected_response": {
+    "contains_keywords": [
+      "Azure",
+      "disaster recovery",
+      "Site Recovery",
+      "RTO",
+      "RPO",
+      "geo-replication",
+      "failover",
+      "orchestration",
+      "standby",
+      "cost-optimized"
+    ],
+    "contains_code_snippets": [
+      "powershell",
+      "azure",
+      "cli"
+    ],
+    "contains_diagram": true,
+    "diagram_keywords": [
+      "disaster recovery",
+      "Azure",
+      "Site Recovery",
+      "geo-replication",
+      "failover",
+      "topology"
+    ],
+    "expected_sources": [
+      "azure-disaster-recovery",
+      "azure-dr-playbook",
+      "azure-dr-runbook"
+    ],
+    "max_response_time_seconds": 30,
+    "min_response_length": 500,
+    "fallback_search_triggers": [
+      "initial results insufficient",
+      "fallback logic"
+    ],
+    "azure_dr_specific_content": {
+      "rto_rpo_keywords": [
+        "RTO",
+        "RPO",
+        "recovery time objective",
+        "recovery point objective",
+        "2 hours",
+        "15 minutes"
+      ],
+      "site_recovery_keywords": [
+        "Site Recovery",
+        "ASR",
+        "replication",
+        "protection",
+        "vault"
+      ],
+      "failover_keywords": [
+        "failover",
+        "orchestration",
+        "recovery plan",
+        "automation",
+        "runbook"
+      ],
+      "cost_optimization_keywords": [
+        "cost-optimized",
+        "standby",
+        "cold storage",
+        "warm storage",
+        "pricing"
+      ],
+      "geo_replication_keywords": [
+        "geo-replication",
+        "cross-region",
+        "paired regions",
+        "regional",
+        "availability zones"
+      ]
+    }
+  }
+}

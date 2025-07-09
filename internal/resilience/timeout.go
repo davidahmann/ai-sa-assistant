@@ -28,12 +28,17 @@ type TimeoutConfig struct {
 	Logger         *zap.Logger
 }
 
+const (
+	// DefaultTimeoutSeconds is the default timeout in seconds
+	DefaultTimeoutSeconds = 30
+)
+
 // DefaultTimeoutConfig returns the default timeout configuration
 // with 30s max timeout as specified in requirements
 func DefaultTimeoutConfig() TimeoutConfig {
 	return TimeoutConfig{
-		DefaultTimeout: 30 * time.Second,
-		MaxTimeout:     30 * time.Second,
+		DefaultTimeout: DefaultTimeoutSeconds * time.Second,
+		MaxTimeout:     DefaultTimeoutSeconds * time.Second,
 		Logger:         zap.NewNop(),
 	}
 }

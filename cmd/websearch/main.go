@@ -325,7 +325,7 @@ func (s *WebSearchService) setupHealthChecks(manager *health.Manager) {
 	})
 
 	// Web search cache health check
-	manager.AddCheckerFunc("cache", func(ctx context.Context) health.CheckResult {
+	manager.AddCheckerFunc("cache", func(_ context.Context) health.CheckResult {
 		s.cacheMutex.RLock()
 		cacheSize := len(s.cache)
 		s.cacheMutex.RUnlock()
@@ -341,7 +341,7 @@ func (s *WebSearchService) setupHealthChecks(manager *health.Manager) {
 	})
 
 	// Freshness detection health check
-	manager.AddCheckerFunc("freshness_detector", func(ctx context.Context) health.CheckResult {
+	manager.AddCheckerFunc("freshness_detector", func(_ context.Context) health.CheckResult {
 		keywordCount := len(s.config.WebSearch.FreshnessKeywords)
 
 		return health.CheckResult{

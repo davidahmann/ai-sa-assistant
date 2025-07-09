@@ -35,14 +35,25 @@ type BackoffConfig struct {
 	RetryOnFunc func(error) bool
 }
 
+const (
+	// DefaultMaxRetries is the default maximum number of retry attempts
+	DefaultMaxRetries = 3
+	// DefaultMaxDelaySeconds is the default maximum delay in seconds
+	DefaultMaxDelaySeconds = 30
+	// DefaultMultiplier is the default exponential backoff multiplier
+	DefaultMultiplier = 2.0
+	// JitterModulus is used for random jitter calculation
+	JitterModulus = 1000
+)
+
 // DefaultBackoffConfig returns the default configuration for exponential backoff
 // as specified in the requirements: base delay 1s, max retries 3, doubles per retry
 func DefaultBackoffConfig() BackoffConfig {
 	return BackoffConfig{
 		BaseDelay:   1 * time.Second,
-		MaxRetries:  3,
-		MaxDelay:    30 * time.Second,
-		Multiplier:  2.0,
+		MaxRetries:  DefaultMaxRetries,
+		MaxDelay:    DefaultMaxDelaySeconds * time.Second,
+		Multiplier:  DefaultMultiplier,
 		Jitter:      true,
 		RetryOnFunc: DefaultRetryOnFunc,
 	}
@@ -109,7 +120,7 @@ func WithExponentialBackoff(ctx context.Context, logger *zap.Logger, config Back
 
 		// Add jitter to prevent thundering herd
 		if config.Jitter {
-			jitter := time.Duration(float64(delay) * 0.1 * (2*float64(time.Now().UnixNano()%1000)/1000.0 - 1))
+			jitter := time.Duration(float64(delay) * 0.1 * (2*float64(time.Now().UnixNano()%JitterModulus)/JitterModulus - 1))
 			delay += jitter
 		}
 

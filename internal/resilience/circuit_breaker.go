@@ -59,13 +59,22 @@ type CircuitBreakerConfig struct {
 	OnStateChange       func(CircuitState, CircuitState)
 }
 
+const (
+	// DefaultMaxFailures is the default maximum number of failures before opening circuit
+	DefaultMaxFailures = 5
+	// DefaultResetTimeoutSeconds is the default time to wait before trying to reset
+	DefaultResetTimeoutSeconds = 60
+	// DefaultHalfOpenMaxRequests is the default max requests allowed in half-open state
+	DefaultHalfOpenMaxRequests = 3
+)
+
 // DefaultCircuitBreakerConfig returns default configuration for circuit breaker
 func DefaultCircuitBreakerConfig(name string) CircuitBreakerConfig {
 	return CircuitBreakerConfig{
 		Name:                name,
-		MaxFailures:         5,
-		ResetTimeout:        60 * time.Second,
-		HalfOpenMaxRequests: 3,
+		MaxFailures:         DefaultMaxFailures,
+		ResetTimeout:        DefaultResetTimeoutSeconds * time.Second,
+		HalfOpenMaxRequests: DefaultHalfOpenMaxRequests,
 		IsFailureFunc:       DefaultIsFailureFunc,
 		OnStateChange:       nil,
 	}
@@ -218,9 +227,13 @@ func (cb *CircuitBreaker) recordResult(err error) {
 			zap.String("state", cb.state.String()))
 
 		// Reset failures on success
-		if cb.state == CircuitClosed {
+		switch cb.state {
+		case CircuitClosed:
 			cb.failures = 0
-		} else if cb.state == CircuitHalfOpen {
+		case CircuitOpen:
+			// Circuit is open, success shouldn't happen, but if it does, just log
+			cb.logger.Debug("Successful request in open state - this shouldn't happen")
+		case CircuitHalfOpen:
 			// Close the circuit if we've had enough successful requests
 			if cb.successfulReqs >= cb.config.HalfOpenMaxRequests {
 				cb.setState(CircuitClosed)

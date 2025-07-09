@@ -72,6 +72,24 @@ type SearchResponse struct {
 
 // TestMain sets up the test environment and runs the tests
 func TestMain(m *testing.M) {
+	// Check if we should skip integration tests (check command line args)
+	for _, arg := range os.Args {
+		if arg == "-test.short" {
+			fmt.Println("Skipping integration tests in short mode")
+			os.Exit(0)
+		}
+	}
+
+	// Check if required services are available
+	if !servicesAvailable() {
+		fmt.Println("Required services not available - skipping integration tests")
+		fmt.Println("To run integration tests:")
+		fmt.Println("  1. Start services: docker-compose up -d")
+		fmt.Println("  2. Or use test environment: docker-compose -f docker-compose.test.yml up -d")
+		fmt.Println("  3. Run tests: go test -tags=integration ./tests/integration/...")
+		os.Exit(0)
+	}
+
 	// Start ChromaDB container if not already running
 	if err := ensureChromaDBRunning(); err != nil {
 		fmt.Printf("Failed to start ChromaDB: %v\n", err)

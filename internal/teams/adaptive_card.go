@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/your-org/ai-sa-assistant/internal/synth"
 )
@@ -61,6 +62,8 @@ type CardAction struct {
 
 // GenerateCard creates a Teams Adaptive Card from synthesis response
 func GenerateCard(response synth.SynthesisResponse, query string, diagramURL string) (string, error) {
+	// Generate unique response ID for correlation
+	responseID := generateResponseID()
 	card := AdaptiveCard{
 		Type:    "AdaptiveCard",
 		Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -172,8 +175,10 @@ func GenerateCard(response synth.SynthesisResponse, query string, diagramURL str
 			Method: "POST",
 			URL:    "/teams-feedback",
 			Body: map[string]interface{}{
-				"query":    query,
-				"feedback": "positive",
+				"query":       query,
+				"response_id": responseID,
+				"feedback":    "positive",
+				"timestamp":   time.Now().Format(time.RFC3339),
 			},
 		},
 		CardAction{
@@ -182,8 +187,10 @@ func GenerateCard(response synth.SynthesisResponse, query string, diagramURL str
 			Method: "POST",
 			URL:    "/teams-feedback",
 			Body: map[string]interface{}{
-				"query":    query,
-				"feedback": "negative",
+				"query":       query,
+				"response_id": responseID,
+				"feedback":    "negative",
+				"timestamp":   time.Now().Format(time.RFC3339),
 			},
 		},
 	)
@@ -263,4 +270,9 @@ func CreateTeamsPayload(cardJSON string) (string, error) {
 	}
 
 	return string(payloadJSON), nil
+}
+
+// generateResponseID generates a unique response ID for feedback correlation
+func generateResponseID() string {
+	return fmt.Sprintf("resp_%d", time.Now().UnixNano())
 }

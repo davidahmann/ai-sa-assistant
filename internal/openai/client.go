@@ -101,8 +101,8 @@ func NewClient(apiKey string, logger *zap.Logger) (*Client, error) {
 
 	// Initialize resilience components
 	cbConfig := resilience.DefaultCircuitBreakerConfig("openai")
-	cbConfig.MaxFailures = 3
-	cbConfig.ResetTimeout = 60 * time.Second
+	cbConfig.MaxFailures = resilience.DefaultMaxRetries
+	cbConfig.ResetTimeout = resilience.DefaultResetTimeoutSeconds * time.Second
 	circuitBreaker := resilience.NewCircuitBreaker(cbConfig, logger)
 
 	errorHandler := resilience.NewErrorHandler(logger)
@@ -308,7 +308,10 @@ func (c *Client) handleAPIError(err error) error {
 		case http.StatusBadRequest:
 			return resilience.NewBadRequestError(fmt.Sprintf("invalid request: %s", apiErr.Message), err)
 		default:
-			return resilience.NewInternalError(fmt.Sprintf("OpenAI API error (status %d): %s", apiErr.HTTPStatusCode, apiErr.Message), err)
+			return resilience.NewInternalError(
+				fmt.Sprintf("OpenAI API error (status %d): %s", apiErr.HTTPStatusCode, apiErr.Message),
+				err,
+			)
 		}
 	}
 

@@ -201,8 +201,6 @@ func initializeDependencies(cfg *config.Config, logger *zap.Logger) (*ServiceDep
 		cfg.Chroma.URL,
 		cfg.Chroma.CollectionName,
 		logger,
-		DefaultRetryAttempts,
-		time.Second,
 	)
 
 	// Initialize OpenAI client
@@ -226,7 +224,7 @@ func initializeDependencies(cfg *config.Config, logger *zap.Logger) (*ServiceDep
 func setupHealthChecks(manager *health.Manager, deps *ServiceDependencies) {
 	// ChromaDB health check
 	manager.AddCheckerFunc("chroma", func(ctx context.Context) health.CheckResult {
-		if err := deps.ChromaClient.HealthCheck(); err != nil {
+		if err := deps.ChromaClient.HealthCheck(ctx); err != nil {
 			return health.CheckResult{
 				Status:    health.StatusUnhealthy,
 				Error:     fmt.Sprintf("ChromaDB health check failed: %v", err),
@@ -262,7 +260,7 @@ func setupHealthChecks(manager *health.Manager, deps *ServiceDependencies) {
 	})
 
 	// Metadata store health check
-	manager.AddCheckerFunc("metadata", func(ctx context.Context) health.CheckResult {
+	manager.AddCheckerFunc("metadata", func(_ context.Context) health.CheckResult {
 		if _, err := deps.MetadataStore.GetStats(); err != nil {
 			return health.CheckResult{
 				Status:    health.StatusUnhealthy,
@@ -349,12 +347,13 @@ func generateQueryEmbedding(ctx context.Context, query string, deps *ServiceDepe
 
 // performVectorSearchWithFallback performs vector search with intelligent fallback logic
 func performVectorSearchWithFallback(
+	ctx context.Context,
 	queryEmbedding []float32,
 	filteredDocIDs []string,
 	deps *ServiceDependencies,
 ) ([]chroma.SearchResult, bool, string, error) {
 	maxChunks := deps.Config.Retrieval.MaxChunks
-	searchResults, err := deps.ChromaClient.Search(queryEmbedding, maxChunks, filteredDocIDs)
+	searchResults, err := deps.ChromaClient.Search(ctx, queryEmbedding, maxChunks, filteredDocIDs)
 	if err != nil {
 		return nil, false, "", err
 	}
@@ -370,7 +369,7 @@ func performVectorSearchWithFallback(
 	}
 
 	// Perform fallback search
-	fallbackResults, err := performFallbackSearch(queryEmbedding, maxChunks, fallbackReason, deps)
+	fallbackResults, err := performFallbackSearch(ctx, queryEmbedding, maxChunks, fallbackReason, deps)
 	if err != nil {
 		return searchResults, false, "", nil // Return original results if fallback fails
 	}
@@ -405,6 +404,7 @@ func shouldApplyFallback(searchResults []chroma.SearchResult, config config.Retr
 
 // performFallbackSearch performs the fallback search without document ID filter
 func performFallbackSearch(
+	ctx context.Context,
 	queryEmbedding []float32,
 	maxChunks int,
 	reason string,
@@ -416,7 +416,7 @@ func performFallbackSearch(
 		zap.Float64("fallback_score_threshold", deps.Config.Retrieval.FallbackScoreThreshold),
 	)
 
-	fallbackResults, err := deps.ChromaClient.Search(queryEmbedding, maxChunks, nil)
+	fallbackResults, err := deps.ChromaClient.Search(ctx, queryEmbedding, maxChunks, nil)
 	if err != nil {
 		deps.Logger.Error("Fallback search failed", zap.Error(err))
 		return nil, err
@@ -563,7 +563,7 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 
 		// Step 4: Perform vector search with fallback
 		searchResults, fallbackTriggered, fallbackReason, err := performVectorSearchWithFallback(
-			queryEmbedding, filteredDocIDs, deps)
+			ctx, queryEmbedding, filteredDocIDs, deps)
 		if err != nil {
 			deps.Logger.Error("Vector search failed", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{

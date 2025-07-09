@@ -16,9 +16,11 @@ package performance
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -26,6 +28,11 @@ import (
 
 // BenchmarkDemoScenario benchmarks a complete demo scenario
 func BenchmarkDemoScenario(b *testing.B) {
+	// Skip if services are not available
+	if !servicesReady(b) {
+		b.Skip("Services not available for performance testing")
+	}
+
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -38,7 +45,7 @@ func BenchmarkDemoScenario(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resp, err := client.Post("http://localhost:8080/webhook", "application/json", bytes.NewBuffer(body))
+		resp, err := client.Post("http://localhost:8080/teams-webhook", "application/json", bytes.NewBuffer(body))
 		if err != nil {
 			b.Fatalf("Failed to call webhook: %v", err)
 		}
@@ -48,6 +55,11 @@ func BenchmarkDemoScenario(b *testing.B) {
 
 // BenchmarkServiceHealth benchmarks health check endpoints
 func BenchmarkServiceHealth(b *testing.B) {
+	// Skip if services are not available
+	if !servicesReady(b) {
+		b.Skip("Services not available for performance testing")
+	}
+
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -73,6 +85,11 @@ func BenchmarkServiceHealth(b *testing.B) {
 
 // BenchmarkConcurrentRequests benchmarks concurrent demo requests
 func BenchmarkConcurrentRequests(b *testing.B) {
+	// Skip if services are not available
+	if !servicesReady(b) {
+		b.Skip("Services not available for performance testing")
+	}
+
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -86,7 +103,7 @@ func BenchmarkConcurrentRequests(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			resp, err := client.Post("http://localhost:8080/webhook", "application/json", bytes.NewBuffer(body))
+			resp, err := client.Post("http://localhost:8080/teams-webhook", "application/json", bytes.NewBuffer(body))
 			if err != nil {
 				b.Fatalf("Failed to call webhook: %v", err)
 			}
@@ -97,6 +114,11 @@ func BenchmarkConcurrentRequests(b *testing.B) {
 
 // TestLoadTesting performs load testing on the system
 func TestLoadTesting(t *testing.T) {
+	// Skip if services are not available
+	if !servicesReady(t) {
+		t.Skip("Services not available for load testing")
+	}
+
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -126,7 +148,7 @@ func TestLoadTesting(t *testing.T) {
 			for j := 0; j < requestsPerGoroutine; j++ {
 				start := time.Now()
 
-				resp, err := client.Post("http://localhost:8080/webhook", "application/json", bytes.NewBuffer(body))
+				resp, err := client.Post("http://localhost:8080/teams-webhook", "application/json", bytes.NewBuffer(body))
 				if err != nil {
 					errors <- fmt.Errorf("goroutine %d, request %d: %v", goroutineID, j, err)
 					return
@@ -186,6 +208,11 @@ func TestLoadTesting(t *testing.T) {
 
 // TestMemoryUsage tests memory usage during heavy load
 func TestMemoryUsage(t *testing.T) {
+	// Skip if services are not available
+	if !servicesReady(t) {
+		t.Skip("Services not available for memory usage testing")
+	}
+
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -200,7 +227,7 @@ func TestMemoryUsage(t *testing.T) {
 
 	// Make multiple requests to test memory usage
 	for i := 0; i < numRequests; i++ {
-		resp, err := client.Post("http://localhost:8080/webhook", "application/json", bytes.NewBuffer(body))
+		resp, err := client.Post("http://localhost:8080/teams-webhook", "application/json", bytes.NewBuffer(body))
 		if err != nil {
 			t.Fatalf("Failed to call webhook on request %d: %v", i+1, err)
 		}
@@ -215,6 +242,11 @@ func TestMemoryUsage(t *testing.T) {
 
 // TestServiceScaling tests how services handle scaling
 func TestServiceScaling(t *testing.T) {
+	// Skip if services are not available
+	if !servicesReady(t) {
+		t.Skip("Services not available for scaling testing")
+	}
+
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -246,7 +278,7 @@ func TestServiceScaling(t *testing.T) {
 				}
 				body, _ := json.Marshal(request)
 
-				resp, err := client.Post("http://localhost:8080/webhook", "application/json", bytes.NewBuffer(body))
+				resp, err := client.Post("http://localhost:8080/teams-webhook", "application/json", bytes.NewBuffer(body))
 				duration := time.Since(start)
 
 				if err != nil {
@@ -279,4 +311,56 @@ func TestServiceScaling(t *testing.T) {
 			t.Logf("Query completed in %v: %s", result.duration, result.query)
 		}
 	}
+}
+
+// servicesReady checks if all required services are available
+func servicesReady(t testing.TB) bool {
+	// Skip if running in short mode
+	if testing.Short() {
+		return false
+	}
+
+	// Skip if required environment variables are not set
+	if os.Getenv("OPENAI_API_KEY") == "" {
+		t.Logf("Skipping performance test: OPENAI_API_KEY not set")
+		return false
+	}
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	services := []string{
+		"http://localhost:8000/api/v1/heartbeat", // ChromaDB
+		"http://localhost:8081/health",           // Retrieve service
+		"http://localhost:8082/health",           // Synthesize service
+		"http://localhost:8083/health",           // Web search service
+		"http://localhost:8080/health",           // Teams bot service
+	}
+
+	for _, url := range services {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			cancel()
+			t.Logf("Failed to create request for %s: %v", url, err)
+			return false
+		}
+
+		resp, err := client.Do(req)
+		cancel()
+		if err != nil {
+			t.Logf("Service not available at %s: %v", url, err)
+			return false
+		}
+		_ = resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Logf("Service not healthy at %s: status %d", url, resp.StatusCode)
+			return false
+		}
+	}
+
+	t.Logf("All services are ready for performance testing")
+	return true
 }

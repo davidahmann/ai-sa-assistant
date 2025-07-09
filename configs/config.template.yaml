@@ -131,6 +131,32 @@ synthesis:
   # Must be between 0 and 2 (0 = more deterministic, 2 = more creative)
   temperature: 0.3
 
+# Diagram Rendering Configuration
+# Environment variables: SA_ASSISTANT_DIAGRAM_*
+diagram:
+  # Mermaid.ink API endpoint for diagram rendering
+  # Environment variable: SA_ASSISTANT_DIAGRAM_MERMAID_INK_URL
+  mermaid_ink_url: "https://mermaid.ink/img"
+
+  # HTTP timeout for diagram rendering requests (in seconds)
+  # Must be greater than 0
+  # Environment variable: SA_ASSISTANT_DIAGRAM_TIMEOUT_SECONDS
+  timeout_seconds: 30
+
+  # Cache expiry time for rendered diagrams (in hours)
+  # Must be greater than 0
+  # Environment variable: SA_ASSISTANT_DIAGRAM_CACHE_EXPIRY_HOURS
+  cache_expiry_hours: 24
+
+  # Enable/disable diagram caching for performance
+  # Environment variable: SA_ASSISTANT_DIAGRAM_ENABLE_CACHING
+  enable_caching: true
+
+  # Maximum size of diagram code in bytes
+  # Must be greater than 0
+  # Environment variable: SA_ASSISTANT_DIAGRAM_MAX_DIAGRAM_SIZE
+  max_diagram_size: 10240
+
 # Logging Configuration
 # Environment variables: SA_ASSISTANT_LOGGING_* or LOG_*
 logging:
@@ -202,6 +228,13 @@ production:
 #   SA_ASSISTANT_SERVICES_RETRIEVE_URL - Retrieval service URL
 #   SA_ASSISTANT_SERVICES_WEBSEARCH_URL - Web search service URL
 #   SA_ASSISTANT_SERVICES_SYNTHESIZE_URL - Synthesis service URL
+#
+# Diagram Rendering:
+#   SA_ASSISTANT_DIAGRAM_MERMAID_INK_URL - Mermaid.ink API endpoint
+#   SA_ASSISTANT_DIAGRAM_TIMEOUT_SECONDS - Rendering timeout
+#   SA_ASSISTANT_DIAGRAM_CACHE_EXPIRY_HOURS - Cache expiry time
+#   SA_ASSISTANT_DIAGRAM_ENABLE_CACHING - Enable caching
+#   SA_ASSISTANT_DIAGRAM_MAX_DIAGRAM_SIZE - Maximum diagram size
 #
 # All configuration values can be overridden with environment variables using
 # the SA_ASSISTANT_ prefix and replacing dots with underscores.

@@ -36,17 +36,23 @@ type ErrorResponse struct {
 type ErrorCode string
 
 const (
-	// Client errors (4xx)
-	ErrorCodeBadRequest      ErrorCode = "BAD_REQUEST"
-	ErrorCodeUnauthorized    ErrorCode = "UNAUTHORIZED"
-	ErrorCodeNotFound        ErrorCode = "NOT_FOUND"
+	// ErrorCodeBadRequest represents client errors (4xx)
+	ErrorCodeBadRequest ErrorCode = "BAD_REQUEST"
+	// ErrorCodeUnauthorized represents unauthorized access
+	ErrorCodeUnauthorized ErrorCode = "UNAUTHORIZED"
+	// ErrorCodeNotFound represents not found errors
+	ErrorCodeNotFound ErrorCode = "NOT_FOUND"
+	// ErrorCodeTooManyRequests represents rate limiting errors
 	ErrorCodeTooManyRequests ErrorCode = "TOO_MANY_REQUESTS"
 
-	// Server errors (5xx)
-	ErrorCodeInternalError      ErrorCode = "INTERNAL_ERROR"
+	// ErrorCodeInternalError represents server errors (5xx)
+	ErrorCodeInternalError ErrorCode = "INTERNAL_ERROR"
+	// ErrorCodeServiceUnavailable represents service unavailable errors
 	ErrorCodeServiceUnavailable ErrorCode = "SERVICE_UNAVAILABLE"
-	ErrorCodeTimeout            ErrorCode = "TIMEOUT"
-	ErrorCodeDependencyFailure  ErrorCode = "DEPENDENCY_FAILURE"
+	// ErrorCodeTimeout represents timeout errors
+	ErrorCodeTimeout ErrorCode = "TIMEOUT"
+	// ErrorCodeDependencyFailure represents dependency failure errors
+	ErrorCodeDependencyFailure ErrorCode = "DEPENDENCY_FAILURE"
 )
 
 // ServiceError represents an error with additional context for proper handling

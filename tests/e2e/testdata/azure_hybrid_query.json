@@ -1,0 +1,74 @@
+{
+  "text": "@SA-Assistant Outline a hybrid reference architecture connecting our on-prem VMware environment to Azure, covering ExpressRoute configuration, VMware HCX migration, active-active failover, and June 2025 Azure Hybrid announcements.",
+  "type": "message",
+  "user": {
+    "id": "e2e-test-user",
+    "name": "E2E Test User"
+  },
+  "channel": {
+    "id": "e2e-test-channel",
+    "name": "E2E Test Channel"
+  },
+  "timestamp": "2025-01-01T00:00:00Z",
+  "expected_response": {
+    "contains_keywords": [
+      "Azure",
+      "hybrid",
+      "ExpressRoute",
+      "VMware",
+      "HCX",
+      "active-active",
+      "failover",
+      "on-premises",
+      "architecture",
+      "migration"
+    ],
+    "contains_code_snippets": [
+      "powershell",
+      "azure",
+      "cli"
+    ],
+    "contains_diagram": true,
+    "diagram_keywords": [
+      "ExpressRoute",
+      "VMware",
+      "Azure",
+      "hybrid",
+      "peering",
+      "network"
+    ],
+    "expected_sources": [
+      "azure-hybrid-architecture",
+      "azure-hybrid-playbook",
+      "azure-hybrid-runbook"
+    ],
+    "max_response_time_seconds": 30,
+    "min_response_length": 500,
+    "web_search_triggers": [
+      "June 2025",
+      "Azure Hybrid announcements"
+    ],
+    "azure_specific_content": {
+      "expressroute_keywords": [
+        "ExpressRoute",
+        "BGP",
+        "peering",
+        "circuit",
+        "gateway"
+      ],
+      "vmware_hcx_keywords": [
+        "HCX",
+        "VMware",
+        "migration",
+        "workload",
+        "extension"
+      ],
+      "failover_keywords": [
+        "active-active",
+        "failover",
+        "availability",
+        "redundancy"
+      ]
+    }
+  }
+}

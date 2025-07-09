@@ -33,11 +33,9 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/your-org/ai-sa-assistant/internal/chroma"
 	"github.com/your-org/ai-sa-assistant/internal/config"
-	"github.com/your-org/ai-sa-assistant/internal/metadata"
 )
 
 const (
-	testChromaURL        = "http://localhost:8001"
 	testCollectionName   = "test_phase1_collection"
 	testMetadataDBPath   = "test_metadata.db"
 	testConfigPath       = "test_config.yaml"
@@ -51,7 +49,6 @@ const (
 // Phase1TestSuite manages the complete Phase 1 integration test
 type Phase1TestSuite struct {
 	chromaClient   *chroma.Client
-	metadataStore  *metadata.Store
 	testConfig     *config.Config
 	tempDir        string
 	testDBPath     string
@@ -60,6 +57,7 @@ type Phase1TestSuite struct {
 	containerID    string
 	ctx            context.Context
 	cancel         context.CancelFunc
+	chromaURL      string // Dynamic ChromaDB URL
 }
 
 // NewPhase1TestSuite creates a new Phase 1 test suite
@@ -79,8 +77,9 @@ func NewPhase1TestSuite(t *testing.T) *Phase1TestSuite {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		ctx:    ctx,
-		cancel: cancel,
+		ctx:       ctx,
+		cancel:    cancel,
+		chromaURL: getChromaURL(), // Use dynamic ChromaDB URL
 	}
 
 	// Create test configuration
@@ -115,7 +114,7 @@ metadata:
 logging:
   level: "info"
   format: "json"
-`, apiKey, testChromaURL, testCollectionName, s.testDBPath)
+`, apiKey, s.chromaURL, testCollectionName, s.testDBPath)
 
 	err := os.WriteFile(s.testConfigPath, []byte(configData), 0600)
 	if err != nil {
@@ -140,7 +139,7 @@ func (s *Phase1TestSuite) SetupTestEnvironment(t *testing.T) {
 	s.waitForChromaDBReady(t)
 
 	// Initialize ChromaDB client
-	s.chromaClient = chroma.NewClient(testChromaURL, testCollectionName)
+	s.chromaClient = chroma.NewClient(s.chromaURL, testCollectionName)
 
 	// Clean up any existing test data
 	s.cleanupTestData(t)
@@ -154,8 +153,8 @@ func (s *Phase1TestSuite) startChromaDBContainer(t *testing.T) {
 	t.Helper()
 
 	// Stop any existing container
-	exec.Command("docker", "stop", "chromadb-test").Run() // nolint: errcheck
-	exec.Command("docker", "rm", "chromadb-test").Run()   // nolint: errcheck
+	exec.Command("docker", "stop", "chromadb-test").Run() //nolint:errcheck,gosec // Test cleanup
+	exec.Command("docker", "rm", "chromadb-test").Run()   //nolint:errcheck,gosec // Test cleanup
 
 	// Start new container using docker-compose
 	cmd := exec.Command("docker-compose", "-f", "docker-compose.test.yml", "up", "-d", "chromadb-test")
@@ -174,14 +173,14 @@ func (s *Phase1TestSuite) waitForChromaDBReady(t *testing.T) {
 
 	maxRetries := 30
 	for i := 0; i < maxRetries; i++ {
-		resp, err := s.httpClient.Get(testChromaURL + "/api/v1/heartbeat")
+		resp, err := s.httpClient.Get(s.chromaURL + "/api/v1/heartbeat")
 		if err == nil && resp.StatusCode == http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			t.Logf("ChromaDB is ready after %d attempts", i+1)
 			return
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -224,6 +223,8 @@ func TestPhase1IngestionPipeline(t *testing.T) {
 		t.Skip("Skipping Phase 1 integration test in short mode")
 	}
 
+	skipIfNoServices(t)
+
 	suite := NewPhase1TestSuite(t)
 	defer suite.Cleanup(t)
 
@@ -265,11 +266,11 @@ func (s *Phase1TestSuite) testDockerComposeSetup(t *testing.T) {
 	}
 
 	// Verify ChromaDB API is accessible
-	resp, err := s.httpClient.Get(testChromaURL + "/api/v1/heartbeat")
+	resp, err := s.httpClient.Get(s.chromaURL + "/api/v1/heartbeat")
 	if err != nil {
 		t.Fatalf("ChromaDB API is not accessible: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("ChromaDB heartbeat failed: status %d", resp.StatusCode)
@@ -286,7 +287,7 @@ func (s *Phase1TestSuite) testIngestionPipeline(t *testing.T) {
 	startTime := time.Now()
 
 	// Run ingestion command
-	cmd := exec.Command("go", "run", "cmd/ingest/main.go",
+	cmd := exec.Command("go", "run", "cmd/ingest/main.go", //nolint:gosec // Test subprocess call
 		"--config", s.testConfigPath,
 		"--docs-path", testDocsPath,
 		"--chunk-size", "400",
@@ -327,22 +328,22 @@ func (s *Phase1TestSuite) testChromaDBValidation(t *testing.T) {
 	t.Helper()
 
 	// Get collection info
-	resp, err := s.httpClient.Get(fmt.Sprintf("%s/api/v1/collections/%s", testChromaURL, testCollectionName))
+	resp, err := s.httpClient.Get(fmt.Sprintf("%s/api/v1/collections/%s", s.chromaURL, testCollectionName))
 	if err != nil {
 		t.Fatalf("Failed to get collection info: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Collection not found: status %d", resp.StatusCode)
 	}
 
 	// Get collection count
-	countResp, err := s.httpClient.Get(fmt.Sprintf("%s/api/v1/collections/%s/count", testChromaURL, testCollectionName))
+	countResp, err := s.httpClient.Get(fmt.Sprintf("%s/api/v1/collections/%s/count", s.chromaURL, testCollectionName))
 	if err != nil {
 		t.Fatalf("Failed to get collection count: %v", err)
 	}
-	defer countResp.Body.Close()
+	defer func() { _ = countResp.Body.Close() }()
 
 	var countData struct {
 		Count int `json:"count"`
@@ -374,14 +375,14 @@ func (s *Phase1TestSuite) validateDocumentContent(t *testing.T) {
 
 	queryBody, _ := json.Marshal(queryReq)
 	resp, err := s.httpClient.Post(
-		fmt.Sprintf("%s/api/v1/collections/%s/query", testChromaURL, testCollectionName),
+		fmt.Sprintf("%s/api/v1/collections/%s/query", s.chromaURL, testCollectionName),
 		"application/json",
 		strings.NewReader(string(queryBody)),
 	)
 	if err != nil {
 		t.Fatalf("Failed to query documents: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -429,7 +430,7 @@ func (s *Phase1TestSuite) testMetadataDBValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open metadata database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Validate table exists
 	var tableCount int
@@ -469,7 +470,7 @@ func (s *Phase1TestSuite) validateMetadataEntries(t *testing.T, db *sql.DB) {
 	if err != nil {
 		t.Fatalf("Failed to query metadata: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	foundDocs := make(map[string]bool)
 	for rows.Next() {
@@ -478,6 +479,11 @@ func (s *Phase1TestSuite) validateMetadataEntries(t *testing.T, db *sql.DB) {
 			t.Fatalf("Failed to scan metadata row: %v", err)
 		}
 		foundDocs[docID] = true
+	}
+
+	// Check for errors from iterating over rows
+	if err := rows.Err(); err != nil {
+		t.Fatalf("Error occurred during row iteration: %v", err)
 	}
 
 	// Validate expected documents are present
@@ -515,7 +521,7 @@ More text to ensure proper chunk creation.
 ## Conclusion
 This document tests ingestion performance.`
 
-	err := os.WriteFile(testDoc, []byte(testContent), 0644)
+	err := os.WriteFile(testDoc, []byte(testContent), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create performance test document: %v", err)
 	}
@@ -542,18 +548,22 @@ This document tests ingestion performance.`
 	}
 
 	perfMetadataPath := filepath.Join(s.tempDir, "perf-metadata.json")
-	perfMetadataFile, err := os.Create(perfMetadataPath)
+	// Validate the path is within our temp directory for security
+	if !strings.HasPrefix(perfMetadataPath, s.tempDir) {
+		t.Fatalf("Invalid file path: %s", perfMetadataPath)
+	}
+	perfMetadataFile, err := os.Create(perfMetadataPath) //nolint:gosec // Path validated above
 	if err != nil {
 		t.Fatalf("Failed to create performance metadata file: %v", err)
 	}
-	defer perfMetadataFile.Close()
+	defer func() { _ = perfMetadataFile.Close() }()
 
 	if err := json.NewEncoder(perfMetadataFile).Encode(perfMetadata); err != nil {
 		t.Fatalf("Failed to write performance metadata: %v", err)
 	}
 
 	// Run performance ingestion
-	cmd := exec.Command("go", "run", "cmd/ingest/main.go",
+	cmd := exec.Command("go", "run", "cmd/ingest/main.go", //nolint:gosec // Test subprocess call
 		"--config", s.testConfigPath,
 		"--docs-path", s.tempDir,
 		"--chunk-size", "200")
@@ -608,7 +618,7 @@ chroma:
 
 metadata:
   db_path: "%s"
-`, testChromaURL, testCollectionName, s.testDBPath)
+`, s.chromaURL, testCollectionName, s.testDBPath)
 
 	err := os.WriteFile(noKeyConfig, []byte(configData), 0600)
 	if err != nil {
@@ -616,7 +626,7 @@ metadata:
 	}
 
 	// Run ingestion with missing API key
-	cmd := exec.Command("go", "run", "cmd/ingest/main.go",
+	cmd := exec.Command("go", "run", "cmd/ingest/main.go", //nolint:gosec // Test subprocess call
 		"--config", noKeyConfig,
 		"--docs-path", testDocsPath)
 
@@ -662,7 +672,7 @@ metadata:
 	}
 
 	// Run ingestion with unavailable ChromaDB
-	cmd := exec.Command("go", "run", "cmd/ingest/main.go",
+	cmd := exec.Command("go", "run", "cmd/ingest/main.go", //nolint:gosec // Test subprocess call
 		"--config", wrongURLConfig,
 		"--docs-path", testDocsPath)
 
@@ -692,7 +702,7 @@ func (s *Phase1TestSuite) testMalformedDocuments(t *testing.T) {
 	// with a non-existent file path, which should be handled gracefully
 
 	// Run ingestion - should complete successfully despite malformed document
-	cmd := exec.Command("go", "run", "cmd/ingest/main.go",
+	cmd := exec.Command("go", "run", "cmd/ingest/main.go", //nolint:gosec // Test subprocess call
 		"--config", s.testConfigPath,
 		"--docs-path", testDocsPath)
 
@@ -753,19 +763,22 @@ func TestPhase1Pipeline_CI(t *testing.T) {
 		t.Skip("Skipping CI-specific test outside CI environment")
 	}
 
+	skipIfNoServices(t)
+
 	// Minimal validation for CI
 	if os.Getenv("OPENAI_API_KEY") == "" {
 		t.Skip("OPENAI_API_KEY not available in CI")
 	}
 
 	// Simple validation that the ingestion command exists and compiles
-	cmd := exec.Command("go", "build", "-o", "/tmp/test-ingest", "cmd/ingest/main.go")
+	cmd := exec.Command("go", "build", "-o", "/tmp/test-ingest",
+		"cmd/ingest/main.go")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("Failed to build ingestion command: %v\nOutput: %s", err, output)
 	}
 
 	// Clean up
-	os.Remove("/tmp/test-ingest")
+	_ = os.Remove("/tmp/test-ingest")
 
 	t.Logf("✅ Phase 1 CI test passed")
 }

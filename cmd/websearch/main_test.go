@@ -209,7 +209,7 @@ func TestHandleHealthEndpoint(t *testing.T) {
 
 	// Use the new health check system
 	healthManager := &MockHealthManager{}
-	healthManager.On("HTTPHandler").Return(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	healthManager.On("HTTPHandler").Return(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{

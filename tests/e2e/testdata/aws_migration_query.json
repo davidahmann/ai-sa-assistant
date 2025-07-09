@@ -1,0 +1,47 @@
+{
+  "text": "@SA-Assistant Generate a high-level lift-and-shift plan for migrating 120 on-prem Windows and Linux VMs to AWS, including EC2 instance recommendations, VPC/subnet topology, and the latest AWS MGN best practices from Q2 2025.",
+  "type": "message",
+  "user": {
+    "id": "e2e-test-user",
+    "name": "E2E Test User"
+  },
+  "channel": {
+    "id": "e2e-test-channel",
+    "name": "E2E Test Channel"
+  },
+  "timestamp": "2025-01-01T00:00:00Z",
+  "expected_response": {
+    "contains_keywords": [
+      "AWS",
+      "migration",
+      "lift-and-shift",
+      "EC2",
+      "VPC",
+      "subnet",
+      "MGN",
+      "Windows",
+      "Linux",
+      "architecture"
+    ],
+    "contains_code_snippets": [
+      "aws",
+      "cli",
+      "terraform",
+      "cloudformation"
+    ],
+    "contains_diagram": true,
+    "diagram_keywords": [
+      "VPC",
+      "subnet",
+      "EC2",
+      "MGN",
+      "migration"
+    ],
+    "expected_sources": [
+      "aws-migration-playbook",
+      "aws-lift-shift-guide"
+    ],
+    "max_response_time_seconds": 30,
+    "min_response_length": 500
+  }
+}

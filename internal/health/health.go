@@ -160,9 +160,10 @@ func (m *Manager) HTTPHandler() http.HandlerFunc {
 
 		// Set HTTP status code based on health status
 		statusCode := http.StatusOK
-		if result.Status == StatusUnhealthy {
+		switch result.Status {
+		case StatusUnhealthy:
 			statusCode = http.StatusServiceUnavailable
-		} else if result.Status == StatusDegraded {
+		case StatusDegraded:
 			statusCode = http.StatusOK // Keep 200 for degraded
 		}
 
@@ -246,7 +247,7 @@ func HTTPHealthChecker(url string, client *http.Client) Checker {
 		defer func() { _ = resp.Body.Close() }()
 
 		status := StatusHealthy
-		if resp.StatusCode >= 400 {
+		if resp.StatusCode >= http.StatusBadRequest {
 			status = StatusUnhealthy
 		}
 
