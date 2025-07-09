@@ -43,16 +43,44 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc sqlite3 libsqlite3-dev
+
     - name: Build services
       run: |
-        go build -o bin/retrieve ./cmd/retrieve
-        go build -o bin/websearch ./cmd/websearch
-        go build -o bin/synthesize ./cmd/synthesize
-        go build -o bin/teamsbot ./cmd/teamsbot
+        echo "Building services..."
+        mkdir -p bin
+        
+        # Build retrieve service (needs CGO for SQLite)
+        echo "Building retrieve service..."
+        CGO_ENABLED=1 go build -o bin/retrieve ./cmd/retrieve
+        
+        # Build other services
+        echo "Building websearch service..."
+        CGO_ENABLED=0 go build -o bin/websearch ./cmd/websearch
+        
+        echo "Building synthesize service..."
+        CGO_ENABLED=0 go build -o bin/synthesize ./cmd/synthesize
+        
+        echo "Building teamsbot service..."
+        CGO_ENABLED=0 go build -o bin/teamsbot ./cmd/teamsbot
+        
+        # Make binaries executable
+        chmod +x bin/*
+        
+        echo "Build complete. Binary sizes:"
+        ls -la bin/
 
     - name: Create test configuration
       run: |
         mkdir -p configs
+        mkdir -p data
+        
+        # Create metadata database directory
+        touch data/metadata.db
+        
         cat > configs/config.yaml << EOF
         openai:
           api_key: "test-key-for-ci"
@@ -62,6 +90,9 @@ jobs:
         chromadb:
           url: "http://localhost:8000"
           collection_name: "ai_sa_assistant"
+
+        metadata:
+          db_path: "./data/metadata.db"
 
         services:
           retrieve:
@@ -80,14 +111,45 @@ jobs:
           level: "info"
           format: "json"
         EOF
+        
+        echo "Configuration created:"
+        cat configs/config.yaml
 
     - name: Start services in background
       run: |
-        ./bin/retrieve &
-        ./bin/websearch &
-        ./bin/synthesize &
-        ./bin/teamsbot &
-        sleep 10  # Give services time to start
+        echo "Starting services..."
+        mkdir -p logs
+        
+        # Start retrieve service
+        echo "Starting retrieve service..."
+        ./bin/retrieve --config=configs/config.yaml > logs/retrieve.log 2>&1 &
+        RETRIEVE_PID=$!
+        echo "Retrieve service started with PID: $RETRIEVE_PID"
+        
+        # Start websearch service  
+        echo "Starting websearch service..."
+        ./bin/websearch --config=configs/config.yaml > logs/websearch.log 2>&1 &
+        WEBSEARCH_PID=$!
+        echo "Websearch service started with PID: $WEBSEARCH_PID"
+        
+        # Start synthesize service
+        echo "Starting synthesize service..."
+        ./bin/synthesize --config=configs/config.yaml > logs/synthesize.log 2>&1 &
+        SYNTHESIZE_PID=$!
+        echo "Synthesize service started with PID: $SYNTHESIZE_PID"
+        
+        # Start teamsbot service
+        echo "Starting teamsbot service..."
+        ./bin/teamsbot --config=configs/config.yaml > logs/teamsbot.log 2>&1 &
+        TEAMSBOT_PID=$!
+        echo "Teamsbot service started with PID: $TEAMSBOT_PID"
+        
+        # Give services time to start
+        sleep 15
+        
+        # Check if processes are still running
+        echo "Checking service processes..."
+        ps aux | grep -E "(retrieve|websearch|synthesize|teamsbot)" | grep -v grep || echo "Some services may not be running"
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
@@ -101,11 +163,43 @@ jobs:
     - name: Wait for services to be ready
       run: |
         echo "Waiting for services to be ready..."
-        timeout 60 bash -c 'until curl -f http://localhost:8081/health; do echo "Retrieve service not ready..."; sleep 2; done'
-        timeout 60 bash -c 'until curl -f http://localhost:8082/health; do echo "Synthesize service not ready..."; sleep 2; done'
-        timeout 60 bash -c 'until curl -f http://localhost:8083/health; do echo "Websearch service not ready..."; sleep 2; done'
-        timeout 60 bash -c 'until curl -f http://localhost:8080/health; do echo "Teamsbot service not ready..."; sleep 2; done'
-        echo "All services are ready!"
+        
+        # Function to check service and show logs on failure
+        check_service() {
+          local service_name=$1
+          local port=$2
+          local log_file=$3
+          
+          echo "Checking $service_name on port $port..."
+          if timeout 60 bash -c "until curl -f http://localhost:$port/health; do echo '$service_name not ready...'; sleep 2; done"; then
+            echo "$service_name is ready!"
+            return 0
+          else
+            echo "❌ $service_name failed to start on port $port"
+            echo "=== $service_name logs ==="
+            cat $log_file 2>/dev/null || echo "No logs found for $service_name"
+            echo "========================="
+            return 1
+          fi
+        }
+        
+        # Check each service
+        FAILED_SERVICES=()
+        
+        check_service "Retrieve" 8081 "logs/retrieve.log" || FAILED_SERVICES+=("retrieve")
+        check_service "Synthesize" 8082 "logs/synthesize.log" || FAILED_SERVICES+=("synthesize") 
+        check_service "Websearch" 8083 "logs/websearch.log" || FAILED_SERVICES+=("websearch")
+        check_service "Teamsbot" 8080 "logs/teamsbot.log" || FAILED_SERVICES+=("teamsbot")
+        
+        if [ ${#FAILED_SERVICES[@]} -gt 0 ]; then
+          echo "❌ Failed services: ${FAILED_SERVICES[*]}"
+          echo "=== Process list ==="
+          ps aux | grep -E "(retrieve|websearch|synthesize|teamsbot)" | grep -v grep || echo "No service processes found"
+          echo "==================="
+          exit 1
+        fi
+        
+        echo "✅ All services are ready!"
 
     - name: Run integration tests
       run: |
@@ -177,7 +271,10 @@ jobs:
         # Copy files to artifacts directory
         cp coverage.html test-artifacts/ || true
         cp test_metadata.db test-artifacts/ || true
-        cp -r logs/* test-artifacts/ || true
+        cp data/metadata.db test-artifacts/ || true
+        if [ -d logs ]; then
+          cp -r logs/* test-artifacts/ || true
+        fi
 
     - name: Upload test artifacts
       if: always()
