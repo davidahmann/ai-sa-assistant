@@ -52,8 +52,9 @@ type SynthesisRequest struct {
 
 // ChunkItem represents a document chunk with metadata
 type ChunkItem struct {
-	Text  string `json:"text" binding:"required"`
-	DocID string `json:"doc_id" binding:"required"`
+	Text     string `json:"text" binding:"required"`
+	DocID    string `json:"doc_id" binding:"required"`
+	SourceID string `json:"source_id"`
 }
 
 // WebResult represents a web search result
@@ -85,6 +86,7 @@ func validateSynthesisRequest(req SynthesisRequest) error {
 		if strings.TrimSpace(chunk.DocID) == "" {
 			return fmt.Errorf("chunk %d doc_id cannot be empty", i)
 		}
+		// SourceID is optional, so no validation required
 	}
 
 	// Validate web results
@@ -265,12 +267,21 @@ func parseSynthesisRequest(c *gin.Context, logger *zap.Logger) (SynthesisRequest
 func processSynthesisRequest(
 	req SynthesisRequest,
 	cfg *config.Config,
-	_ *zap.Logger,
+	logger *zap.Logger,
 	openaiClient *internalopenai.Client,
 ) (*internalopenai.ChatCompletionResponse, error) {
 	// Convert request to internal format
 	contextItems := convertChunksToContextItems(req.Chunks)
-	webResultStrings, _ := convertWebResults(req.WebResults)
+	webResultStrings, webSourceURLs := convertWebResults(req.WebResults)
+
+	// Validate source metadata
+	if err := validateSynthesisSourceMetadata(contextItems, webSourceURLs, logger); err != nil {
+		logger.Warn("Source metadata validation failed, continuing with available data",
+			zap.Error(err),
+			zap.Int("context_items", len(contextItems)),
+			zap.Int("web_sources", len(webSourceURLs)))
+		// Continue processing despite validation warnings
+	}
 
 	// Build comprehensive prompt
 	prompt := synth.BuildPrompt(req.Query, contextItems, webResultStrings)
@@ -296,9 +307,15 @@ func processSynthesisRequest(
 func convertChunksToContextItems(chunks []ChunkItem) []synth.ContextItem {
 	contextItems := make([]synth.ContextItem, len(chunks))
 	for i, chunk := range chunks {
+		// Use SourceID if available, otherwise fall back to DocID
+		sourceID := chunk.SourceID
+		if sourceID == "" {
+			sourceID = chunk.DocID
+		}
+
 		contextItems[i] = synth.ContextItem{
 			Content:  chunk.Text,
-			SourceID: chunk.DocID,
+			SourceID: sourceID,
 			Score:    1.0,
 			Priority: 1,
 		}
@@ -339,7 +356,10 @@ func logSynthesisCompletion(
 ) {
 	allAvailableSources := make([]string, 0, len(req.Chunks)+len(req.WebResults))
 	for _, chunk := range req.Chunks {
-		if chunk.DocID != "" {
+		// Prefer SourceID if available, otherwise use DocID
+		if chunk.SourceID != "" {
+			allAvailableSources = append(allAvailableSources, chunk.SourceID)
+		} else if chunk.DocID != "" {
 			allAvailableSources = append(allAvailableSources, chunk.DocID)
 		}
 	}
@@ -403,6 +423,70 @@ func startServer(router *gin.Engine, cfg *config.Config, logger *zap.Logger) {
 	if err := router.Run(port); err != nil {
 		logger.Fatal("Failed to start server", zap.Error(err))
 	}
+}
+
+// validateSynthesisSourceMetadata validates source metadata for synthesis
+func validateSynthesisSourceMetadata(
+	contextItems []synth.ContextItem,
+	webSourceURLs []string,
+	logger *zap.Logger,
+) error {
+	var errors []string
+
+	// Validate context items have source IDs
+	emptySourceCount := 0
+	for i, item := range contextItems {
+		if strings.TrimSpace(item.SourceID) == "" {
+			emptySourceCount++
+			logger.Debug("Context item missing source ID", zap.Int("item_index", i))
+		}
+		if strings.TrimSpace(item.Content) == "" {
+			errors = append(errors, fmt.Sprintf("context item %d has empty content", i))
+		}
+	}
+
+	if emptySourceCount > 0 {
+		logger.Warn("Some context items missing source IDs",
+			zap.Int("empty_source_count", emptySourceCount),
+			zap.Int("total_items", len(contextItems)))
+	}
+
+	// Validate web source URLs
+	invalidURLCount := 0
+	for i, url := range webSourceURLs {
+		if !isValidWebSourceURL(url) {
+			invalidURLCount++
+			logger.Debug("Invalid web source URL", zap.Int("url_index", i), zap.String("url", url))
+		}
+	}
+
+	if invalidURLCount > 0 {
+		logger.Warn("Some web source URLs are invalid",
+			zap.Int("invalid_url_count", invalidURLCount),
+			zap.Int("total_urls", len(webSourceURLs)))
+	}
+
+	// Check for minimum sources
+	totalSources := len(contextItems) + len(webSourceURLs)
+	if totalSources == 0 {
+		errors = append(errors, "no sources provided for synthesis")
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("source validation errors: %s", strings.Join(errors, ", "))
+	}
+
+	return nil
+}
+
+// isValidWebSourceURL validates a web source URL
+func isValidWebSourceURL(url string) bool {
+	if strings.TrimSpace(url) == "" {
+		return false
+	}
+
+	url = strings.TrimSpace(url)
+	return strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
 }
 
 // initializeLogger creates a logger based on configuration settings

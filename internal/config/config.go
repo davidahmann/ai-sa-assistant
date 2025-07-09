@@ -48,6 +48,13 @@ const (
 	MaskedValueMinLength = 8
 	// MaskedValueKeepChars defines how many characters to keep visible when masking config values
 	MaskedValueKeepChars = 8
+
+	// DefaultDiagramTimeoutSeconds is the default timeout for diagram generation in seconds
+	DefaultDiagramTimeoutSeconds = 30
+	// DefaultDiagramCacheExpiryHours is the default cache expiry time for diagrams in hours
+	DefaultDiagramCacheExpiryHours = 24
+	// DefaultMaxDiagramSize is the default maximum size for diagrams in bytes
+	DefaultMaxDiagramSize = 10240
 )
 
 var (
@@ -67,6 +74,7 @@ type Config struct {
 	Retrieval RetrievalConfig `mapstructure:"retrieval"`
 	WebSearch WebSearchConfig `mapstructure:"websearch"`
 	Synthesis SynthesisConfig `mapstructure:"synthesis"`
+	Diagram   DiagramConfig   `mapstructure:"diagram"`
 	Logging   LoggingConfig   `mapstructure:"logging"`
 	Feedback  FeedbackConfig  `mapstructure:"feedback"`
 }
@@ -119,6 +127,15 @@ type SynthesisConfig struct {
 	Model       string  `mapstructure:"model"`
 	MaxTokens   int     `mapstructure:"max_tokens"`
 	Temperature float64 `mapstructure:"temperature"`
+}
+
+// DiagramConfig contains diagram rendering configuration
+type DiagramConfig struct {
+	MermaidInkURL  string `mapstructure:"mermaid_ink_url"`
+	Timeout        int    `mapstructure:"timeout_seconds"`
+	CacheExpiry    int    `mapstructure:"cache_expiry_hours"`
+	EnableCaching  bool   `mapstructure:"enable_caching"`
+	MaxDiagramSize int    `mapstructure:"max_diagram_size"`
 }
 
 // LoggingConfig contains logging configuration
@@ -244,6 +261,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("synthesis.model", "gpt-4o")
 	v.SetDefault("synthesis.max_tokens", DefaultMaxTokens)
 	v.SetDefault("synthesis.temperature", DefaultTemperature)
+
+	// Diagram defaults
+	v.SetDefault("diagram.mermaid_ink_url", "https://mermaid.ink/img")
+	v.SetDefault("diagram.timeout_seconds", DefaultDiagramTimeoutSeconds)
+	v.SetDefault("diagram.cache_expiry_hours", DefaultDiagramCacheExpiryHours)
+	v.SetDefault("diagram.enable_caching", true)
+	v.SetDefault("diagram.max_diagram_size", DefaultMaxDiagramSize)
 
 	// Logging defaults
 	v.SetDefault("logging.level", "info")
@@ -393,6 +417,35 @@ func validateConfig(config *Config) error {
 		errors = append(errors, ValidationError{
 			Field:   "synthesis.temperature",
 			Message: "temperature must be between 0 and 2",
+		})
+	}
+
+	// Validate diagram configuration
+	if config.Diagram.MermaidInkURL == "" {
+		errors = append(errors, ValidationError{
+			Field:   "diagram.mermaid_ink_url",
+			Message: "mermaid_ink_url is required",
+		})
+	}
+
+	if config.Diagram.Timeout <= 0 {
+		errors = append(errors, ValidationError{
+			Field:   "diagram.timeout_seconds",
+			Message: "timeout_seconds must be greater than 0",
+		})
+	}
+
+	if config.Diagram.CacheExpiry <= 0 {
+		errors = append(errors, ValidationError{
+			Field:   "diagram.cache_expiry_hours",
+			Message: "cache_expiry_hours must be greater than 0",
+		})
+	}
+
+	if config.Diagram.MaxDiagramSize <= 0 {
+		errors = append(errors, ValidationError{
+			Field:   "diagram.max_diagram_size",
+			Message: "max_diagram_size must be greater than 0",
 		})
 	}
 

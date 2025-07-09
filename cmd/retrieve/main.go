@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -56,6 +57,7 @@ type SearchChunk struct {
 	Text     string                 `json:"text"`
 	Score    float64                `json:"score"`
 	DocID    string                 `json:"doc_id"`
+	SourceID string                 `json:"source_id"`
 	Metadata map[string]interface{} `json:"metadata"`
 }
 
@@ -465,10 +467,15 @@ func buildSearchResponse(
 			metadataMap[k] = v
 		}
 
+		// Extract document ID from chunk ID to lookup source metadata
+		docID := extractDocIDFromChunkID(result.ID)
+		sourceID := getSourceIDForDocument(docID, deps)
+
 		chunks[i] = SearchChunk{
 			Text:     result.Content,
 			Score:    1.0 - result.Distance,
 			DocID:    result.ID,
+			SourceID: sourceID,
 			Metadata: metadataMap,
 		}
 	}
@@ -480,6 +487,53 @@ func buildSearchResponse(
 		FallbackTriggered: fallbackTriggered,
 		FallbackReason:    fallbackReason,
 	}
+}
+
+// extractDocIDFromChunkID extracts the document ID from a chunk ID
+// Chunk IDs are typically in the format "doc_id_chunk_N" where N is the chunk number
+func extractDocIDFromChunkID(chunkID string) string {
+	// Split by underscores and remove the last two parts ("chunk" and number)
+	parts := strings.Split(chunkID, "_")
+	const minParts = 3
+	if len(parts) >= minParts {
+		// Find the last occurrence of "chunk" to handle doc IDs that contain underscores
+		const chunkOffset = 2
+		for i := len(parts) - chunkOffset; i >= 0; i-- {
+			if parts[i] == "chunk" {
+				return strings.Join(parts[:i], "_")
+			}
+		}
+	}
+	// If no "chunk" pattern found, assume the whole ID is the document ID
+	return chunkID
+}
+
+// getSourceIDForDocument retrieves the source ID (URL or title) for a document
+func getSourceIDForDocument(docID string, deps *ServiceDependencies) string {
+	// Look up document metadata to get source information
+	metadataEntry, err := deps.MetadataStore.GetMetadataByDocID(docID)
+	if err != nil {
+		deps.Logger.Warn("Failed to get metadata for document",
+			zap.String("doc_id", docID),
+			zap.Error(err))
+		// Fall back to doc ID if metadata lookup fails
+		return docID
+	}
+
+	if metadataEntry == nil {
+		deps.Logger.Debug("No metadata found for document", zap.String("doc_id", docID))
+		// Fall back to doc ID if no metadata entry found
+		return docID
+	}
+
+	// Prefer source URL if available, otherwise use title, otherwise fall back to doc ID
+	if metadataEntry.SourceURL != "" {
+		return metadataEntry.SourceURL
+	}
+	if metadataEntry.Title != "" {
+		return metadataEntry.Title
+	}
+	return docID
 }
 
 // createSearchHandler creates the main search endpoint handler

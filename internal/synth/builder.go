@@ -62,6 +62,7 @@ const (
 	TruncationSafetyRatio  = 0.9
 	MinCodeMatchGroups     = 3
 	MinSourceMatchGroups   = 2
+	MinURLLength           = 10
 )
 
 // DefaultPromptConfig returns default configuration
@@ -85,6 +86,7 @@ type SynthesisRequest struct {
 type SynthesisResponse struct {
 	MainText     string        `json:"main_text"`
 	DiagramCode  string        `json:"diagram_code"`
+	DiagramURL   string        `json:"diagram_url,omitempty"`
 	CodeSnippets []CodeSnippet `json:"code_snippets"`
 	Sources      []string      `json:"sources"`
 }
@@ -104,8 +106,15 @@ func BuildPrompt(query string, contextItems []ContextItem, webResults []string) 
 
 // BuildPromptWithConfig combines context into a comprehensive prompt with configuration
 func BuildPromptWithConfig(query string, contextItems []ContextItem, webResults []string, config PromptConfig) string {
+	// Validate and deduplicate sources before processing
+	validatedContext, err := ValidateAndDeduplicateSources(contextItems)
+	if err != nil {
+		// Log warning but continue with original context if validation fails
+		validatedContext = contextItems
+	}
+
 	// Prioritize and limit context based on token constraints
-	optimizedContext := PrioritizeContext(contextItems, config.MaxContextItems)
+	optimizedContext := PrioritizeContext(validatedContext, config.MaxContextItems)
 	limitedWebResults := LimitWebResults(webResults, config.MaxWebResults)
 
 	var prompt strings.Builder
@@ -125,17 +134,12 @@ func BuildPromptWithConfig(query string, contextItems []ContextItem, webResults 
 		}
 	}
 
-	// Web search results
+	// Web search results with enhanced URL tracking
 	if len(limitedWebResults) > 0 {
 		prompt.WriteString("--- Live Web Search Results ---\n")
 		for i, result := range limitedWebResults {
-			// Extract URL from web result for source attribution
-			url := extractURLFromWebResult(result)
-			if url != "" {
-				prompt.WriteString(fmt.Sprintf("Web Result %d [%s]: %s\n\n", i+1, url, result))
-			} else {
-				prompt.WriteString(fmt.Sprintf("Web Result %d: %s\n\n", i+1, result))
-			}
+			formattedResult := formatWebResultWithURL(i+1, result)
+			prompt.WriteString(formattedResult)
 		}
 	}
 
@@ -1375,6 +1379,20 @@ func normalizeLanguage(language string) string {
 	return normalized
 }
 
+// formatWebResultWithURL formats a web result with URL validation and source attribution
+func formatWebResultWithURL(index int, result string) string {
+	url := extractURLFromWebResult(result)
+
+	switch {
+	case url != "" && isValidURL(url):
+		return fmt.Sprintf("Web Result %d [%s]: %s\n\n", index, url, result)
+	case url != "" && !isValidURL(url):
+		return fmt.Sprintf("Web Result %d [Invalid URL]: %s\n\n", index, result)
+	default:
+		return fmt.Sprintf("Web Result %d [No URL]: %s\n\n", index, result)
+	}
+}
+
 // extractURLFromWebResult extracts the URL from a web result string
 func extractURLFromWebResult(result string) string {
 	// Web results are formatted as "Title: <title>\nSnippet: <snippet>\nURL: <url>"
@@ -1386,6 +1404,164 @@ func extractURLFromWebResult(result string) string {
 		}
 	}
 	return ""
+}
+
+// ValidateSourceMetadata validates that all context items have valid source metadata
+func ValidateSourceMetadata(contextItems []ContextItem) error {
+	for i, item := range contextItems {
+		if strings.TrimSpace(item.SourceID) == "" {
+			return fmt.Errorf("context item %d is missing source ID", i)
+		}
+		if strings.TrimSpace(item.Content) == "" {
+			return fmt.Errorf("context item %d is missing content", i)
+		}
+	}
+	return nil
+}
+
+// DeduplicateSourcesByID removes duplicate context items based on SourceID
+func DeduplicateSourcesByID(contextItems []ContextItem) []ContextItem {
+	seen := make(map[string]bool)
+	var deduplicated []ContextItem
+
+	for _, item := range contextItems {
+		if !seen[item.SourceID] {
+			seen[item.SourceID] = true
+			deduplicated = append(deduplicated, item)
+		}
+	}
+
+	return deduplicated
+}
+
+// DeduplicateSourcesByContent removes duplicate context items with similar content
+func DeduplicateSourcesByContent(contextItems []ContextItem, similarityThreshold float64) []ContextItem {
+	if len(contextItems) <= 1 {
+		return contextItems
+	}
+
+	var deduplicated []ContextItem
+	deduplicated = append(deduplicated, contextItems[0]) // Always include first item
+
+	for i := 1; i < len(contextItems); i++ {
+		currentItem := contextItems[i]
+		isSimilar := false
+
+		// Check similarity with all previously added items
+		for _, existingItem := range deduplicated {
+			similarity := calculateContentSimilarity(currentItem.Content, existingItem.Content)
+			if similarity >= similarityThreshold {
+				isSimilar = true
+				break
+			}
+		}
+
+		if !isSimilar {
+			deduplicated = append(deduplicated, currentItem)
+		}
+	}
+
+	return deduplicated
+}
+
+// calculateContentSimilarity calculates a simple similarity score between two text strings
+func calculateContentSimilarity(text1, text2 string) float64 {
+	// Simple Jaccard similarity using word tokens
+	words1 := strings.Fields(strings.ToLower(text1))
+	words2 := strings.Fields(strings.ToLower(text2))
+
+	if len(words1) == 0 && len(words2) == 0 {
+		return 1.0
+	}
+	if len(words1) == 0 || len(words2) == 0 {
+		return 0.0
+	}
+
+	// Create sets of words
+	set1 := make(map[string]bool)
+	set2 := make(map[string]bool)
+
+	for _, word := range words1 {
+		set1[word] = true
+	}
+	for _, word := range words2 {
+		set2[word] = true
+	}
+
+	// Calculate intersection and union
+	intersection := 0
+	for word := range set1 {
+		if set2[word] {
+			intersection++
+		}
+	}
+
+	union := len(set1) + len(set2) - intersection
+	if union == 0 {
+		return 0.0
+	}
+
+	return float64(intersection) / float64(union)
+}
+
+// ValidateAndDeduplicateSources performs comprehensive source validation and deduplication
+func ValidateAndDeduplicateSources(contextItems []ContextItem) ([]ContextItem, error) {
+	// Step 1: Validate source metadata
+	if err := ValidateSourceMetadata(contextItems); err != nil {
+		return nil, fmt.Errorf("source validation failed: %w", err)
+	}
+
+	// Step 2: Remove exact duplicates by SourceID
+	deduplicated := DeduplicateSourcesByID(contextItems)
+
+	// Step 3: Remove similar content (configurable threshold)
+	const contentSimilarityThreshold = 0.8
+	finalItems := DeduplicateSourcesByContent(deduplicated, contentSimilarityThreshold)
+
+	return finalItems, nil
+}
+
+// isValidURL performs basic URL validation for web search results
+func isValidURL(url string) bool {
+	if strings.TrimSpace(url) == "" {
+		return false
+	}
+
+	// Check for basic URL structure
+	url = strings.TrimSpace(url)
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return false
+	}
+
+	// Check for minimum URL length
+	if len(url) < MinURLLength {
+		return false
+	}
+
+	// Check for valid characters (basic check)
+	for _, char := range url {
+		if char < 32 || char > 126 {
+			return false
+		}
+	}
+
+	return true
+}
+
+// TrackWebSearchSources extracts and validates URLs from web search results
+func TrackWebSearchSources(webResults []string) []string {
+	var validURLs []string
+	seenURLs := make(map[string]bool)
+
+	for _, result := range webResults {
+		url := extractURLFromWebResult(result)
+		if url != "" && isValidURL(url) && !seenURLs[url] {
+			validURLs = append(validURLs, url)
+			seenURLs[url] = true
+		}
+	}
+
+	return validURLs
 }
 
 // buildCodeSecurityRequirements creates security and quality requirements for code generation

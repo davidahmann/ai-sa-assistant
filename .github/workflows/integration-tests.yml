@@ -1,0 +1,152 @@
+name: Integration Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      chromadb:
+        image: chromadb/chroma:latest
+        ports:
+          - 8000:8000
+        options: --health-cmd="curl -f http://localhost:8000/api/v1/heartbeat" --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.5'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Build services
+      run: |
+        go build -o bin/retrieve ./cmd/retrieve
+        go build -o bin/websearch ./cmd/websearch
+        go build -o bin/synthesize ./cmd/synthesize
+        go build -o bin/teamsbot ./cmd/teamsbot
+
+    - name: Create test configuration
+      run: |
+        mkdir -p configs
+        cat > configs/config.yaml << EOF
+        openai:
+          api_key: "test-key-for-ci"
+          model: "gpt-4"
+          embedding_model: "text-embedding-3-small"
+
+        chromadb:
+          url: "http://localhost:8000"
+          collection_name: "ai_sa_assistant"
+
+        services:
+          retrieve:
+            port: 8081
+          websearch:
+            port: 8083
+          synthesize:
+            port: 8082
+          teamsbot:
+            port: 8080
+
+        teams:
+          webhook_url: "https://webhook.example.com/test"
+
+        logging:
+          level: "info"
+          format: "json"
+        EOF
+
+    - name: Start services in background
+      run: |
+        ./bin/retrieve &
+        ./bin/websearch &
+        ./bin/synthesize &
+        ./bin/teamsbot &
+        sleep 10  # Give services time to start
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+
+    - name: Wait for services to be ready
+      run: |
+        timeout 60 bash -c 'until curl -f http://localhost:8081/health; do sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:8082/health; do sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:8083/health; do sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+
+    - name: Run integration tests
+      run: |
+        go test -v -tags=integration ./tests/integration/... -timeout=10m
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        TEST_SERVICES_BASE_URL: "http://localhost"
+        TEST_CHROMADB_URL: "http://localhost:8000"
+        TEST_TIMEOUT: "60s"
+        TEST_VERBOSE: "true"
+
+    - name: Run demo scenario tests
+      run: |
+        go test -v -tags=demo ./tests/demo/... -timeout=15m
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+
+    - name: Run performance tests
+      run: |
+        go test -v ./tests/performance/... -timeout=20m
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+
+    - name: Generate test coverage report
+      run: |
+        go test -v -tags=integration -coverprofile=coverage.out ./tests/integration/...
+        go tool cover -html=coverage.out -o coverage.html
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: integration
+        name: integration-tests
+        fail_ci_if_error: false
+
+    - name: Stop services
+      if: always()
+      run: |
+        pkill -f "./bin/retrieve" || true
+        pkill -f "./bin/websearch" || true
+        pkill -f "./bin/synthesize" || true
+        pkill -f "./bin/teamsbot" || true
+
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-artifacts
+        path: |
+          coverage.html
+          test_metadata.db
+          logs/
