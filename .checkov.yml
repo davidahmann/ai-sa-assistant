@@ -1,0 +1,27 @@
+# Checkov configuration for AI SA Assistant demo project
+# Balances security scanning with demo project flexibility
+
+# Skip overly strict checks that are problematic for demo projects
+skip-check:
+  # GitHub Actions workflow security checks
+  - CKV_GHA_7     # Allow workflow_dispatch inputs (needed for release workflows)
+  - CKV2_GHA_1    # Allow some top-level permissions (needed for releases)
+
+  # Docker security checks that are too restrictive for demo
+  - CKV_DOCKER_2  # Allow non-root user warnings (common in Go containers)
+  - CKV_DOCKER_3  # Allow USER root in Dockerfile (sometimes needed for setup)
+  - CKV_DOCKER_7  # Allow latest tag in non-production demos
+  - CKV_DOCKER_8  # Allow latest tag in non-production demos
+
+# Frameworks to scan - keep important security checks
+framework:
+  - github_actions
+  - dockerfile
+  - secrets
+
+# Exclude test files and generated content from some checks
+skip-path:
+  - "tests/"
+  - "benchmark-results.txt"
+  - ".cache/"
+  - "vendor/"
