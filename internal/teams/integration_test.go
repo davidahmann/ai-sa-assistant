@@ -42,16 +42,39 @@ func TestTeamsWorkflowIntegration(t *testing.T) {
 	}
 
 	logger := zaptest.NewLogger(t)
+	testContext := setupIntegrationTestContext(t, logger)
+	defer testContext.cleanup()
 
+	testScenarios := getIntegrationTestScenarios()
+
+	for _, scenario := range testScenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			runIntegrationTestScenario(t, testContext, scenario)
+		})
+	}
+}
+
+type integrationTestContext struct {
+	retrieveServer   *httptest.Server
+	websearchServer  *httptest.Server
+	synthesizeServer *httptest.Server
+	messageParser    *MessageParser
+	webhookValidator *WebhookValidator
+	orchestrator     *Orchestrator
+	logger           *zaptest.Logger
+}
+
+func (ctx *integrationTestContext) cleanup() {
+	ctx.retrieveServer.Close()
+	ctx.websearchServer.Close()
+	ctx.synthesizeServer.Close()
+}
+
+func setupIntegrationTestContext(_ *testing.T, logger *zaptest.Logger) *integrationTestContext {
 	// Create mock backend services
 	retrieveServer := createMockRetrieveServer()
-	defer retrieveServer.Close()
-
 	websearchServer := createMockWebSearchServer()
-	defer websearchServer.Close()
-
 	synthesizeServer := createMockSynthesizeServer()
-	defer synthesizeServer.Close()
 
 	// Create configuration
 	cfg := &config.Config{
@@ -90,13 +113,26 @@ func TestTeamsWorkflowIntegration(t *testing.T) {
 
 	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
 
-	// Test scenarios
-	testScenarios := []struct {
-		name           string
-		message        Message
-		expectedStatus int
-		shouldProcess  bool
-	}{
+	return &integrationTestContext{
+		retrieveServer:   retrieveServer,
+		websearchServer:  websearchServer,
+		synthesizeServer: synthesizeServer,
+		messageParser:    messageParser,
+		webhookValidator: webhookValidator,
+		orchestrator:     orchestrator,
+		logger:           logger,
+	}
+}
+
+type integrationTestScenario struct {
+	name           string
+	message        Message
+	expectedStatus int
+	shouldProcess  bool
+}
+
+func getIntegrationTestScenarios() []integrationTestScenario {
+	return []integrationTestScenario{
 		{
 			name: "direct_message_query",
 			message: Message{
@@ -187,91 +223,139 @@ func TestTeamsWorkflowIntegration(t *testing.T) {
 			shouldProcess:  false,
 		},
 	}
+}
 
-	for _, scenario := range testScenarios {
-		t.Run(scenario.name, func(t *testing.T) {
-			// Create test HTTP request
-			messageJSON, err := json.Marshal(scenario.message)
-			if err != nil {
-				t.Fatalf("Failed to marshal message: %v", err)
-			}
+func runIntegrationTestScenario(t *testing.T, testContext *integrationTestContext, scenario integrationTestScenario) {
+	// Create test HTTP request
+	req := createTestRequest(t, scenario.message)
+	c := createTestContext(req)
 
-			req := httptest.NewRequest("POST", "/teams-webhook", bytes.NewReader(messageJSON))
-			req.Header.Set("Content-Type", "application/json")
+	// Simulate webhook handler logic
+	body := readAndValidateRequestBody(t, c)
+	if body == nil {
+		return
+	}
 
-			recorder := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(recorder)
-			c.Request = req
+	// Validate webhook security
+	validateWebhookSecurity(t, testContext, c.Request, body, scenario.expectedStatus)
 
-			// Simulate the webhook handler logic
-			body, err := io.ReadAll(c.Request.Body)
-			if err != nil {
-				t.Fatalf("Failed to read request body: %v", err)
-			}
+	// Parse and process Teams message
+	message, err := parseTeamsMessage(t, body, scenario.expectedStatus)
+	if err != nil {
+		return
+	}
 
-			// Restore body for JSON parsing
-			c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	// Parse and validate message content
+	parsedQuery, err := parseMessageContent(t, testContext, message, scenario.expectedStatus)
+	if err != nil {
+		return
+	}
 
-			// Validate webhook security
-			validationResult := webhookValidator.ValidateWebhook(c.Request, body)
-			if !validationResult.Valid && scenario.expectedStatus != http.StatusUnauthorized {
-				t.Logf("Webhook validation failed (expected for test): %s", validationResult.ErrorMessage)
-			}
+	// Check if message should be processed
+	validateMessageProcessing(t, testContext, parsedQuery, scenario.shouldProcess)
+}
 
-			// Parse Teams message
-			var message Message
-			if err := json.Unmarshal(body, &message); err != nil {
-				if scenario.expectedStatus != http.StatusBadRequest {
-					t.Fatalf("Failed to parse Teams message: %v", err)
-				}
-				return
-			}
+func createTestRequest(t *testing.T, message Message) *http.Request {
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		t.Fatalf("Failed to marshal message: %v", err)
+	}
 
-			// Parse and validate message content
-			parsedQuery, err := messageParser.ParseMessage(&message)
-			if err != nil {
-				if scenario.expectedStatus == http.StatusBadRequest {
-					// Expected error for invalid messages
-					return
-				}
-				t.Fatalf("Failed to parse message content: %v", err)
-			}
+	req := httptest.NewRequest("POST", "/teams-webhook", bytes.NewReader(messageJSON))
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
 
-			// Check if message should be processed
-			shouldProcess := messageParser.ShouldProcessMessage(parsedQuery)
-			if shouldProcess != scenario.shouldProcess {
-				t.Errorf("Expected shouldProcess=%v, got %v", scenario.shouldProcess, shouldProcess)
-			}
+func createTestContext(req *http.Request) *gin.Context {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = req
+	return c
+}
 
-			if shouldProcess {
-				// Test orchestration
-				ctx := context.Background()
-				result := orchestrator.ProcessQuery(ctx, parsedQuery.Query)
+func validateWebhookSecurity(t *testing.T, testContext *integrationTestContext, req *http.Request, body []byte, expectedStatus int) {
+	validationResult := testContext.webhookValidator.ValidateWebhook(req, body)
+	if !validationResult.Valid && expectedStatus != http.StatusUnauthorized {
+		t.Logf("Webhook validation failed (expected for test): %s", validationResult.ErrorMessage)
+	}
+}
 
-				if result.Error != nil {
-					t.Logf("Orchestration completed with error (may be expected): %v", result.Error)
-				}
+func parseTeamsMessage(t *testing.T, body []byte, expectedStatus int) (*Message, error) {
+	var message Message
+	if err := json.Unmarshal(body, &message); err != nil {
+		if expectedStatus != http.StatusBadRequest {
+			t.Fatalf("Failed to parse Teams message: %v", err)
+		}
+		return nil, err
+	}
+	return &message, nil
+}
 
-				if result.Response == nil && !result.FallbackUsed {
-					t.Error("Expected response or fallback to be used")
-				}
+func parseMessageContent(t *testing.T, testContext *integrationTestContext, message *Message, expectedStatus int) (*ParsedQuery, error) {
+	parsedQuery, err := testContext.messageParser.ParseMessage(message)
+	if err != nil {
+		if expectedStatus == http.StatusBadRequest {
+			// Expected error for invalid messages
+			return nil, err
+		}
+		t.Fatalf("Failed to parse message content: %v", err)
+	}
+	return parsedQuery, nil
+}
 
-				if result.ExecutionTimeMs <= 0 {
-					t.Error("Expected positive execution time")
-				}
+func validateMessageProcessing(t *testing.T, testContext *integrationTestContext, parsedQuery *ParsedQuery, expectedShouldProcess bool) {
+	shouldProcess := testContext.messageParser.ShouldProcessMessage(parsedQuery)
+	if shouldProcess != expectedShouldProcess {
+		t.Errorf("Expected shouldProcess=%v, got %v", expectedShouldProcess, shouldProcess)
+	}
 
-				// Validate response structure if available
-				if result.Response != nil {
-					if result.Response.MainText == "" {
-						t.Error("Expected non-empty main text in response")
-					}
+	if shouldProcess {
+		validateOrchestrationResult(t, testContext, parsedQuery.Query)
+	}
+}
 
-					if len(result.Response.Sources) == 0 && !result.FallbackUsed {
-						t.Error("Expected sources in non-fallback response")
-					}
-				}
-			}
-		})
+func readAndValidateRequestBody(t *testing.T, c *gin.Context) []byte {
+	// Simulate the webhook handler logic
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		t.Fatalf("Failed to read request body: %v", err)
+	}
+
+	// Restore body for JSON parsing
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	return body
+}
+
+func validateOrchestrationResult(t *testing.T, testContext *integrationTestContext, query string) {
+	// Test orchestration
+	ctx := context.Background()
+	result := testContext.orchestrator.ProcessQuery(ctx, query)
+
+	if result.Error != nil {
+		t.Logf("Orchestration completed with error (may be expected): %v", result.Error)
+	}
+
+	if result.Response == nil && !result.FallbackUsed {
+		t.Error("Expected response or fallback to be used")
+	}
+
+	if result.ExecutionTimeMs <= 0 {
+		t.Error("Expected positive execution time")
+	}
+
+	// Validate response structure if available
+	if result.Response != nil {
+		validateOrchestrationResponse(t, result)
+	}
+}
+
+func validateOrchestrationResponse(t *testing.T, result *OrchestrationResult) {
+	if result.Response.MainText == "" {
+		t.Error("Expected non-empty main text in response")
+	}
+
+	if len(result.Response.Sources) == 0 && !result.FallbackUsed {
+		t.Error("Expected sources in non-fallback response")
 	}
 }
 

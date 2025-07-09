@@ -13,17 +13,20 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 
 ### Setup
 
-1. **Clone and configure:**
+1. **Configure environment variables:**
 
    ```bash
-   cp configs/config.template.yaml configs/config.yaml
-   # Edit config.yaml with your API keys
+   # Required: OpenAI API key
+   export OPENAI_API_KEY="sk-..."
+
+   # Required: Teams webhook URL (see Teams Integration section)
+   export TEAMS_WEBHOOK_URL="https://your-tenant.webhook.office.com/webhookb2/..."
    ```
 
 2. **Launch services:**
 
    ```bash
-   docker-compose up --build
+   docker-compose up -d
    ```
 
 3. **Ingest demo data:**
@@ -32,7 +35,15 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
    docker-compose run --rm ingest --docs-path=/app/docs
    ```
 
-4. **Test in Teams:**
+4. **Test webhook:**
+
+   ```bash
+   curl -X POST -H "Content-Type: application/json" \
+     -d '{"type": "message", "text": "test"}' \
+     http://localhost:8080/teams-webhook
+   ```
+
+5. **Test in Teams:**
    Send a message to your configured Teams channel!
 
 ## 🏗️ Architecture
@@ -173,6 +184,24 @@ pre-commit run --all-files
 - **Rich Adaptive Cards**: Professional formatting with images, code blocks, and sources
 - **Feedback Mechanism**: 👍/👎 buttons for continuous improvement
 - **Async Processing**: Non-blocking webhook handling
+- **Webhook Support**: Supports both Teams Incoming Webhooks and Logic Apps webhooks
+
+#### Setting up Teams Webhook
+
+1. **Go to your Teams channel**
+2. **Click "..." → "Workflows"**
+3. **Select "Post to a channel when a webhook request is received"**
+4. **Copy the generated webhook URL**
+5. **Set environment variable:**
+
+   ```bash
+   export TEAMS_WEBHOOK_URL="https://your-tenant.webhook.office.com/webhookb2/..."
+   ```
+
+**Supported webhook formats:**
+
+- Teams Incoming Webhook: `https://your-tenant.webhook.office.com/webhookb2/...`
+- Logic Apps Webhook: `https://prod-XX.region.logic.azure.com:443/workflows/...`
 
 ## 📊 Architecture Diagram
 

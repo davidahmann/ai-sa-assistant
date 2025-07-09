@@ -59,6 +59,24 @@ docker build -t ai-sa-retrieve -f cmd/retrieve/Dockerfile .
 docker-compose build
 ```
 
+### Production Deployment
+
+```bash
+# Configure Teams webhook URL
+export TEAMS_WEBHOOK_URL="https://your-tenant.webhook.office.com/webhookb2/your-webhook-id"
+
+# Start all services in detached mode
+docker-compose up -d
+
+# Verify all services are running
+docker-compose ps
+
+# Stop services when done
+docker-compose down
+```
+
+**Note**: The `TEAMS_WEBHOOK_URL` environment variable is required for the Teams integration to work properly. This should be configured before starting the services.
+
 ### CI/CD Pipeline
 
 The GitHub Actions CI pipeline includes:
@@ -97,6 +115,7 @@ steps:
 **Error**: `cgo: C compiler 'gcc' not found`
 
 **Solution**: Ensure Dockerfile includes build dependencies:
+
 ```dockerfile
 RUN apk --no-cache add gcc musl-dev sqlite-dev
 ```
@@ -106,6 +125,7 @@ RUN apk --no-cache add gcc musl-dev sqlite-dev
 **Error**: `sqlite3: no such file or directory`
 
 **Solution**: Ensure runtime image includes SQLite:
+
 ```dockerfile
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates sqlite
@@ -116,6 +136,7 @@ RUN apk --no-cache add ca-certificates sqlite
 **Error**: Stale dependencies or build artifacts
 
 **Solution**: Clean build without cache:
+
 ```bash
 docker-compose build --no-cache
 ```
@@ -123,12 +144,14 @@ docker-compose build --no-cache
 ### Service-Specific Notes
 
 #### Services with CGO (ingest, retrieve)
+
 - Require build dependencies: `gcc musl-dev sqlite-dev`
 - Must use `CGO_ENABLED=1`
 - Runtime needs `sqlite` package
 - Build time is longer due to C compilation
 
 #### Services without CGO (websearch, synthesize, teamsbot)
+
 - Use `CGO_ENABLED=0` for static binaries
 - No build dependencies required
 - Faster build times
@@ -139,6 +162,7 @@ docker-compose build --no-cache
 ### Go Modules
 
 Key dependencies that require CGO:
+
 - `github.com/mattn/go-sqlite3 v1.14.22`
 
 ### Build Tools
@@ -201,6 +225,7 @@ echo "Building Docker images..."
 docker-compose build
 
 echo "Testing basic functionality..."
+export TEAMS_WEBHOOK_URL="https://example.webhook.office.com/test"
 docker-compose up -d chromadb
 sleep 10
 docker-compose run --rm ingest --help

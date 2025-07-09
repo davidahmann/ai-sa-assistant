@@ -25,13 +25,20 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3" // Import SQLite driver
 	"go.uber.org/zap"
 )
 
 const (
-	StorageTypeFile   = "file"
+	// StorageTypeFile represents file-based storage type
+	StorageTypeFile = "file"
+	// StorageTypeSQLite represents SQLite database storage type
 	StorageTypeSQLite = "sqlite"
+
+	// DirectoryPermissions sets read/write/execute for owner and group, read/execute for others
+	DirectoryPermissions = 0750
+	// FilePermissions sets read/write for owner only, no access for group or others
+	FilePermissions = 0600
 )
 
 // Feedback represents a user feedback record
@@ -86,7 +93,7 @@ func NewLogger(config Config, logger *zap.Logger) (*Logger, error) {
 func (fl *Logger) initFileStorage() error {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(fl.config.FilePath)
-	if err := os.MkdirAll(dir, 0750); err != nil {
+	if err := os.MkdirAll(dir, DirectoryPermissions); err != nil {
 		return fmt.Errorf("failed to create feedback directory: %w", err)
 	}
 
@@ -106,7 +113,7 @@ func (fl *Logger) initFileStorage() error {
 func (fl *Logger) initSQLiteStorage() error {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(fl.config.DBPath)
-	if err := os.MkdirAll(dir, 0750); err != nil {
+	if err := os.MkdirAll(dir, DirectoryPermissions); err != nil {
 		return fmt.Errorf("failed to create feedback database directory: %w", err)
 	}
 
@@ -168,7 +175,7 @@ func (fl *Logger) LogFeedbackWithContext(query, feedback, userID, sessionID stri
 
 // logToFile writes feedback to a JSON file
 func (fl *Logger) logToFile(feedback Feedback) error {
-	file, err := os.OpenFile(fl.config.FilePath, os.O_APPEND|os.O_WRONLY, 0600)
+	file, err := os.OpenFile(fl.config.FilePath, os.O_APPEND|os.O_WRONLY, FilePermissions)
 	if err != nil {
 		return fmt.Errorf("failed to open feedback file: %w", err)
 	}

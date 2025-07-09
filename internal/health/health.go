@@ -48,8 +48,8 @@ type CheckResult struct {
 	Timestamp time.Time              `json:"timestamp"`
 }
 
-// HealthResponse represents the complete health check response
-type HealthResponse struct {
+// Response represents the complete health check response
+type Response struct {
 	Status       string                 `json:"status"`
 	Service      string                 `json:"service"`
 	Version      string                 `json:"version"`
@@ -111,7 +111,7 @@ func (m *Manager) AddCheckerFunc(name string, checkFunc func(ctx context.Context
 }
 
 // Check performs all health checks and returns the result
-func (m *Manager) Check(ctx context.Context) HealthResponse {
+func (m *Manager) Check(ctx context.Context) Response {
 	ctx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
 
@@ -135,7 +135,7 @@ func (m *Manager) Check(ctx context.Context) HealthResponse {
 		}
 	}
 
-	return HealthResponse{
+	return Response{
 		Status:       overallStatus,
 		Service:      m.serviceName,
 		Version:      m.version,

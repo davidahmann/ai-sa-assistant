@@ -17,6 +17,16 @@ openai:
 teams:
   # Teams Webhook URL - REQUIRED for bot functionality
   # Environment variable: TEAMS_WEBHOOK_URL or SA_ASSISTANT_TEAMS_WEBHOOK_URL
+  #
+  # To get your webhook URL:
+  # 1. Go to your Teams channel
+  # 2. Click "..." → "Workflows"
+  # 3. Select "Post to a channel when a webhook request is received"
+  # 4. Copy the generated webhook URL
+  #
+  # Example formats:
+  # - Teams Incoming Webhook: https://your-tenant.webhook.office.com/webhookb2/...
+  # - Logic Apps Webhook: https://prod-XX.region.logic.azure.com:443/workflows/...
   webhook_url: "https://your-org.webhook.office.com/webhookb2/..."  # pragma: allowlist secret
 
 # Internal Service URLs - Used for microservice communication
@@ -213,7 +223,12 @@ production:
 # ====================================
 # Required:
 #   OPENAI_API_KEY - OpenAI API key
-#   TEAMS_WEBHOOK_URL - Microsoft Teams webhook URL
+#   TEAMS_WEBHOOK_URL - Microsoft Teams webhook URL (see Teams section above for setup)
+#
+# Quick Setup:
+#   export OPENAI_API_KEY="sk-..."
+#   export TEAMS_WEBHOOK_URL="https://your-webhook-url..."
+#   docker-compose up -d
 #
 # Optional:
 #   CONFIG_PATH - Custom configuration file path

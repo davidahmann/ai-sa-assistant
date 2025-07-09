@@ -31,7 +31,7 @@ func TestManager_Check(t *testing.T) {
 	manager := NewManager("test-service", "1.0.0", logger)
 
 	// Add healthy checker
-	manager.AddCheckerFunc("healthy", func(ctx context.Context) CheckResult {
+	manager.AddCheckerFunc("healthy", func(_ context.Context) CheckResult {
 		return CheckResult{
 			Status:    StatusHealthy,
 			Timestamp: time.Now(),
@@ -39,7 +39,7 @@ func TestManager_Check(t *testing.T) {
 	})
 
 	// Add unhealthy checker
-	manager.AddCheckerFunc("unhealthy", func(ctx context.Context) CheckResult {
+	manager.AddCheckerFunc("unhealthy", func(_ context.Context) CheckResult {
 		return CheckResult{
 			Status:    StatusUnhealthy,
 			Error:     "service is down",
@@ -87,14 +87,14 @@ func TestManager_Check_AllHealthy(t *testing.T) {
 	manager := NewManager("test-service", "1.0.0", logger)
 
 	// Add multiple healthy checkers
-	manager.AddCheckerFunc("service1", func(ctx context.Context) CheckResult {
+	manager.AddCheckerFunc("service1", func(_ context.Context) CheckResult {
 		return CheckResult{
 			Status:    StatusHealthy,
 			Timestamp: time.Now(),
 		}
 	})
 
-	manager.AddCheckerFunc("service2", func(ctx context.Context) CheckResult {
+	manager.AddCheckerFunc("service2", func(_ context.Context) CheckResult {
 		return CheckResult{
 			Status:    StatusHealthy,
 			Timestamp: time.Now(),
@@ -119,7 +119,7 @@ func TestManager_Check_DegradedStatus(t *testing.T) {
 	manager := NewManager("test-service", "1.0.0", logger)
 
 	// Add healthy checker
-	manager.AddCheckerFunc("healthy", func(ctx context.Context) CheckResult {
+	manager.AddCheckerFunc("healthy", func(_ context.Context) CheckResult {
 		return CheckResult{
 			Status:    StatusHealthy,
 			Timestamp: time.Now(),
@@ -127,7 +127,7 @@ func TestManager_Check_DegradedStatus(t *testing.T) {
 	})
 
 	// Add degraded checker
-	manager.AddCheckerFunc("degraded", func(ctx context.Context) CheckResult {
+	manager.AddCheckerFunc("degraded", func(_ context.Context) CheckResult {
 		return CheckResult{
 			Status:    StatusDegraded,
 			Error:     "service is slow",
@@ -177,7 +177,7 @@ func TestManager_Check_Timeout(t *testing.T) {
 
 func TestHTTPHealthChecker(t *testing.T) {
 	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintln(w, `{"status": "healthy"}`)
 	}))
@@ -201,7 +201,7 @@ func TestHTTPHealthChecker(t *testing.T) {
 
 func TestHTTPHealthChecker_Unhealthy(t *testing.T) {
 	// Create test server that returns error
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprintln(w, `{"error": "service unavailable"}`)
 	}))
@@ -221,7 +221,7 @@ func TestHTTPHealthChecker_Unhealthy(t *testing.T) {
 
 func TestDatabaseHealthChecker(t *testing.T) {
 	// Test successful ping
-	checker := DatabaseHealthChecker("test-db", func(ctx context.Context) error {
+	checker := DatabaseHealthChecker("test-db", func(_ context.Context) error {
 		return nil
 	})
 
@@ -238,7 +238,7 @@ func TestDatabaseHealthChecker(t *testing.T) {
 
 func TestDatabaseHealthChecker_Unhealthy(t *testing.T) {
 	// Test failed ping
-	checker := DatabaseHealthChecker("test-db", func(ctx context.Context) error {
+	checker := DatabaseHealthChecker("test-db", func(_ context.Context) error {
 		return errors.New("connection failed")
 	})
 
@@ -255,7 +255,7 @@ func TestDatabaseHealthChecker_Unhealthy(t *testing.T) {
 
 func TestExternalServiceHealthChecker(t *testing.T) {
 	// Test successful check
-	checker := ExternalServiceHealthChecker("test-service", func(ctx context.Context) error {
+	checker := ExternalServiceHealthChecker("test-service", func(_ context.Context) error {
 		return nil
 	})
 
@@ -272,7 +272,7 @@ func TestExternalServiceHealthChecker(t *testing.T) {
 
 func TestExternalServiceHealthChecker_Degraded(t *testing.T) {
 	// Test temporary error (should be degraded)
-	checker := ExternalServiceHealthChecker("test-service", func(ctx context.Context) error {
+	checker := ExternalServiceHealthChecker("test-service", func(_ context.Context) error {
 		return errors.New("timeout occurred")
 	})
 
@@ -289,7 +289,7 @@ func TestExternalServiceHealthChecker_Degraded(t *testing.T) {
 
 func TestExternalServiceHealthChecker_Unhealthy(t *testing.T) {
 	// Test non-temporary error (should be unhealthy)
-	checker := ExternalServiceHealthChecker("test-service", func(ctx context.Context) error {
+	checker := ExternalServiceHealthChecker("test-service", func(_ context.Context) error {
 		return errors.New("service permanently unavailable")
 	})
 
@@ -338,7 +338,7 @@ func TestManager_HTTPHandler(t *testing.T) {
 	manager := NewManager("test-service", "1.0.0", logger)
 
 	// Add healthy checker
-	manager.AddCheckerFunc("healthy", func(ctx context.Context) CheckResult {
+	manager.AddCheckerFunc("healthy", func(_ context.Context) CheckResult {
 		return CheckResult{
 			Status:    StatusHealthy,
 			Timestamp: time.Now(),
@@ -390,7 +390,7 @@ func TestManager_HTTPHandler_ServiceUnavailable(t *testing.T) {
 	manager := NewManager("test-service", "1.0.0", logger)
 
 	// Add unhealthy checker
-	manager.AddCheckerFunc("unhealthy", func(ctx context.Context) CheckResult {
+	manager.AddCheckerFunc("unhealthy", func(_ context.Context) CheckResult {
 		return CheckResult{
 			Status:    StatusUnhealthy,
 			Error:     "service is down",

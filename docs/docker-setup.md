@@ -10,6 +10,7 @@ This document provides step-by-step procedures for deploying and validating the 
 - Network access to Docker Hub
 - Available ports: 8000, 8080, 8081, 8082, 8083
 - At least 2GB available disk space for volumes
+- **Teams webhook URL configured** (see Teams Integration section below)
 
 ## ChromaDB Container Deployment
 
@@ -63,25 +64,77 @@ sleep 35
 docker ps --filter "name=chromadb"
 ```
 
+## Teams Integration Setup
+
+### Configure Teams Webhook URL
+
+Before deploying services, configure the Teams webhook URL using environment variables:
+
+```bash
+# Set Teams webhook URL (replace with your actual webhook URL)
+export TEAMS_WEBHOOK_URL="https://your-tenant.webhook.office.com/webhookb2/your-webhook-id"
+
+# Verify environment variable is set
+echo "TEAMS_WEBHOOK_URL: $TEAMS_WEBHOOK_URL"
+```
+
+**Note**: The webhook URL should be obtained from your Microsoft Teams channel:
+
+1. Go to your Teams channel
+2. Click "..." → "Workflows"
+3. Select "Post to a channel when a webhook request is received"
+4. Copy the generated webhook URL
+
+### Test Teams Webhook Accessibility
+
+```bash
+# Test webhook endpoint is accessible
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"test": "connection"}' \
+  "$TEAMS_WEBHOOK_URL"
+```
+
 ## Full Stack Deployment
 
 ### Deploy All Services
 
 ```bash
 # Start all services except ingest (which runs on-demand)
+# Environment variables will be automatically passed to containers
 docker-compose up -d
 
 # Check all service status
 docker-compose ps
 ```
 
+**Expected Status**: All services should show "Up" status:
+
+- `ai-sa-assistant-chromadb-1` - Up (healthy)
+- `ai-sa-assistant-teamsbot-1` - Up
+- `ai-sa-assistant-retrieve-1` - Up
+- `ai-sa-assistant-synthesize-1` - Up
+- `ai-sa-assistant-websearch-1` - Up
+
 ### Service Endpoints
 
 - **ChromaDB**: <http://localhost:8000> (Vector store)
-- **Teams Bot**: <http://localhost:8080> (Main API)
+- **Teams Bot**: <http://localhost:8080> (Teams webhook endpoint)
 - **Retrieve**: <http://localhost:8081> (Retrieval service)
 - **Synthesize**: <http://localhost:8082> (Synthesis service)
 - **Web Search**: <http://localhost:8083> (Web search service)
+
+### Validate Teams Webhook Integration
+
+```bash
+# Test Teams webhook endpoint
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"type": "message", "text": "test"}' \
+  http://localhost:8080/teams-webhook
+
+# Expected response: {"message":"Message acknowledged but not processed"}
+```
+
+**Note**: The message is acknowledged but not processed because it lacks proper Teams message structure. This confirms the webhook is working correctly.
 
 ### Run Ingestion Service
 
@@ -157,6 +210,9 @@ Before proceeding with application testing:
 - [ ] Metadata database created and accessible
 - [ ] No port conflicts on host system
 - [ ] Container logs show successful startup messages
+- [ ] **Teams webhook URL configured via environment variable**
+- [ ] **Teams webhook endpoint accessible at <http://localhost:8080/teams-webhook>**
+- [ ] **Webhook validation working correctly**
 
 ## Integration Testing
 
@@ -183,6 +239,22 @@ curl http://localhost:8083/health
 
 # Test teams bot service health
 curl http://localhost:8080/health
+```
+
+### Validate Full Teams Integration
+
+```bash
+# Test complete Teams webhook flow
+curl -X POST -H "Content-Type: application/json" \
+  -d '{
+    "type": "message",
+    "text": "@SA-Assistant test message",
+    "from": {"id": "test-user", "name": "Test User"},
+    "conversation": {"id": "test-conv", "isGroup": false}
+  }' \
+  http://localhost:8080/teams-webhook
+
+# This should trigger the full processing pipeline
 ```
 
 ## Next Steps

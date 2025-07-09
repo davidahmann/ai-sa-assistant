@@ -207,12 +207,12 @@ func (mp *MessageParser) extractQuery(text string) (string, error) {
 
 // sanitizeText cleans and normalizes text content
 func (mp *MessageParser) sanitizeText(text string) string {
+	// Remove control characters except common ones first
+	text = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`).ReplaceAllString(text, " ")
+
 	// Remove excessive whitespace and normalize line endings
 	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
 	text = strings.TrimSpace(text)
-
-	// Remove control characters except common ones
-	text = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`).ReplaceAllString(text, "")
 
 	return text
 }
@@ -228,7 +228,7 @@ func (mp *MessageParser) validateQuerySafety(query string) error {
 		`onerror=`,
 		`onload=`,
 		`onclick=`,
-		`eval\(`,
+		`eval(`,
 		`expression\(`,
 	}
 
