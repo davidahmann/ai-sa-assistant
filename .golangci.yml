@@ -9,7 +9,9 @@ run:
     - demo
 
 output:
-  format: colored-line-number
+  formats:
+    colored-line-number:
+      path: stdout
   print-issued-lines: true
   print-linter-name: true
   uniq-by-line: true
@@ -55,7 +57,6 @@ linters:
     - gomodguard
     - prealloc
     - testpackage
-    - wsl_v5
 
 formatters:
   enable:
@@ -119,7 +120,6 @@ linters-settings:
       - G304
 
   govet:
-    check-shadowing: true
     settings:
       printf:
         funcs:
@@ -150,8 +150,7 @@ linters-settings:
     packages:
       - github.com/jmoiron/sqlx
 
-  staticcheck:
-    go: '1.23.5'
+  staticcheck: {}
 
   unparam:
     check-exported: false
