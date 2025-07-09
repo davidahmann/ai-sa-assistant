@@ -11,6 +11,7 @@
 /synthesize
 /teamsbot
 /websearch
+main
 
 # Test binary
 *.test
