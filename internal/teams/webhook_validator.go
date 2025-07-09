@@ -65,7 +65,7 @@ func NewWebhookValidator(webhookSecret string, logger *zap.Logger) *WebhookValid
 	}
 
 	return &WebhookValidator{
-		webhookSecret: webhookSecret, // pragma: allowlist secret
+		webhookSecret: webhookSecret,
 		logger:        logger,
 		enabled:       enabled,
 	}

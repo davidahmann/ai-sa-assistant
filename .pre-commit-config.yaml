@@ -83,6 +83,14 @@ repos:
       - id: detect-secrets
         name: Detect secrets (alternative)
         args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            .*_test\.go$|
+            tests/.*|
+            testdata/.*|
+            test/.*|
+            .*\.test\..*$
+          )$
 
   # Docker hooks
   - repo: https://github.com/hadolint/hadolint

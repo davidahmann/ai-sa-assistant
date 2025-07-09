@@ -49,8 +49,8 @@ func TestSanitizeFeedbackQuery(t *testing.T) {
 			expected: "Use API key sk-abcdef123456 for authentication",
 		},
 		{
-			name:     "secret token",                        // pragma: allowlist secret
-			input:    "Configure secret token abc123def456", // pragma: allowlist secret
+			name:     "secret token",
+			input:    "Configure secret token abc123def456",
 			expected: "Configure [REDACTED] abc123def456",
 		},
 		{
@@ -65,7 +65,7 @@ func TestSanitizeFeedbackQuery(t *testing.T) {
 		},
 		{
 			name:     "multiple sensitive items",
-			input:    "password: secret123 and api_key: abc123def456", // pragma: allowlist secret
+			input:    "password: secret123 and api_key: abc123def456",
 			expected: "[REDACTED] and [REDACTED]",
 		},
 		{
