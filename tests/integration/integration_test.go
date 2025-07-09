@@ -44,7 +44,7 @@ func TestServiceHealthEndpoints(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to call %s health endpoint: %v", serviceName, err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("Expected 200 OK, got %d", resp.StatusCode)
@@ -82,7 +82,7 @@ func TestServiceInteraction(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to call retrieve search endpoint: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 OK, got %d", resp.StatusCode)
@@ -100,7 +100,7 @@ func TestServiceInteraction(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to call websearch endpoint: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 OK, got %d", resp.StatusCode)
@@ -120,7 +120,7 @@ func TestServiceInteraction(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to call synthesize endpoint: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 OK, got %d", resp.StatusCode)
@@ -139,7 +139,7 @@ func TestChromaDBIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to ChromaDB: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("ChromaDB heartbeat failed: %d", resp.StatusCode)
@@ -150,7 +150,7 @@ func TestChromaDBIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get ChromaDB version: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("ChromaDB version check failed: %d", resp.StatusCode)
@@ -176,7 +176,7 @@ func TestIngestionPipeline(t *testing.T) {
 	if err != nil {
 		t.Skipf("ChromaDB not available, skipping ingestion test: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Skipf("ChromaDB not healthy, skipping ingestion test: status %d", resp.StatusCode)
@@ -198,7 +198,7 @@ func TestIngestionPipeline(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create test collection: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// Should succeed or return 409 if collection already exists
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
@@ -227,7 +227,7 @@ func TestIngestionPipeline(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to add document to collection: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 for document addition, got %d", resp.StatusCode)
@@ -246,7 +246,7 @@ func TestIngestionPipeline(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to query collection: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 for document query, got %d", resp.StatusCode)
@@ -259,7 +259,7 @@ func TestIngestionPipeline(t *testing.T) {
 			t.Logf("Failed to clean up test collection: %v", err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	})
 
@@ -281,7 +281,7 @@ func TestIngestionPipeline(t *testing.T) {
 		if err != nil {
 			t.Skipf("Retrieve service not available, skipping metadata test: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 for metadata filtering, got %d", resp.StatusCode)
@@ -323,7 +323,7 @@ func TestEndToEndWorkflow(t *testing.T) {
 		if err != nil {
 			t.Skipf("Synthesis service not available, skipping workflow test: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 for synthesis request, got %d", resp.StatusCode)
@@ -388,7 +388,7 @@ func TestDataConsistency(t *testing.T) {
 		if err != nil {
 			t.Skipf("Retrieve service not available, skipping consistency test: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 for search request, got %d", resp.StatusCode)
@@ -451,7 +451,7 @@ func TestPerformanceCharacteristics(t *testing.T) {
 		if err != nil {
 			t.Skipf("Retrieve service not available, skipping performance test: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 for search request, got %d", resp.StatusCode)
@@ -481,7 +481,7 @@ func TestPerformanceCharacteristics(t *testing.T) {
 		if err != nil {
 			t.Skipf("Synthesis service not available, skipping performance test: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 for synthesis request, got %d", resp.StatusCode)

@@ -42,7 +42,7 @@ func BenchmarkDemoScenario(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Failed to call webhook: %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }
 
@@ -66,7 +66,7 @@ func BenchmarkServiceHealth(b *testing.B) {
 			if err != nil {
 				b.Fatalf("Failed to call health endpoint: %v", err)
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	}
 }
@@ -90,7 +90,7 @@ func BenchmarkConcurrentRequests(b *testing.B) {
 			if err != nil {
 				b.Fatalf("Failed to call webhook: %v", err)
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	})
 }
@@ -134,7 +134,7 @@ func TestLoadTesting(t *testing.T) {
 
 				duration := time.Since(start)
 				results <- duration
-				resp.Body.Close()
+				_ = resp.Body.Close()
 
 				t.Logf("Goroutine %d, Request %d completed in %v", goroutineID, j, duration)
 			}
@@ -204,7 +204,7 @@ func TestMemoryUsage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to call webhook on request %d: %v", i+1, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		t.Logf("Completed request %d/%d", i+1, numRequests)
 
@@ -258,7 +258,7 @@ func TestServiceScaling(t *testing.T) {
 					return
 				}
 
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				results <- struct {
 					query    string
 					duration time.Duration

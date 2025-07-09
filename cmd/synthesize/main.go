@@ -198,8 +198,9 @@ func main() {
 			}
 		}
 
-		// Convert web results to strings
+		// Convert web results to strings and collect web source URLs
 		webResultStrings := make([]string, len(req.WebResults))
+		webSourceURLs := make([]string, 0, len(req.WebResults))
 		for i, webResult := range req.WebResults {
 			if webResult.Title != "" && webResult.Snippet != "" {
 				webResultStrings[i] = fmt.Sprintf("Title: %s\nSnippet: %s\nURL: %s", webResult.Title, webResult.Snippet, webResult.URL)
@@ -207,6 +208,11 @@ func main() {
 				webResultStrings[i] = fmt.Sprintf("Title: %s\nURL: %s", webResult.Title, webResult.URL)
 			} else {
 				webResultStrings[i] = fmt.Sprintf("Snippet: %s\nURL: %s", webResult.Snippet, webResult.URL)
+			}
+
+			// Collect web source URLs for source tracking
+			if webResult.URL != "" {
+				webSourceURLs = append(webSourceURLs, webResult.URL)
 			}
 		}
 
@@ -238,8 +244,17 @@ func main() {
 			return
 		}
 
+		// Collect all available sources (document IDs and web URLs)
+		allAvailableSources := make([]string, 0, len(contextItems)+len(webSourceURLs))
+		for _, item := range contextItems {
+			if item.SourceID != "" {
+				allAvailableSources = append(allAvailableSources, item.SourceID)
+			}
+		}
+		allAvailableSources = append(allAvailableSources, webSourceURLs...)
+
 		// Parse response into structured format
-		synthesisResponse := synth.ParseResponse(response.Content)
+		synthesisResponse := synth.ParseResponseWithSources(response.Content, allAvailableSources)
 
 		// Log synthesis completion
 		processingTime := time.Since(startTime)

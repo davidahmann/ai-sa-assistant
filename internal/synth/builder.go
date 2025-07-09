@@ -129,7 +129,13 @@ func BuildPromptWithConfig(query string, contextItems []ContextItem, webResults 
 	if len(limitedWebResults) > 0 {
 		prompt.WriteString("--- Live Web Search Results ---\n")
 		for i, result := range limitedWebResults {
-			prompt.WriteString(fmt.Sprintf("Web Result %d: %s\n\n", i+1, result))
+			// Extract URL from web result for source attribution
+			url := extractURLFromWebResult(result)
+			if url != "" {
+				prompt.WriteString(fmt.Sprintf("Web Result %d [%s]: %s\n\n", i+1, url, result))
+			} else {
+				prompt.WriteString(fmt.Sprintf("Web Result %d: %s\n\n", i+1, result))
+			}
 		}
 	}
 
@@ -146,6 +152,11 @@ func BuildPromptWithConfig(query string, contextItems []ContextItem, webResults 
 
 // ParseResponse parses the LLM response into structured components
 func ParseResponse(response string) SynthesisResponse {
+	return ParseResponseWithSources(response, []string{})
+}
+
+// ParseResponseWithSources parses the LLM response into structured components with source validation
+func ParseResponseWithSources(response string, availableSources []string) SynthesisResponse {
 	result := SynthesisResponse{
 		MainText:     response,
 		CodeSnippets: []CodeSnippet{},
@@ -166,8 +177,26 @@ func ParseResponse(response string) SynthesisResponse {
 	result.MainText = removeCodeSnippets(result.MainText)
 
 	// Extract sources from citations
-	sources := extractSources(response)
-	result.Sources = uniqueStrings(sources)
+	citedSources := extractSources(response)
+
+	// Validate and filter sources to only include those that are available
+	validSources := make([]string, 0)
+	if len(availableSources) > 0 {
+		availableSourceMap := make(map[string]bool)
+		for _, source := range availableSources {
+			availableSourceMap[source] = true
+		}
+
+		for _, source := range citedSources {
+			if availableSourceMap[source] {
+				validSources = append(validSources, source)
+			}
+		}
+	} else {
+		validSources = citedSources
+	}
+
+	result.Sources = uniqueStrings(validSources)
 
 	// Clean up main text
 	result.MainText = strings.TrimSpace(result.MainText)
@@ -207,7 +236,7 @@ func removeMermaidDiagram(text string) string {
 	return text
 }
 
-// extractCodeSnippets extracts code snippets from the response
+// extractCodeSnippets extracts code snippets from the response with security validation
 func extractCodeSnippets(response string) []CodeSnippet {
 	var snippets []CodeSnippet
 
@@ -222,10 +251,15 @@ func extractCodeSnippets(response string) []CodeSnippet {
 
 			// Skip mermaid blocks (handled separately)
 			if language != "mermaid" && code != "" {
-				snippets = append(snippets, CodeSnippet{
-					Language: language,
-					Code:     code,
-				})
+				// Validate code for security issues
+				if validateCodeSecurity(code, language) {
+					// Normalize language identifier
+					normalizedLanguage := normalizeLanguage(language)
+					snippets = append(snippets, CodeSnippet{
+						Language: normalizedLanguage,
+						Code:     code,
+					})
+				}
 			}
 		}
 	}
@@ -247,20 +281,52 @@ func extractSources(response string) []string {
 	textWithoutCode := removeCodeSnippets(response)
 	textWithoutDiagrams := removeMermaidDiagram(textWithoutCode)
 
-	// Regex to match [source_id] patterns
+	// Regex to match [source_id] and [URL] patterns
 	sourceRegex := regexp.MustCompile(`\[([^\]]+)\]`)
 	matches := sourceRegex.FindAllStringSubmatch(textWithoutDiagrams, -1)
 
 	for _, match := range matches {
 		if len(match) >= MinSourceMatchGroups {
 			source := strings.TrimSpace(match[1])
-			if source != "" {
+			if source != "" && isValidSourceCitation(source) {
 				sources = append(sources, source)
 			}
 		}
 	}
 
 	return sources
+}
+
+// isValidSourceCitation checks if a citation is a valid source (not a diagram node or other bracket content)
+func isValidSourceCitation(citation string) bool {
+	// Skip common non-source brackets
+	commonNonSources := []string{"graph", "subgraph", "end", "click", "style", "class", "classDef"}
+	citationLower := strings.ToLower(citation)
+
+	for _, nonSource := range commonNonSources {
+		if citationLower == nonSource {
+			return false
+		}
+	}
+
+	// Skip if it looks like a Mermaid diagram node (single words or simple identifiers)
+	if len(strings.Fields(citation)) == 1 && !strings.Contains(citation, ".") && !strings.Contains(citation, "/") {
+		// Common technology/tool names are valid sources even if they're single words
+		validSingleWordSources := []string{"terraform", "bash", "k8s", "kubernetes", "aws", "azure", "gcp", "docker", "ansible", "python", "java", "go", "rust", "typescript", "javascript"}
+		for _, validSource := range validSingleWordSources {
+			if citationLower == validSource {
+				return true
+			}
+		}
+
+		// If it's a single word without domain indicators, it's likely a diagram node
+		// Unless it's a document ID pattern or URL
+		if !strings.Contains(citation, "-") && !strings.Contains(citation, "_") && len(citation) < 20 {
+			return false
+		}
+	}
+
+	return true
 }
 
 // uniqueStrings removes duplicates from a string slice
@@ -375,14 +441,21 @@ Your response must be structured and comprehensive. Please provide:
 1. A detailed, actionable answer to the user's query
 2. If applicable, generate a high-level architecture diagram using Mermaid.js graph TD syntax
 3. If applicable, provide relevant code snippets for implementation
-4. Always cite your sources using [source_id] format when referencing internal documents
+4. Always cite your sources using [source_id] format when referencing any information
+
+SOURCE CITATION REQUIREMENTS:
+- When referencing information from internal documents, cite with [source_id] format
+- When referencing information from web search results, cite with [URL] format
+- Place citations at the end of sentences or paragraphs where the information is used
+- Every factual claim should have a corresponding source citation
+- Use the exact source identifiers provided in the context sections above
 
 Guidelines:
 - Be specific and actionable in your recommendations
 - Include technical details and best practices
 - For diagrams: Use Mermaid.js graph TD syntax enclosed in a "mermaid" code block
 - For code: Use appropriate language identifiers (terraform, bash, yaml, etc.)
-- Citations: End sentences with [source_id] when using information from internal documents
+- Citations: End sentences with [source_id] or [URL] when using information from any source
 - Focus on practical implementation guidance
 
 `
@@ -1058,6 +1131,258 @@ graph TD
 ` + "```" + `
 
 `
+}
+
+// validateCodeSecurity validates code snippets for security issues
+func validateCodeSecurity(code, language string) bool {
+	// Check for potential security issues
+	if containsMaliciousPatterns(code) {
+		return false
+	}
+
+	// Check for hardcoded secrets
+	if containsHardcodedSecrets(code) {
+		return false
+	}
+
+	// Language-specific security checks
+	switch strings.ToLower(language) {
+	case "bash", "sh", "shell":
+		if containsUnsafeBashPatterns(code) {
+			return false
+		}
+	case "powershell", "ps1":
+		if containsUnsafePowerShellPatterns(code) {
+			return false
+		}
+	case "terraform", "tf":
+		if containsUnsafeTerraformPatterns(code) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// containsMaliciousPatterns checks for general malicious patterns
+func containsMaliciousPatterns(code string) bool {
+	maliciousPatterns := []string{
+		"rm -rf /",
+		"format c:",
+		"del /f /s /q",
+		"shutdown -h now",
+		"killall -9",
+		":(){ :|:& };:", // Fork bomb
+		"/dev/null 2>&1",
+		"| bash",
+		"| sh",
+		"eval(",
+		"exec(",
+		"system(",
+		"shell_exec(",
+	}
+
+	codeLines := strings.Split(strings.ToLower(code), "\n")
+	for _, line := range codeLines {
+		line = strings.TrimSpace(line)
+		for _, pattern := range maliciousPatterns {
+			if strings.Contains(line, pattern) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// containsHardcodedSecrets checks for hardcoded secrets
+func containsHardcodedSecrets(code string) bool {
+	secretPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)password\s*[=:]\s*["'][^"'\s]{8,}["']`),
+		regexp.MustCompile(`(?i)api[_-]?key\s*[=:]\s*["'][^"'\s]{20,}["']`),
+		regexp.MustCompile(`(?i)secret\s*[=:]\s*["'][^"'\s]{16,}["']`),
+		regexp.MustCompile(`(?i)token\s*[=:]\s*["'][^"'\s]{20,}["']`),
+		regexp.MustCompile(`(?i)aws_access_key_id\s*[=:]\s*["'][A-Z0-9]{20}["']`),
+		regexp.MustCompile(`(?i)aws_secret_access_key\s*[=:]\s*["'][A-Za-z0-9/+=]{40}["']`),
+		regexp.MustCompile(`sk-[a-zA-Z0-9]{48,}`), // OpenAI API key pattern
+		regexp.MustCompile(`ghp_[a-zA-Z0-9]{36}`), // GitHub personal access token
+	}
+
+	// Check for environment variable patterns (these are safe)
+	safePatterns := []*regexp.Regexp{
+		regexp.MustCompile(`\$\{[^}]+\}`), // ${VAR} pattern
+		regexp.MustCompile(`\$[A-Z_]+`),   // $VAR pattern
+	}
+
+	// First check if the code contains safe variable patterns
+	for _, pattern := range safePatterns {
+		if pattern.MatchString(code) {
+			// If it contains variables, do more careful checking
+			lines := strings.Split(code, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				// Skip lines that are clearly using variables
+				if strings.Contains(line, "${") || strings.Contains(line, "$") {
+					continue
+				}
+				// Check this line against secret patterns // pragma: allowlist secret
+				for _, secretPattern := range secretPatterns {
+					if secretPattern.MatchString(line) {
+						return true
+					}
+				}
+			}
+			return false
+		}
+	}
+
+	// If no variables found, check normally
+	for _, pattern := range secretPatterns {
+		if pattern.MatchString(code) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsUnsafeBashPatterns checks for unsafe bash patterns
+func containsUnsafeBashPatterns(code string) bool {
+	unsafePatterns := []string{
+		"rm -rf $",
+		"chmod 777",
+		"chown root",
+		"sudo rm",
+		"dd if=/dev/zero",
+		"mkfs.",
+		"fdisk",
+		"> /dev/",
+		"eval $",
+		"$($(",
+	}
+
+	codeLines := strings.Split(strings.ToLower(code), "\n")
+	for _, line := range codeLines {
+		line = strings.TrimSpace(line)
+		for _, pattern := range unsafePatterns {
+			if strings.Contains(line, pattern) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// containsUnsafePowerShellPatterns checks for unsafe PowerShell patterns
+func containsUnsafePowerShellPatterns(code string) bool {
+	unsafePatterns := []string{
+		"remove-item -recurse -force",
+		"format-volume",
+		"clear-disk",
+		"invoke-expression",
+		"iex (",
+		"downloadstring",
+		"bypass",
+		"unrestricted",
+		"stop-computer",
+		"restart-computer -force",
+	}
+
+	codeLines := strings.Split(strings.ToLower(code), "\n")
+	for _, line := range codeLines {
+		line = strings.TrimSpace(line)
+		for _, pattern := range unsafePatterns {
+			if strings.Contains(line, pattern) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// containsUnsafeTerraformPatterns checks for unsafe Terraform patterns
+func containsUnsafeTerraformPatterns(code string) bool {
+	unsafePatterns := []string{
+		"destroy = true",
+		"prevent_destroy = false",
+		"skip_final_snapshot = true",
+		"deletion_protection = false",
+		"force_destroy = true",
+		"0.0.0.0/0", // Overly permissive CIDR
+	}
+
+	codeLines := strings.Split(strings.ToLower(code), "\n")
+	for _, line := range codeLines {
+		line = strings.TrimSpace(line)
+		for _, pattern := range unsafePatterns {
+			if strings.Contains(line, pattern) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// normalizeLanguage normalizes language identifiers to standard names
+func normalizeLanguage(language string) string {
+	langMap := map[string]string{
+		"bash":       "bash",
+		"sh":         "bash",
+		"shell":      "bash",
+		"zsh":        "bash",
+		"terraform":  "terraform",
+		"tf":         "terraform",
+		"hcl":        "terraform",
+		"powershell": "powershell",
+		"ps1":        "powershell",
+		"pwsh":       "powershell",
+		"yaml":       "yaml",
+		"yml":        "yaml",
+		"json":       "json",
+		"javascript": "javascript",
+		"js":         "javascript",
+		"python":     "python",
+		"py":         "python",
+		"go":         "go",
+		"golang":     "go",
+		"java":       "java",
+		"c":          "c",
+		"cpp":        "cpp",
+		"c++":        "cpp",
+		"csharp":     "csharp",
+		"cs":         "csharp",
+		"php":        "php",
+		"ruby":       "ruby",
+		"rb":         "ruby",
+		"rust":       "rust",
+		"rs":         "rust",
+		"sql":        "sql",
+		"dockerfile": "dockerfile",
+		"docker":     "dockerfile",
+		"aws":        "bash", // AWS CLI is typically bash
+		"azure":      "bash", // Azure CLI is typically bash
+		"gcp":        "bash", // GCP CLI is typically bash
+		"k8s":        "yaml", // Kubernetes manifests are YAML
+		"kubernetes": "yaml",
+		"helm":       "yaml",
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(language))
+	if mapped, exists := langMap[normalized]; exists {
+		return mapped
+	}
+	return normalized
+}
+
+// extractURLFromWebResult extracts the URL from a web result string
+func extractURLFromWebResult(result string) string {
+	// Web results are formatted as "Title: <title>\nSnippet: <snippet>\nURL: <url>"
+	// or "Title: <title>\nURL: <url>" or "Snippet: <snippet>\nURL: <url>"
+	lines := strings.Split(result, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "URL: ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "URL: "))
+		}
+	}
+	return ""
 }
 
 // buildCodeSecurityRequirements creates security and quality requirements for code generation

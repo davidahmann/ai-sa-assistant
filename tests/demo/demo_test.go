@@ -81,7 +81,7 @@ func TestDemoScenarios(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to call webhook: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			duration := time.Since(start)
 			t.Logf("Scenario %s completed in %v", scenario.Name, duration)
@@ -126,7 +126,7 @@ func TestDemoResponseStructure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to call webhook: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var responseBody map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&responseBody); err != nil {
@@ -168,7 +168,7 @@ func TestDemoPerformance(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to call webhook on iteration %d: %v", i+1, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		duration := time.Since(start)
 		totalDuration += duration
@@ -200,7 +200,7 @@ func TestDemoErrorHandling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to call webhook: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode == http.StatusOK {
 			t.Error("Expected error status for invalid JSON, got 200 OK")
@@ -218,7 +218,7 @@ func TestDemoErrorHandling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to call webhook: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// Should handle empty requests gracefully
 		if resp.StatusCode != http.StatusOK {

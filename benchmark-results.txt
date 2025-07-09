@@ -1,133 +1,76 @@
 ?   	github.com/your-org/ai-sa-assistant/cmd/ingest	[no test files]
 PASS
-ok  	github.com/your-org/ai-sa-assistant/cmd/retrieve	0.191s
+ok  	github.com/your-org/ai-sa-assistant/cmd/retrieve	0.172s
 ?   	github.com/your-org/ai-sa-assistant/cmd/synthesize	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/cmd/teamsbot	[no test files]
 ?   	github.com/your-org/ai-sa-assistant/cmd/websearch	[no test files]
 PASS
-ok  	github.com/your-org/ai-sa-assistant/internal/chroma	0.527s
+ok  	github.com/your-org/ai-sa-assistant/internal/chroma	0.431s
 goos: darwin
 goarch: arm64
 pkg: github.com/your-org/ai-sa-assistant/internal/chunker
 cpu: Apple M4 Pro
-BenchmarkSplitter_SmallText-14        	 2305038	       516.6 ns/op	     344 B/op	       8 allocs/op
-BenchmarkSplitter_LargeText-14        	    2716	    436388 ns/op	  270650 B/op	     610 allocs/op
-BenchmarkParseMarkdown_SmallDoc-14    	 4759376	       252.8 ns/op	     400 B/op	       6 allocs/op
-BenchmarkParseMarkdown_LargeDoc-14    	   58396	     20391 ns/op	   53104 B/op	      13 allocs/op
-BenchmarkFindSentenceBreak-14         	 1320416	       914.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSplitter_SmallText-14        	 2285947	       521.0 ns/op	     344 B/op	       8 allocs/op
+BenchmarkSplitter_LargeText-14        	    2736	    435628 ns/op	  270648 B/op	     610 allocs/op
+BenchmarkParseMarkdown_SmallDoc-14    	 4741629	       252.7 ns/op	     400 B/op	       6 allocs/op
+BenchmarkParseMarkdown_LargeDoc-14    	   58918	     20439 ns/op	   53104 B/op	      13 allocs/op
+BenchmarkFindSentenceBreak-14         	 1315185	       912.2 ns/op	       0 B/op	       0 allocs/op
 PASS
-ok  	github.com/your-org/ai-sa-assistant/internal/chunker	8.122s
+ok  	github.com/your-org/ai-sa-assistant/internal/chunker	8.102s
 PASS
-ok  	github.com/your-org/ai-sa-assistant/internal/config	0.269s
+ok  	github.com/your-org/ai-sa-assistant/internal/config	0.165s
 --- FAIL: TestIntegrationConcurrency (0.00s)
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:599: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
-    integration_test.go:614: Failed to get all entries: failed to query all metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:609: Failed to add concurrent entry: failed to insert metadata: no such table: metadata
+    integration_test.go:624: Failed to get all entries: failed to query all metadata: no such table: metadata
 FAIL
 exit status 1
-FAIL	github.com/your-org/ai-sa-assistant/internal/metadata	0.223s
+FAIL	github.com/your-org/ai-sa-assistant/internal/metadata	0.178s
 goos: darwin
 goarch: arm64
 pkg: github.com/your-org/ai-sa-assistant/internal/openai
 cpu: Apple M4 Pro
-BenchmarkEmbedTexts-14    	    1015	   1168195 ns/op	  604159 B/op	     343 allocs/op
+BenchmarkEmbedTexts-14    	    1000	   1191277 ns/op	  603597 B/op	     343 allocs/op
 PASS
-ok  	github.com/your-org/ai-sa-assistant/internal/openai	9.513s
---- FAIL: TestMermaidInstructionsInPrompt (0.00s)
-    --- FAIL: TestMermaidInstructionsInPrompt/Technical_architecture_query (0.00s)
-        builder_test.go:676: Expected prompt to contain 'Hybrid Cloud Architecture Diagrams', but it didn't
---- FAIL: TestMermaidDiagramExamplesInPrompt (0.00s)
-    builder_test.go:701: Expected prompt to contain example 'Example Azure Pattern:', but it didn't
-    builder_test.go:701: Expected prompt to contain example 'subgraph "Azure Subscription"', but it didn't
-    builder_test.go:701: Expected prompt to contain example 'AG[Application Gateway]', but it didn't
-    builder_test.go:701: Expected prompt to contain example 'Example Hybrid Pattern:', but it didn't
-    builder_test.go:701: Expected prompt to contain example 'subgraph "On-Premises"', but it didn't
-    builder_test.go:701: Expected prompt to contain example 'VPN Connection', but it didn't
---- FAIL: TestPromptValidationWithMermaidInstructions (0.00s)
-    builder_test.go:718: Generated prompt failed validation: prompt must contain code commenting requirements
---- FAIL: TestCodeGenerationInstructionsInPrompt (0.00s)
-    builder_test.go:775: Prompt missing required code generation instruction: PowerShell (Azure/Windows Automation)
-    builder_test.go:775: Prompt missing required code generation instruction: YAML/JSON Configuration Files
-    builder_test.go:775: Prompt missing required code generation instruction: Code Quality and Security Requirements
-    builder_test.go:775: Prompt missing required code generation instruction: NEVER include hardcoded secrets
-    builder_test.go:775: Prompt missing required code generation instruction: meaningful comments
-    builder_test.go:775: Prompt missing required code generation instruction: Conditional Code Generation Based on Platform
-    builder_test.go:775: Prompt missing required code generation instruction: Code Block Formatting Requirements
-    builder_test.go:775: Prompt missing required code generation instruction: Security Best Practices
-    builder_test.go:775: Prompt missing required code generation instruction: Documentation Requirements
-    builder_test.go:775: Prompt missing required code generation instruction: Error Handling Patterns
-    builder_test.go:775: Prompt missing required code generation instruction: Fallback Instructions for Non-Technical Queries
---- FAIL: TestCodeGenerationLanguageSpecificInstructions (0.00s)
-    builder_test.go:799: Prompt missing language-specific instruction: Include proper indentation and structure
---- FAIL: TestCodeGenerationSecurityRequirements (0.00s)
-    builder_test.go:821: Prompt missing security requirement: NEVER include hardcoded secrets
-    builder_test.go:821: Prompt missing security requirement: API keys, passwords, or sensitive data
-    builder_test.go:821: Prompt missing security requirement: environment variables
-    builder_test.go:821: Prompt missing security requirement: parameter stores
-    builder_test.go:821: Prompt missing security requirement: secret management services
-    builder_test.go:821: Prompt missing security requirement: least-privilege access principles
-    builder_test.go:821: Prompt missing security requirement: encryption configurations
---- FAIL: TestPromptValidationWithCodeInstructions (0.00s)
-    builder_test.go:1164: Generated prompt failed validation: prompt must contain security requirements for code generation
-    builder_test.go:1186: Prompt missing validation requirement: NEVER include hardcoded secrets
-    builder_test.go:1186: Prompt missing validation requirement: meaningful comments
---- FAIL: TestPromptOptimizationForDifferentQueryTypes (0.00s)
-    --- FAIL: TestPromptOptimizationForDifferentQueryTypes/Technical_query_optimization (0.00s)
-        integration_test.go:299: Generated prompt failed validation: prompt must contain security requirements for code generation
-    --- FAIL: TestPromptOptimizationForDifferentQueryTypes/Business_query_optimization (0.00s)
-        integration_test.go:299: Generated prompt failed validation: prompt must contain security requirements for code generation
-    --- FAIL: TestPromptOptimizationForDifferentQueryTypes/General_query_uses_standard_prompt (0.00s)
-        integration_test.go:299: Generated prompt failed validation: prompt must contain security requirements for code generation
-FAIL
-exit status 1
-FAIL	github.com/your-org/ai-sa-assistant/internal/synth	0.183s
+ok  	github.com/your-org/ai-sa-assistant/internal/openai	9.500s
+PASS
+ok  	github.com/your-org/ai-sa-assistant/internal/synth	0.169s
 ?   	github.com/your-org/ai-sa-assistant/internal/teams	[no test files]
 --- FAIL: TestLoadTesting (0.00s)
-    performance_test.go:151: Load test error: goroutine 5, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 7, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 6, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:151: Load test error: goroutine 4, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 9, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 1, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 2, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 8, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:151: Load test error: goroutine 0, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
---- FAIL: TestLoadTesting (0.00s)
-    performance_test.go:151: Load test error: goroutine 5, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:151: Load test error: goroutine 7, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 6, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 4, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 9, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 1, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 2, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 8, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:151: Load test error: goroutine 0, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:151: Load test error: goroutine 3, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 8, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 9, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 5, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 2, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 1, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:151: Load test error: goroutine 6, request 0: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
 --- FAIL: TestMemoryUsage (0.00s)
     performance_test.go:205: Failed to call webhook on request 1: Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
 --- FAIL: TestServiceScaling (0.00s)
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Design an Azure hybrid architecture': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Design an Azure hybrid architecture': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Design an Azure hybrid architecture': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Provide security compliance guidance': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
+    performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Generate a simple AWS plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
     performance_test.go:277: Scaling test error for query '@SA-Assistant Design an Azure hybrid architecture': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
-    performance_test.go:277: Scaling test error for query '@SA-Assistant Create a disaster recovery plan': Post "http://localhost:8080/webhook": dial tcp [::1]:8080: connect: connection refused
 FAIL
 exit status 1
-FAIL	github.com/your-org/ai-sa-assistant/tests/performance	0.193s
+FAIL	github.com/your-org/ai-sa-assistant/tests/performance	0.156s
 FAIL
