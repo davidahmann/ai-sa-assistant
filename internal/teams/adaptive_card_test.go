@@ -156,7 +156,6 @@ func getGenerateCardTestCases() []generateCardTestCase {
 			expectError: false,
 		},
 	}
-
 }
 
 func runGenerateCardTest(t *testing.T, tt generateCardTestCase) {
@@ -409,7 +408,8 @@ func validateCardActions(t *testing.T, card map[string]interface{}, query string
 	}
 }
 
-func validateAction(t *testing.T, action interface{}, index int, expectedActions []struct{ title, feedback string }, query string) {
+func validateAction(t *testing.T, action interface{}, index int,
+	expectedActions []struct{ title, feedback string }, query string) {
 	actionMap, ok := action.(map[string]interface{})
 	if !ok {
 		t.Errorf("Expected action %d to be a map", index)

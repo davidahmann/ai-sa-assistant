@@ -32,6 +32,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/health"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -61,7 +62,7 @@ type integrationTestContext struct {
 	messageParser    *MessageParser
 	webhookValidator *WebhookValidator
 	orchestrator     *Orchestrator
-	logger           *zaptest.Logger
+	logger           *zap.Logger
 }
 
 func (ctx *integrationTestContext) cleanup() {
@@ -70,7 +71,7 @@ func (ctx *integrationTestContext) cleanup() {
 	ctx.synthesizeServer.Close()
 }
 
-func setupIntegrationTestContext(_ *testing.T, logger *zaptest.Logger) *integrationTestContext {
+func setupIntegrationTestContext(_ *testing.T, logger *zap.Logger) *integrationTestContext {
 	// Create mock backend services
 	retrieveServer := createMockRetrieveServer()
 	websearchServer := createMockWebSearchServer()
@@ -273,7 +274,8 @@ func createTestContext(req *http.Request) *gin.Context {
 	return c
 }
 
-func validateWebhookSecurity(t *testing.T, testContext *integrationTestContext, req *http.Request, body []byte, expectedStatus int) {
+func validateWebhookSecurity(t *testing.T, testContext *integrationTestContext,
+	req *http.Request, body []byte, expectedStatus int) {
 	validationResult := testContext.webhookValidator.ValidateWebhook(req, body)
 	if !validationResult.Valid && expectedStatus != http.StatusUnauthorized {
 		t.Logf("Webhook validation failed (expected for test): %s", validationResult.ErrorMessage)
@@ -291,7 +293,8 @@ func parseTeamsMessage(t *testing.T, body []byte, expectedStatus int) (*Message,
 	return &message, nil
 }
 
-func parseMessageContent(t *testing.T, testContext *integrationTestContext, message *Message, expectedStatus int) (*ParsedQuery, error) {
+func parseMessageContent(t *testing.T, testContext *integrationTestContext,
+	message *Message, expectedStatus int) (*ParsedQuery, error) {
 	parsedQuery, err := testContext.messageParser.ParseMessage(message)
 	if err != nil {
 		if expectedStatus == http.StatusBadRequest {
@@ -303,7 +306,8 @@ func parseMessageContent(t *testing.T, testContext *integrationTestContext, mess
 	return parsedQuery, nil
 }
 
-func validateMessageProcessing(t *testing.T, testContext *integrationTestContext, parsedQuery *ParsedQuery, expectedShouldProcess bool) {
+func validateMessageProcessing(t *testing.T, testContext *integrationTestContext,
+	parsedQuery *ParsedQuery, expectedShouldProcess bool) {
 	shouldProcess := testContext.messageParser.ShouldProcessMessage(parsedQuery)
 	if shouldProcess != expectedShouldProcess {
 		t.Errorf("Expected shouldProcess=%v, got %v", expectedShouldProcess, shouldProcess)
