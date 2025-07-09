@@ -30,6 +30,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/your-org/ai-sa-assistant/internal/config"
+	"github.com/your-org/ai-sa-assistant/internal/health"
 	internalopenai "github.com/your-org/ai-sa-assistant/internal/openai"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
 )
@@ -163,42 +164,72 @@ func setupRouter(cfg *config.Config, logger *zap.Logger, openaiClient *internalo
 	}
 
 	router := gin.Default()
-	router.GET("/health", createHealthCheckHandler(cfg, logger, openaiClient))
+
+	// Initialize health check manager
+	healthManager := health.NewManager("synthesize", "1.0.0", logger)
+	setupHealthChecks(healthManager, cfg, openaiClient)
+
+	router.GET("/health", gin.WrapH(healthManager.HTTPHandler()))
 	router.POST("/synthesize", createSynthesisHandler(cfg, logger, openaiClient))
 
 	return router
 }
 
-// createHealthCheckHandler creates the health check endpoint handler
-func createHealthCheckHandler(
-	cfg *config.Config,
-	logger *zap.Logger,
-	openaiClient *internalopenai.Client,
-) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		openaiStatus := "healthy"
-		ctx, cancel := context.WithTimeout(context.Background(), HealthCheckTimeout)
-		defer cancel()
-
-		_, err := openaiClient.EmbedTexts(ctx, []string{"health check"})
-		if err != nil {
-			openaiStatus = "unhealthy"
-			logger.Warn("OpenAI API health check failed", zap.Error(err))
+// setupHealthChecks configures health checks for the synthesize service
+func setupHealthChecks(manager *health.Manager, cfg *config.Config, openaiClient *internalopenai.Client) {
+	// OpenAI health check
+	manager.AddCheckerFunc("openai", func(ctx context.Context) health.CheckResult {
+		if _, err := openaiClient.EmbedTexts(ctx, []string{"health check"}); err != nil {
+			return health.CheckResult{
+				Status:    health.StatusUnhealthy,
+				Error:     fmt.Sprintf("OpenAI API health check failed: %v", err),
+				Timestamp: time.Now(),
+			}
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"status":        "healthy",
-			"service":       "synthesize",
-			"version":       "1.0.0",
-			"environment":   os.Getenv("ENVIRONMENT"),
-			"openai_status": openaiStatus,
-			"config": gin.H{
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
 				"model":       cfg.Synthesis.Model,
 				"max_tokens":  cfg.Synthesis.MaxTokens,
 				"temperature": cfg.Synthesis.Temperature,
 			},
-		})
-	}
+		}
+	})
+
+	// Synthesis configuration health check
+	manager.AddCheckerFunc("synthesis_config", func(ctx context.Context) health.CheckResult {
+		// Validate synthesis configuration
+		if cfg.Synthesis.Model == "" {
+			return health.CheckResult{
+				Status:    health.StatusUnhealthy,
+				Error:     "Synthesis model not configured",
+				Timestamp: time.Now(),
+			}
+		}
+
+		if cfg.Synthesis.MaxTokens <= 0 {
+			return health.CheckResult{
+				Status:    health.StatusDegraded,
+				Error:     "Invalid max tokens configuration",
+				Timestamp: time.Now(),
+			}
+		}
+
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"model":       cfg.Synthesis.Model,
+				"max_tokens":  cfg.Synthesis.MaxTokens,
+				"temperature": cfg.Synthesis.Temperature,
+			},
+		}
+	})
+
+	// Set timeout for health checks
+	manager.SetTimeout(HealthCheckTimeout)
 }
 
 // createSynthesisHandler creates the synthesis endpoint handler

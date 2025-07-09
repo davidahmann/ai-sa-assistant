@@ -19,14 +19,16 @@ package chroma
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/your-org/ai-sa-assistant/internal/resilience"
 )
 
 const (
@@ -46,27 +48,40 @@ type Client struct {
 	collection     string
 	httpClient     *http.Client
 	logger         *zap.Logger
-	maxRetries     int
-	baseRetryDelay time.Duration
+	circuitBreaker *resilience.CircuitBreaker
+	errorHandler   *resilience.ErrorHandler
+	timeoutManager *resilience.TimeoutManager
 }
 
 // NewClient creates a new ChromaDB client with default settings
 func NewClient(baseURL, collection string) *Client {
 	logger, _ := zap.NewProduction()
-	return NewClientWithOptions(baseURL, collection, logger, DefaultRetryAttempts, time.Second)
+	return NewClientWithOptions(baseURL, collection, logger)
 }
 
 // NewClientWithOptions creates a new ChromaDB client with custom settings
-func NewClientWithOptions(
-	baseURL, collection string, logger *zap.Logger, maxRetries int, baseRetryDelay time.Duration,
-) *Client {
+func NewClientWithOptions(baseURL, collection string, logger *zap.Logger) *Client {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	// Initialize resilience components
+	cbConfig := resilience.DefaultCircuitBreakerConfig("chromadb")
+	cbConfig.MaxFailures = 3
+	cbConfig.ResetTimeout = 60 * time.Second
+	circuitBreaker := resilience.NewCircuitBreaker(cbConfig, logger)
+
+	errorHandler := resilience.NewErrorHandler(logger)
+	timeoutManager := resilience.NewTimeoutManager(resilience.DefaultTimeoutConfig())
+
 	return &Client{
 		baseURL:        baseURL,
 		collection:     collection,
 		httpClient:     &http.Client{Timeout: DefaultHTTPTimeout},
 		logger:         logger,
-		maxRetries:     maxRetries,
-		baseRetryDelay: baseRetryDelay,
+		circuitBreaker: circuitBreaker,
+		errorHandler:   errorHandler,
+		timeoutManager: timeoutManager,
 	}
 }
 
@@ -130,49 +145,20 @@ func (e Error) Error() string {
 	return fmt.Sprintf("ChromaDB error [%s]: %s", e.Type, e.Detail)
 }
 
-// retryWithBackoff executes a function with exponential backoff retry logic
-func (c *Client) retryWithBackoff(operation func() error, operationName string) error {
-	var lastErr error
-
-	for attempt := 0; attempt <= c.maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := time.Duration(math.Pow(ExponentialBackoffBase, float64(attempt-1))) * c.baseRetryDelay
-			c.logger.Info("Retrying operation after delay",
-				zap.String("operation", operationName),
-				zap.Int("attempt", attempt),
-				zap.Duration("delay", delay))
-			time.Sleep(delay)
-		}
-
-		if err := operation(); err != nil {
-			lastErr = err
-			c.logger.Warn("Operation failed, will retry",
-				zap.String("operation", operationName),
-				zap.Int("attempt", attempt),
-				zap.Error(err))
-			continue
-		}
-
-		if attempt > 0 {
-			c.logger.Info("Operation succeeded after retry",
-				zap.String("operation", operationName),
-				zap.Int("attempt", attempt))
-		}
-		return nil
-	}
-
-	c.logger.Error("Operation failed after all retries",
-		zap.String("operation", operationName),
-		zap.Int("max_retries", c.maxRetries),
-		zap.Error(lastErr))
-	return fmt.Errorf("operation failed after %d retries: %w", c.maxRetries, lastErr)
+// executeWithResilience executes a function with circuit breaker, timeout, and retry logic
+func (c *Client) executeWithResilience(ctx context.Context, operation func(context.Context) error, operationName string) error {
+	return c.circuitBreaker.Execute(ctx, func(ctx context.Context) error {
+		return c.timeoutManager.Execute(ctx, func(ctx context.Context) error {
+			return resilience.SimpleRetry(ctx, c.logger, operation)
+		})
+	})
 }
 
 // makeRequest performs an HTTP request with structured error handling
 func (c *Client) makeRequest(req *http.Request) (*http.Response, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, c.errorHandler.WrapError(err, "making HTTP request to ChromaDB")
 	}
 
 	if resp.StatusCode >= HTTPClientErrorStatus {
@@ -185,23 +171,51 @@ func (c *Client) makeRequest(req *http.Request) (*http.Response, error) {
 
 		var chromaErr Error
 		if json.Unmarshal(body, &chromaErr) == nil {
-			return nil, chromaErr
+			return nil, c.handleChromaError(chromaErr, resp.StatusCode)
 		}
 
-		return nil, fmt.Errorf("ChromaDB returned status %d: %s", resp.StatusCode, string(body))
+		return nil, c.handleHTTPError(resp.StatusCode, string(body))
 	}
 
 	return resp, nil
 }
 
+// handleChromaError converts ChromaDB errors to appropriate ServiceError types
+func (c *Client) handleChromaError(chromaErr Error, statusCode int) error {
+	switch statusCode {
+	case http.StatusBadRequest:
+		return resilience.NewBadRequestError(chromaErr.Detail, chromaErr)
+	case http.StatusNotFound:
+		return resilience.NewNotFoundError(chromaErr.Detail, chromaErr)
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable:
+		return resilience.NewServiceUnavailableError("ChromaDB service temporarily unavailable", chromaErr)
+	default:
+		return resilience.NewInternalError(chromaErr.Detail, chromaErr)
+	}
+}
+
+// handleHTTPError converts HTTP errors to appropriate ServiceError types
+func (c *Client) handleHTTPError(statusCode int, body string) error {
+	switch statusCode {
+	case http.StatusBadRequest:
+		return resilience.NewBadRequestError(fmt.Sprintf("invalid request: %s", body), nil)
+	case http.StatusNotFound:
+		return resilience.NewNotFoundError(fmt.Sprintf("resource not found: %s", body), nil)
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable:
+		return resilience.NewServiceUnavailableError("ChromaDB service temporarily unavailable", nil)
+	default:
+		return resilience.NewInternalError(fmt.Sprintf("ChromaDB returned status %d: %s", statusCode, body), nil)
+	}
+}
+
 // AddDocuments adds documents with embeddings to ChromaDB
-func (c *Client) AddDocuments(documents []Document, embeddings [][]float32) error {
+func (c *Client) AddDocuments(ctx context.Context, documents []Document, embeddings [][]float32) error {
 	c.logger.Info("Adding documents to ChromaDB",
 		zap.String("collection", c.collection),
 		zap.Int("document_count", len(documents)),
 		zap.Int("embedding_count", len(embeddings)))
 
-	return c.retryWithBackoff(func() error {
+	return c.executeWithResilience(ctx, func(ctx context.Context) error {
 		url := fmt.Sprintf("%s/api/v1/collections/%s/add", c.baseURL, c.collection)
 
 		// Prepare request payload
@@ -224,12 +238,12 @@ func (c *Client) AddDocuments(documents []Document, embeddings [][]float32) erro
 
 		jsonPayload, err := json.Marshal(payload)
 		if err != nil {
-			return fmt.Errorf("failed to marshal request: %w", err)
+			return resilience.NewInternalError("failed to marshal request", err)
 		}
 
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonPayload))
 		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
+			return resilience.NewInternalError("failed to create request", err)
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -253,19 +267,19 @@ func (c *Client) AddDocuments(documents []Document, embeddings [][]float32) erro
 }
 
 // Search performs a vector search in ChromaDB
-func (c *Client) Search(queryEmbedding []float32, nResults int, docIDs []string) ([]SearchResult, error) {
+func (c *Client) Search(ctx context.Context, queryEmbedding []float32, nResults int, docIDs []string) ([]SearchResult, error) {
 	c.logger.Info("Performing vector search",
 		zap.String("collection", c.collection),
 		zap.Int("n_results", nResults),
 		zap.Int("doc_id_filter_count", len(docIDs)))
 
 	var results []SearchResult
-	err := c.retryWithBackoff(func() error {
+	err := c.executeWithResilience(ctx, func(ctx context.Context) error {
 		// Build search request
 		searchReq := c.buildSearchRequest(queryEmbedding, nResults, docIDs)
 
 		// Execute search request
-		searchResp, err := c.executeSearchRequest(searchReq)
+		searchResp, err := c.executeSearchRequest(ctx, searchReq)
 		if err != nil {
 			return err
 		}
@@ -303,17 +317,17 @@ func (c *Client) buildSearchRequest(queryEmbedding []float32, nResults int, docI
 }
 
 // executeSearchRequest executes the search request and returns the response
-func (c *Client) executeSearchRequest(searchReq SearchRequest) (SearchResponse, error) {
+func (c *Client) executeSearchRequest(ctx context.Context, searchReq SearchRequest) (SearchResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/collections/%s/query", c.baseURL, c.collection)
 
 	jsonPayload, err := json.Marshal(searchReq)
 	if err != nil {
-		return SearchResponse{}, fmt.Errorf("failed to marshal search request: %w", err)
+		return SearchResponse{}, resilience.NewInternalError("failed to marshal search request", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		return SearchResponse{}, fmt.Errorf("failed to create search request: %w", err)
+		return SearchResponse{}, resilience.NewInternalError("failed to create search request", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -330,7 +344,7 @@ func (c *Client) executeSearchRequest(searchReq SearchRequest) (SearchResponse, 
 
 	var searchResp SearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
-		return SearchResponse{}, fmt.Errorf("failed to decode search response: %w", err)
+		return SearchResponse{}, resilience.NewInternalError("failed to decode search response", err)
 	}
 
 	return searchResp, nil
@@ -375,15 +389,20 @@ func (c *Client) convertMetadata(metadatas [][]map[string]interface{}, index int
 }
 
 // HealthCheck checks if ChromaDB is healthy
-func (c *Client) HealthCheck() error {
+func (c *Client) HealthCheck(ctx context.Context) error {
 	c.logger.Info("Performing health check", zap.String("url", c.baseURL))
 
-	return c.retryWithBackoff(func() error {
+	return c.executeWithResilience(ctx, func(ctx context.Context) error {
 		url := fmt.Sprintf("%s/api/v1/heartbeat", c.baseURL)
 
-		resp, err := c.httpClient.Get(url)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			return fmt.Errorf("failed to check ChromaDB health: %w", err)
+			return resilience.NewInternalError("failed to create health check request", err)
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return c.errorHandler.WrapError(err, "checking ChromaDB health")
 		}
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
@@ -392,7 +411,7 @@ func (c *Client) HealthCheck() error {
 		}()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("ChromaDB health check failed with status %d", resp.StatusCode)
+			return resilience.NewServiceUnavailableError("ChromaDB health check failed", fmt.Errorf("status %d", resp.StatusCode))
 		}
 
 		c.logger.Info("Health check successful")
@@ -401,12 +420,12 @@ func (c *Client) HealthCheck() error {
 }
 
 // CreateCollection creates a new collection in ChromaDB
-func (c *Client) CreateCollection(name string, metadata map[string]interface{}) error {
+func (c *Client) CreateCollection(ctx context.Context, name string, metadata map[string]interface{}) error {
 	c.logger.Info("Creating collection",
 		zap.String("collection_name", name),
 		zap.Any("metadata", metadata))
 
-	return c.retryWithBackoff(func() error {
+	return c.executeWithResilience(ctx, func(ctx context.Context) error {
 		url := fmt.Sprintf("%s/api/v1/collections", c.baseURL)
 
 		req := CreateCollectionRequest{
@@ -416,12 +435,12 @@ func (c *Client) CreateCollection(name string, metadata map[string]interface{}) 
 
 		jsonPayload, err := json.Marshal(req)
 		if err != nil {
-			return fmt.Errorf("failed to marshal create collection request: %w", err)
+			return resilience.NewInternalError("failed to marshal create collection request", err)
 		}
 
-		httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonPayload))
 		if err != nil {
-			return fmt.Errorf("failed to create HTTP request: %w", err)
+			return resilience.NewInternalError("failed to create HTTP request", err)
 		}
 
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -442,15 +461,15 @@ func (c *Client) CreateCollection(name string, metadata map[string]interface{}) 
 }
 
 // DeleteCollection deletes a collection from ChromaDB
-func (c *Client) DeleteCollection(name string) error {
+func (c *Client) DeleteCollection(ctx context.Context, name string) error {
 	c.logger.Info("Deleting collection", zap.String("collection_name", name))
 
-	return c.retryWithBackoff(func() error {
+	return c.executeWithResilience(ctx, func(ctx context.Context) error {
 		url := fmt.Sprintf("%s/api/v1/collections/%s", c.baseURL, name)
 
-		req, err := http.NewRequest("DELETE", url, nil)
+		req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 		if err != nil {
-			return fmt.Errorf("failed to create delete request: %w", err)
+			return resilience.NewInternalError("failed to create delete request", err)
 		}
 
 		resp, err := c.makeRequest(req)
@@ -469,16 +488,16 @@ func (c *Client) DeleteCollection(name string) error {
 }
 
 // GetCollection retrieves collection information from ChromaDB
-func (c *Client) GetCollection(name string) (*Collection, error) {
+func (c *Client) GetCollection(ctx context.Context, name string) (*Collection, error) {
 	c.logger.Info("Getting collection info", zap.String("collection_name", name))
 
 	var collection *Collection
-	err := c.retryWithBackoff(func() error {
+	err := c.executeWithResilience(ctx, func(ctx context.Context) error {
 		url := fmt.Sprintf("%s/api/v1/collections/%s", c.baseURL, name)
 
-		req, err := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			return fmt.Errorf("failed to create get request: %w", err)
+			return resilience.NewInternalError("failed to create get request", err)
 		}
 
 		resp, err := c.makeRequest(req)
@@ -492,7 +511,7 @@ func (c *Client) GetCollection(name string) (*Collection, error) {
 		}()
 
 		if err := json.NewDecoder(resp.Body).Decode(&collection); err != nil {
-			return fmt.Errorf("failed to decode collection response: %w", err)
+			return resilience.NewInternalError("failed to decode collection response", err)
 		}
 
 		c.logger.Info("Collection info retrieved successfully", zap.String("collection_name", name))
@@ -503,16 +522,16 @@ func (c *Client) GetCollection(name string) (*Collection, error) {
 }
 
 // ListCollections retrieves all collections from ChromaDB
-func (c *Client) ListCollections() ([]Collection, error) {
+func (c *Client) ListCollections(ctx context.Context) ([]Collection, error) {
 	c.logger.Info("Listing all collections")
 
 	var collections []Collection
-	err := c.retryWithBackoff(func() error {
+	err := c.executeWithResilience(ctx, func(ctx context.Context) error {
 		url := fmt.Sprintf("%s/api/v1/collections", c.baseURL)
 
-		req, err := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			return fmt.Errorf("failed to create list request: %w", err)
+			return resilience.NewInternalError("failed to create list request", err)
 		}
 
 		resp, err := c.makeRequest(req)
@@ -526,7 +545,7 @@ func (c *Client) ListCollections() ([]Collection, error) {
 		}()
 
 		if err := json.NewDecoder(resp.Body).Decode(&collections); err != nil {
-			return fmt.Errorf("failed to decode collections response: %w", err)
+			return resilience.NewInternalError("failed to decode collections response", err)
 		}
 
 		c.logger.Info("Collections listed successfully", zap.Int("collection_count", len(collections)))
@@ -534,4 +553,34 @@ func (c *Client) ListCollections() ([]Collection, error) {
 	}, "ListCollections")
 
 	return collections, err
+}
+
+// GetHealthCheck returns a health check function for this client
+func (c *Client) GetHealthCheck() resilience.HealthCheckFunc {
+	return func(ctx context.Context) resilience.HealthCheckResult {
+		start := time.Now()
+		err := c.HealthCheck(ctx)
+		duration := time.Since(start)
+
+		if err != nil {
+			return resilience.HealthCheckResult{
+				Status:    resilience.HealthStatusUnhealthy,
+				Message:   fmt.Sprintf("ChromaDB health check failed: %v", err),
+				Timestamp: time.Now(),
+				Duration:  duration,
+			}
+		}
+
+		return resilience.HealthCheckResult{
+			Status:    resilience.HealthStatusHealthy,
+			Message:   "ChromaDB is healthy",
+			Timestamp: time.Now(),
+			Duration:  duration,
+		}
+	}
+}
+
+// GetCircuitBreakerStats returns circuit breaker statistics
+func (c *Client) GetCircuitBreakerStats() resilience.CircuitBreakerStats {
+	return c.circuitBreaker.GetStats()
 }

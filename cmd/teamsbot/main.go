@@ -29,6 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
+	"github.com/your-org/ai-sa-assistant/internal/health"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
 	"github.com/your-org/ai-sa-assistant/internal/teams"
 	"go.uber.org/zap"
@@ -63,10 +64,12 @@ func main() {
 
 	router := gin.Default()
 
+	// Initialize health check manager
+	healthManager := health.NewManager("teamsbot", "1.0.0", logger)
+	setupHealthChecks(healthManager, cfg, diagramRenderer)
+
 	// Health check endpoint
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy", "service": "teamsbot"})
-	})
+	router.GET("/health", gin.WrapH(healthManager.HTTPHandler()))
 
 	// Teams webhook endpoint
 	router.POST("/teams-webhook", func(c *gin.Context) {
@@ -535,4 +538,97 @@ func handleFeedback(c *gin.Context, _ *config.Config, logger *zap.Logger) {
 	// For now, just log it
 
 	c.JSON(http.StatusOK, gin.H{"message": "Feedback received"})
+}
+
+// setupHealthChecks configures health checks for the teamsbot service
+func setupHealthChecks(manager *health.Manager, cfg *config.Config, diagramRenderer *diagram.Renderer) {
+	// Retrieve service health check
+	manager.AddChecker("retrieve", health.HTTPHealthChecker(cfg.Services.RetrieveURL+"/health", &http.Client{
+		Timeout: 10 * time.Second,
+	}))
+
+	// Synthesize service health check
+	manager.AddChecker("synthesize", health.HTTPHealthChecker(cfg.Services.SynthesizeURL+"/health", &http.Client{
+		Timeout: 10 * time.Second,
+	}))
+
+	// WebSearch service health check
+	manager.AddChecker("websearch", health.HTTPHealthChecker(cfg.Services.WebSearchURL+"/health", &http.Client{
+		Timeout: 10 * time.Second,
+	}))
+
+	// Diagram renderer health check
+	manager.AddCheckerFunc("diagram_renderer", func(ctx context.Context) health.CheckResult {
+		if err := diagramRenderer.TestConnection(ctx); err != nil {
+			return health.CheckResult{
+				Status:    health.StatusDegraded,
+				Error:     fmt.Sprintf("Diagram renderer connection failed: %v", err),
+				Timestamp: time.Now(),
+			}
+		}
+
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"mermaid_ink_url": cfg.Diagram.MermaidInkURL,
+				"caching_enabled": cfg.Diagram.EnableCaching,
+			},
+		}
+	})
+
+	// Teams webhook configuration health check
+	manager.AddCheckerFunc("teams_webhook", func(ctx context.Context) health.CheckResult {
+		if cfg.Teams.WebhookURL == "" {
+			return health.CheckResult{
+				Status:    health.StatusUnhealthy,
+				Error:     "Teams webhook URL not configured",
+				Timestamp: time.Now(),
+			}
+		}
+
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"webhook_configured": true,
+			},
+		}
+	})
+
+	// Service endpoints configuration health check
+	manager.AddCheckerFunc("service_endpoints", func(ctx context.Context) health.CheckResult {
+		var errors []string
+
+		if cfg.Services.RetrieveURL == "" {
+			errors = append(errors, "retrieve service URL not configured")
+		}
+		if cfg.Services.SynthesizeURL == "" {
+			errors = append(errors, "synthesize service URL not configured")
+		}
+		if cfg.Services.WebSearchURL == "" {
+			errors = append(errors, "websearch service URL not configured")
+		}
+
+		if len(errors) > 0 {
+			return health.CheckResult{
+				Status:    health.StatusUnhealthy,
+				Error:     fmt.Sprintf("Service configuration errors: %s", strings.Join(errors, ", ")),
+				Timestamp: time.Now(),
+			}
+		}
+
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"retrieve_url":   cfg.Services.RetrieveURL,
+				"synthesize_url": cfg.Services.SynthesizeURL,
+				"websearch_url":  cfg.Services.WebSearchURL,
+			},
+		}
+	})
+
+	// Set timeout for health checks
+	manager.SetTimeout(15 * time.Second)
 }

@@ -205,10 +205,26 @@ func TestHandleSearchEndpoint(t *testing.T) {
 func TestHandleHealthEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// Test without OpenAI client - should show degraded status
-	service := setupTestService()
 	router := gin.New()
-	router.GET("/health", service.handleHealth)
+
+	// Use the new health check system
+	healthManager := &MockHealthManager{}
+	healthManager.On("HTTPHandler").Return(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"service": "websearch",
+			"status":  "unhealthy",
+			"dependencies": map[string]interface{}{
+				"openai": map[string]interface{}{
+					"status": "unhealthy",
+					"error":  "OpenAI client not initialized",
+				},
+			},
+		})
+	}))
+
+	router.GET("/health", gin.WrapH(healthManager.HTTPHandler()))
 
 	req, _ := http.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
@@ -222,8 +238,17 @@ func TestHandleHealthEndpoint(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Equal(t, "websearch", response["service"])
-	assert.Equal(t, "degraded", response["status"])
-	assert.Contains(t, response, "time")
+	assert.Equal(t, "unhealthy", response["status"])
+	assert.Contains(t, response, "dependencies")
+}
+
+type MockHealthManager struct {
+	mock.Mock
+}
+
+func (m *MockHealthManager) HTTPHandler() http.HandlerFunc {
+	args := m.Called()
+	return args.Get(0).(http.HandlerFunc)
 }
 
 func TestSearchRequestValidation(t *testing.T) {

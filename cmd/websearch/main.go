@@ -28,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sashabaranov/go-openai"
 	"github.com/your-org/ai-sa-assistant/internal/config"
+	"github.com/your-org/ai-sa-assistant/internal/health"
 	openaiPkg "github.com/your-org/ai-sa-assistant/internal/openai"
 	"github.com/your-org/ai-sa-assistant/internal/websearch"
 	"go.uber.org/zap"
@@ -294,35 +295,67 @@ func (s *WebSearchService) handleSearch(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-func (s *WebSearchService) handleHealth(c *gin.Context) {
-	status := gin.H{
-		"status":  "healthy",
-		"service": "websearch",
-		"time":    time.Now().Format(time.RFC3339),
-	}
+// setupHealthChecks configures health checks for the websearch service
+func (s *WebSearchService) setupHealthChecks(manager *health.Manager) {
+	// OpenAI health check
+	manager.AddCheckerFunc("openai", func(ctx context.Context) health.CheckResult {
+		if s.openaiClient == nil {
+			return health.CheckResult{
+				Status:    health.StatusUnhealthy,
+				Error:     "OpenAI client not initialized",
+				Timestamp: time.Now(),
+			}
+		}
 
-	if s.openaiClient == nil {
-		s.logger.Warn("OpenAI client not initialized")
-		status["openai_status"] = "unavailable"
-		status["status"] = "degraded"
-		c.JSON(http.StatusServiceUnavailable, status)
-		return
-	}
+		if _, err := s.openaiClient.EmbedQuery(ctx, "health check"); err != nil {
+			return health.CheckResult{
+				Status:    health.StatusDegraded,
+				Error:     fmt.Sprintf("OpenAI connectivity check failed: %v", err),
+				Timestamp: time.Now(),
+			}
+		}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), healthCheckTimeout)
-	defer cancel()
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"endpoint": "openai-api",
+			},
+		}
+	})
 
-	_, err := s.openaiClient.EmbedQuery(ctx, "health check")
-	if err != nil {
-		s.logger.Warn("OpenAI connectivity check failed", zap.Error(err))
-		status["openai_status"] = "unavailable"
-		status["status"] = "degraded"
-		c.JSON(http.StatusServiceUnavailable, status)
-		return
-	}
+	// Web search cache health check
+	manager.AddCheckerFunc("cache", func(ctx context.Context) health.CheckResult {
+		s.cacheMutex.RLock()
+		cacheSize := len(s.cache)
+		s.cacheMutex.RUnlock()
 
-	status["openai_status"] = "healthy"
-	c.JSON(http.StatusOK, status)
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"cache_size":    cacheSize,
+				"cache_timeout": searchCacheTimeout.String(),
+			},
+		}
+	})
+
+	// Freshness detection health check
+	manager.AddCheckerFunc("freshness_detector", func(ctx context.Context) health.CheckResult {
+		keywordCount := len(s.config.WebSearch.FreshnessKeywords)
+
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"keywords_count": keywordCount,
+				"max_results":    s.config.WebSearch.MaxResults,
+			},
+		}
+	})
+
+	// Set timeout for health checks
+	manager.SetTimeout(healthCheckTimeout)
 }
 
 func main() {
@@ -341,7 +374,11 @@ func main() {
 
 	router := gin.Default()
 
-	router.GET("/health", service.handleHealth)
+	// Initialize health check manager
+	healthManager := health.NewManager("websearch", "1.0.0", logger)
+	service.setupHealthChecks(healthManager)
+
+	router.GET("/health", gin.WrapH(healthManager.HTTPHandler()))
 	router.POST("/search", service.handleSearch)
 
 	logger.Info("Starting websearch service",
@@ -350,7 +387,7 @@ func main() {
 		zap.Duration("cache_timeout", searchCacheTimeout),
 	)
 
-	if err := router.Run(":8080"); err != nil {
+	if err := router.Run(":8083"); err != nil {
 		logger.Fatal("Failed to start server", zap.Error(err))
 	}
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/ai-sa-assistant/internal/chroma"
 	"github.com/your-org/ai-sa-assistant/internal/config"
+	"github.com/your-org/ai-sa-assistant/internal/health"
 	"github.com/your-org/ai-sa-assistant/internal/metadata"
 	"github.com/your-org/ai-sa-assistant/internal/openai"
 	"go.uber.org/zap"
@@ -40,10 +41,6 @@ const (
 	HealthCheckTimeout = 5 * time.Second
 	// SearchRequestTimeout defines the timeout for search requests
 	SearchRequestTimeout = 30 * time.Second
-	// HealthStatusHealthy represents healthy status
-	HealthStatusHealthy = "healthy"
-	// HealthStatusUnhealthy represents unhealthy status
-	HealthStatusUnhealthy = "unhealthy"
 )
 
 // SearchRequest represents the JSON payload for search requests
@@ -129,8 +126,12 @@ func main() {
 
 	router := gin.Default()
 
+	// Initialize health check manager
+	healthManager := health.NewManager("retrieve", "1.0.0", logger)
+	setupHealthChecks(healthManager, deps)
+
 	// Health check endpoint with dependency health checks
-	router.GET("/health", createHealthHandler(deps))
+	router.GET("/health", gin.WrapH(healthManager.HTTPHandler()))
 
 	// Main search endpoint
 	router.POST("/search", createSearchHandler(deps))
@@ -221,79 +222,65 @@ func initializeDependencies(cfg *config.Config, logger *zap.Logger) (*ServiceDep
 	}, nil
 }
 
-// createHealthHandler creates the health check endpoint handler
-func createHealthHandler(deps *ServiceDependencies) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(context.Background(), HealthCheckTimeout)
-		defer cancel()
-
-		status := HealthStatusHealthy
-		statusCode := http.StatusOK
-		dependencies := make(map[string]interface{})
-
-		// Check ChromaDB health
+// setupHealthChecks configures health checks for the retrieve service
+func setupHealthChecks(manager *health.Manager, deps *ServiceDependencies) {
+	// ChromaDB health check
+	manager.AddCheckerFunc("chroma", func(ctx context.Context) health.CheckResult {
 		if err := deps.ChromaClient.HealthCheck(); err != nil {
-			deps.Logger.Error("ChromaDB health check failed", zap.Error(err))
-			dependencies["chroma"] = map[string]interface{}{
-				"status": HealthStatusUnhealthy,
-				"error":  err.Error(),
-			}
-			status = HealthStatusUnhealthy
-			statusCode = http.StatusServiceUnavailable
-		} else {
-			dependencies["chroma"] = map[string]interface{}{
-				"status": HealthStatusHealthy,
-				"url":    deps.Config.Chroma.URL,
+			return health.CheckResult{
+				Status:    health.StatusUnhealthy,
+				Error:     fmt.Sprintf("ChromaDB health check failed: %v", err),
+				Timestamp: time.Now(),
 			}
 		}
-
-		// Check OpenAI connectivity
-		if _, err := deps.OpenAIClient.EmbedQuery(ctx, "health check"); err != nil {
-			deps.Logger.Error("OpenAI health check failed", zap.Error(err))
-			dependencies["openai"] = map[string]interface{}{
-				"status": HealthStatusUnhealthy,
-				"error":  err.Error(),
-			}
-			status = HealthStatusUnhealthy
-			statusCode = http.StatusServiceUnavailable
-		} else {
-			dependencies["openai"] = map[string]interface{}{
-				"status": HealthStatusHealthy,
-			}
-		}
-
-		// Check metadata store
-		if _, err := deps.MetadataStore.GetStats(); err != nil {
-			deps.Logger.Error("Metadata store health check failed", zap.Error(err))
-			dependencies["metadata"] = map[string]interface{}{
-				"status": HealthStatusUnhealthy,
-				"error":  err.Error(),
-			}
-			status = HealthStatusUnhealthy
-			statusCode = http.StatusServiceUnavailable
-		} else {
-			dependencies["metadata"] = map[string]interface{}{
-				"status":  "healthy",
-				"db_path": deps.Config.Metadata.DBPath,
-			}
-		}
-
-		c.JSON(statusCode, gin.H{
-			"status":       status,
-			"service":      "retrieve",
-			"version":      "1.0.0",
-			"environment":  os.Getenv("ENVIRONMENT"),
-			"dependencies": dependencies,
-			"config": gin.H{
-				"chroma_url":               deps.Config.Chroma.URL,
-				"collection_name":          deps.Config.Chroma.CollectionName,
-				"max_chunks":               deps.Config.Retrieval.MaxChunks,
-				"fallback_threshold":       deps.Config.Retrieval.FallbackThreshold,
-				"confidence_threshold":     deps.Config.Retrieval.ConfidenceThreshold,
-				"fallback_score_threshold": deps.Config.Retrieval.FallbackScoreThreshold,
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"url":        deps.Config.Chroma.URL,
+				"collection": deps.Config.Chroma.CollectionName,
 			},
-		})
-	}
+		}
+	})
+
+	// OpenAI health check
+	manager.AddCheckerFunc("openai", func(ctx context.Context) health.CheckResult {
+		if _, err := deps.OpenAIClient.EmbedQuery(ctx, "health check"); err != nil {
+			return health.CheckResult{
+				Status:    health.StatusUnhealthy,
+				Error:     fmt.Sprintf("OpenAI health check failed: %v", err),
+				Timestamp: time.Now(),
+			}
+		}
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"endpoint": deps.Config.OpenAI.Endpoint,
+			},
+		}
+	})
+
+	// Metadata store health check
+	manager.AddCheckerFunc("metadata", func(ctx context.Context) health.CheckResult {
+		if _, err := deps.MetadataStore.GetStats(); err != nil {
+			return health.CheckResult{
+				Status:    health.StatusUnhealthy,
+				Error:     fmt.Sprintf("Metadata store health check failed: %v", err),
+				Timestamp: time.Now(),
+			}
+		}
+		return health.CheckResult{
+			Status:    health.StatusHealthy,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"db_path": deps.Config.Metadata.DBPath,
+			},
+		}
+	})
+
+	// Set timeout for health checks
+	manager.SetTimeout(HealthCheckTimeout)
 }
 
 // validateSearchRequest validates and parses the incoming search request

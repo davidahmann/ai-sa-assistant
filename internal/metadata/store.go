@@ -18,15 +18,19 @@
 package metadata
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3" // SQLite driver for database/sql
 	"go.uber.org/zap"
+
+	"github.com/your-org/ai-sa-assistant/internal/resilience"
 )
 
 const (
@@ -36,8 +40,9 @@ const (
 
 // Store handles queries to the SQLite metadata database
 type Store struct {
-	db     *sql.DB
-	logger *zap.Logger
+	db           *sql.DB
+	logger       *zap.Logger
+	errorHandler *resilience.ErrorHandler
 }
 
 // NewStore creates a new metadata store
@@ -48,29 +53,37 @@ func NewStore(dbPath string, logger *zap.Logger) (*Store, error) {
 
 	logger.Info("Initializing metadata store", zap.String("db_path", dbPath))
 
+	// Initialize error handler
+	errorHandler := resilience.NewErrorHandler(logger)
+
 	// Ensure the directory exists
 	if err := os.MkdirAll(filepath.Dir(dbPath), DefaultDirectoryPermissions); err != nil {
-		return nil, fmt.Errorf("failed to create database directory: %w", err)
+		return nil, errorHandler.WrapError(err, "creating database directory")
 	}
 
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, errorHandler.WrapError(err, "opening database")
 	}
+
+	// Configure SQLite for concurrent access
+	db.SetMaxOpenConns(1) // SQLite works best with one connection
+	db.SetMaxIdleConns(1)
 
 	// Test database connection
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		return nil, errorHandler.WrapError(err, "pinging database")
 	}
 
 	store := &Store{
-		db:     db,
-		logger: logger,
+		db:           db,
+		logger:       logger,
+		errorHandler: errorHandler,
 	}
 
 	// Initialize database schema
 	if err := store.initSchema(); err != nil {
-		return nil, fmt.Errorf("failed to initialize schema: %w", err)
+		return nil, errorHandler.WrapError(err, "initializing database schema")
 	}
 
 	return store, nil
@@ -79,7 +92,10 @@ func NewStore(dbPath string, logger *zap.Logger) (*Store, error) {
 // Close closes the database connection
 func (s *Store) Close() error {
 	s.logger.Info("Closing metadata store")
-	return s.db.Close()
+	if err := s.db.Close(); err != nil {
+		return s.errorHandler.WrapError(err, "closing database connection")
+	}
+	return nil
 }
 
 // initSchema creates the metadata table if it doesn't exist
@@ -111,11 +127,39 @@ func (s *Store) initSchema() error {
 	_, err := s.db.Exec(query)
 	if err != nil {
 		s.logger.Error("Failed to initialize schema", zap.Error(err))
-		return fmt.Errorf("failed to create schema: %w", err)
+		return s.errorHandler.WrapError(err, "creating database schema")
 	}
 
 	s.logger.Info("Database schema initialized successfully")
 	return nil
+}
+
+// GetHealthCheck returns a health check function for the metadata store
+func (s *Store) GetHealthCheck() resilience.HealthCheckFunc {
+	return func(ctx context.Context) resilience.HealthCheckResult {
+		start := time.Now()
+
+		// Test database connection with a simple query
+		var count int
+		err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM metadata").Scan(&count)
+		duration := time.Since(start)
+
+		if err != nil {
+			return resilience.HealthCheckResult{
+				Status:    resilience.HealthStatusUnhealthy,
+				Message:   fmt.Sprintf("Metadata store health check failed: %v", err),
+				Timestamp: time.Now(),
+				Duration:  duration,
+			}
+		}
+
+		return resilience.HealthCheckResult{
+			Status:    resilience.HealthStatusHealthy,
+			Message:   fmt.Sprintf("Metadata store is healthy with %d entries", count),
+			Timestamp: time.Now(),
+			Duration:  duration,
+		}
+	}
 }
 
 // Entry represents a metadata entry matching the new metadata.json structure

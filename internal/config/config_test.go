@@ -195,6 +195,13 @@ func TestConfigValidation(t *testing.T) {
 					MaxTokens:   2000,
 					Temperature: 0.3,
 				},
+				Diagram: DiagramConfig{
+					MermaidInkURL:  "https://mermaid.ink",
+					Timeout:        30,
+					CacheExpiry:    24,
+					EnableCaching:  true,
+					MaxDiagramSize: 10240,
+				},
 				Logging: LoggingConfig{
 					Level:  "info",
 					Format: "json",

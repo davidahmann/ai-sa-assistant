@@ -26,6 +26,8 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 	"go.uber.org/zap"
+
+	"github.com/your-org/ai-sa-assistant/internal/resilience"
 )
 
 const (
@@ -49,9 +51,12 @@ const (
 
 // Client wraps the go-openai client with enhanced functionality
 type Client struct {
-	client *openai.Client
-	logger *zap.Logger
-	model  string
+	client         *openai.Client
+	logger         *zap.Logger
+	model          string
+	circuitBreaker *resilience.CircuitBreaker
+	errorHandler   *resilience.ErrorHandler
+	timeoutManager *resilience.TimeoutManager
 }
 
 // EmbeddingUsage tracks embedding API usage and costs
@@ -82,23 +87,39 @@ func (e *RetryableError) Error() string {
 // NewClient creates a new OpenAI client with enhanced functionality
 func NewClient(apiKey string, logger *zap.Logger) (*Client, error) {
 	if apiKey == "" {
-		return nil, fmt.Errorf("API key is required")
+		return nil, resilience.NewBadRequestError("API key is required", nil)
+	}
+
+	if logger == nil {
+		logger = zap.NewNop()
 	}
 
 	// Validate API key format (basic check)
 	if !strings.HasPrefix(apiKey, "sk-") {
-		return nil, fmt.Errorf("invalid API key format")
+		return nil, resilience.NewBadRequestError("invalid API key format", nil)
 	}
 
+	// Initialize resilience components
+	cbConfig := resilience.DefaultCircuitBreakerConfig("openai")
+	cbConfig.MaxFailures = 3
+	cbConfig.ResetTimeout = 60 * time.Second
+	circuitBreaker := resilience.NewCircuitBreaker(cbConfig, logger)
+
+	errorHandler := resilience.NewErrorHandler(logger)
+	timeoutManager := resilience.NewTimeoutManager(resilience.DefaultTimeoutConfig())
+
 	client := &Client{
-		client: openai.NewClient(apiKey),
-		logger: logger,
-		model:  EmbeddingModel,
+		client:         openai.NewClient(apiKey),
+		logger:         logger,
+		model:          EmbeddingModel,
+		circuitBreaker: circuitBreaker,
+		errorHandler:   errorHandler,
+		timeoutManager: timeoutManager,
 	}
 
 	// Validate client connectivity
 	if err := client.validateConnection(); err != nil {
-		return nil, fmt.Errorf("failed to validate OpenAI connection: %w", err)
+		return nil, errorHandler.WrapError(err, "validating OpenAI connection")
 	}
 
 	client.logger.Info("OpenAI client initialized successfully",
@@ -217,70 +238,25 @@ func (c *Client) EmbedQuery(ctx context.Context, query string) ([]float32, error
 
 // createEmbeddingsWithRetry creates embeddings with exponential backoff retry logic
 func (c *Client) createEmbeddingsWithRetry(ctx context.Context, texts []string) ([][]float32, openai.Usage, error) {
-	var lastErr error
-	delay := BaseRetryDelay
+	var embeddings [][]float32
+	var usage openai.Usage
 
-	for attempt := 0; attempt < MaxRetries; attempt++ {
-		if attempt > 0 {
-			c.logger.Warn("Retrying embedding request",
-				zap.Int("attempt", attempt+1),
-				zap.Int("max_retries", MaxRetries),
-				zap.Duration("delay", delay),
-			)
+	// Use circuit breaker and exponential backoff
+	err := c.circuitBreaker.Execute(ctx, func(ctx context.Context) error {
+		return c.timeoutManager.Execute(ctx, func(ctx context.Context) error {
+			return resilience.SimpleRetry(ctx, c.logger, func(ctx context.Context) error {
+				var err error
+				embeddings, usage, err = c.createEmbeddings(ctx, texts)
+				return err
+			})
+		})
+	})
 
-			select {
-			case <-ctx.Done():
-				return nil, openai.Usage{}, ctx.Err()
-			case <-time.After(delay):
-				// Continue with retry
-			}
-		}
-
-		embeddings, usage, err := c.createEmbeddings(ctx, texts)
-		if err != nil {
-			lastErr = err
-
-			// Check if error is retryable
-			if retryErr, ok := err.(*RetryableError); ok {
-				if retryErr.RetryAfter > 0 {
-					delay = retryErr.RetryAfter
-				} else {
-					delay = BaseRetryDelay * time.Duration(1<<uint(attempt))
-				}
-
-				c.logger.Warn("Retryable error encountered",
-					zap.Error(err),
-					zap.Int("status_code", retryErr.StatusCode),
-					zap.Duration("next_retry_delay", delay),
-				)
-				continue
-			}
-
-			// Non-retryable error
-			c.logger.Error("Non-retryable error encountered",
-				zap.Error(err),
-				zap.Int("attempt", attempt+1),
-			)
-			return nil, openai.Usage{}, err
-		}
-
-		// Success
-		if attempt > 0 {
-			c.logger.Info("Embedding request succeeded after retry",
-				zap.Int("attempt", attempt+1),
-				zap.Int("tokens_used", usage.PromptTokens),
-			)
-		}
-
-		return embeddings, usage, nil
+	if err != nil {
+		return nil, openai.Usage{}, c.errorHandler.WrapError(err, "creating embeddings")
 	}
 
-	c.logger.Error("All retry attempts exhausted",
-		zap.Int("max_retries", MaxRetries),
-		zap.Error(lastErr),
-	)
-
-	return nil, openai.Usage{}, fmt.Errorf("exhausted all retry attempts: %w", lastErr)
+	return embeddings, usage, nil
 }
 
 // createEmbeddings creates embeddings using the OpenAI API
@@ -324,28 +300,19 @@ func (c *Client) handleAPIError(err error) error {
 	if apiErr, ok := err.(*openai.APIError); ok {
 		switch apiErr.HTTPStatusCode {
 		case http.StatusUnauthorized:
-			return fmt.Errorf("invalid API key or unauthorized access: %w", err)
+			return resilience.NewUnauthorizedError("invalid API key or unauthorized access", err)
 		case http.StatusTooManyRequests:
-			// Rate limit error - retryable
-			return &RetryableError{
-				StatusCode: apiErr.HTTPStatusCode,
-				Message:    apiErr.Message,
-				RetryAfter: BaseRetryDelay, // Use exponential backoff
-			}
+			return resilience.NewTooManyRequestsError("rate limit exceeded", err)
 		case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-			// Server error - retryable
-			return &RetryableError{
-				StatusCode: apiErr.HTTPStatusCode,
-				Message:    apiErr.Message,
-				RetryAfter: 0, // Use exponential backoff
-			}
+			return resilience.NewServiceUnavailableError("OpenAI service temporarily unavailable", err)
+		case http.StatusBadRequest:
+			return resilience.NewBadRequestError(fmt.Sprintf("invalid request: %s", apiErr.Message), err)
 		default:
-			// Other errors are not retryable
-			return fmt.Errorf("OpenAI API error (status %d): %s", apiErr.HTTPStatusCode, apiErr.Message)
+			return resilience.NewInternalError(fmt.Sprintf("OpenAI API error (status %d): %s", apiErr.HTTPStatusCode, apiErr.Message), err)
 		}
 	}
 
-	return fmt.Errorf("OpenAI client error: %w", err)
+	return resilience.NewInternalError("OpenAI client error", err)
 }
 
 // validateEmbeddingDimensions validates that embeddings have the expected dimensions
@@ -420,62 +387,43 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionReq
 		zap.Int("message_count", len(req.Messages)),
 	)
 
-	// Implement exponential backoff for retries
-	var lastErr error
-	delay := BaseRetryDelay
+	var resp *ChatCompletionResponse
 
-	for attempt := 0; attempt < MaxRetries; attempt++ {
-		if attempt > 0 {
-			c.logger.Warn("Retrying chat completion request",
-				zap.Int("attempt", attempt+1),
-				zap.Duration("delay", delay),
-			)
-
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(delay):
-				// Continue with retry
-			}
-		}
-
-		resp, err := c.client.CreateChatCompletion(ctx, openaiReq)
-		if err != nil {
-			lastErr = c.handleAPIError(err)
-
-			// Check if error is retryable
-			if retryErr, ok := lastErr.(*RetryableError); ok {
-				if retryErr.RetryAfter > 0 {
-					delay = retryErr.RetryAfter
-				} else {
-					delay = BaseRetryDelay * time.Duration(1<<uint(attempt))
+	// Use circuit breaker and exponential backoff
+	err := c.circuitBreaker.Execute(ctx, func(ctx context.Context) error {
+		return c.timeoutManager.Execute(ctx, func(ctx context.Context) error {
+			return resilience.SimpleRetry(ctx, c.logger, func(ctx context.Context) error {
+				openaiResp, err := c.client.CreateChatCompletion(ctx, openaiReq)
+				if err != nil {
+					return c.handleAPIError(err)
 				}
-				continue
-			}
 
-			// Non-retryable error
-			return nil, lastErr
-		}
+				if len(openaiResp.Choices) == 0 {
+					return resilience.NewInternalError("no choices returned from OpenAI", nil)
+				}
 
-		if len(resp.Choices) == 0 {
-			return nil, fmt.Errorf("no choices returned from OpenAI")
-		}
+				c.logger.Debug("Chat completion successful",
+					zap.String("finish_reason", string(openaiResp.Choices[0].FinishReason)),
+					zap.Int("prompt_tokens", openaiResp.Usage.PromptTokens),
+					zap.Int("completion_tokens", openaiResp.Usage.CompletionTokens),
+					zap.Int("total_tokens", openaiResp.Usage.TotalTokens),
+				)
 
-		c.logger.Debug("Chat completion successful",
-			zap.String("finish_reason", string(resp.Choices[0].FinishReason)),
-			zap.Int("prompt_tokens", resp.Usage.PromptTokens),
-			zap.Int("completion_tokens", resp.Usage.CompletionTokens),
-			zap.Int("total_tokens", resp.Usage.TotalTokens),
-		)
+				resp = &ChatCompletionResponse{
+					Content:      openaiResp.Choices[0].Message.Content,
+					FinishReason: string(openaiResp.Choices[0].FinishReason),
+					Usage:        openaiResp.Usage,
+				}
+				return nil
+			})
+		})
+	})
 
-		return &ChatCompletionResponse{
-			Content:      resp.Choices[0].Message.Content,
-			FinishReason: string(resp.Choices[0].FinishReason),
-			Usage:        resp.Usage,
-		}, nil
+	if err != nil {
+		return nil, c.errorHandler.WrapError(err, "creating chat completion")
 	}
 
-	return nil, fmt.Errorf("exhausted all retry attempts: %w", lastErr)
+	return resp, nil
 }
 
 // BuildSystemPrompt creates a system prompt for the assistant
@@ -528,4 +476,35 @@ func BuildUserPrompt(query string, contextChunks []string, webResults []string) 
 Remember to be specific, actionable, and professional in your response.`
 
 	return prompt
+}
+
+// GetHealthCheck returns a health check function for this client
+func (c *Client) GetHealthCheck() resilience.HealthCheckFunc {
+	return func(ctx context.Context) resilience.HealthCheckResult {
+		// Try a simple embedding request as a health check
+		start := time.Now()
+		_, err := c.EmbedQuery(ctx, "health check")
+		duration := time.Since(start)
+
+		if err != nil {
+			return resilience.HealthCheckResult{
+				Status:    resilience.HealthStatusUnhealthy,
+				Message:   fmt.Sprintf("OpenAI API health check failed: %v", err),
+				Timestamp: time.Now(),
+				Duration:  duration,
+			}
+		}
+
+		return resilience.HealthCheckResult{
+			Status:    resilience.HealthStatusHealthy,
+			Message:   "OpenAI API is healthy",
+			Timestamp: time.Now(),
+			Duration:  duration,
+		}
+	}
+}
+
+// GetCircuitBreakerStats returns circuit breaker statistics
+func (c *Client) GetCircuitBreakerStats() resilience.CircuitBreakerStats {
+	return c.circuitBreaker.GetStats()
 }

@@ -1389,7 +1389,8 @@ func formatWebResultWithURL(index int, result string) string {
 	case url != "" && !isValidURL(url):
 		return fmt.Sprintf("Web Result %d [Invalid URL]: %s\n\n", index, result)
 	default:
-		return fmt.Sprintf("Web Result %d [No URL]: %s\n\n", index, result)
+		// When no URL is found, use simple format without brackets
+		return fmt.Sprintf("Web Result %d: %s\n\n", index, result)
 	}
 }
 

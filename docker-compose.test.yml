@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  chromadb-test:
+    image: chromadb/chroma:0.4.15
+    container_name: chromadb-test
+    ports:
+      - "8001:8000"  # Use different port to avoid conflicts
+    environment:
+      - CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER=chromadb.auth.token_authn
+      - CHROMA_SERVER_AUTH_CREDENTIALS=test-token
+      - CHROMA_SERVER_AUTH_PROVIDER=chromadb.auth.basic_authn
+      - ANONYMIZED_TELEMETRY=false
+    volumes:
+      - chromadb-test-data:/chroma/chroma
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  retrieve-test:
+    build:
+      context: .
+      dockerfile: cmd/retrieve/Dockerfile
+    container_name: retrieve-test
+    ports:
+      - "8081:8081"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CHROMA_URL=http://chromadb-test:8000
+      - CHROMA_COLLECTION_NAME=test_demo_collection
+      - METADATA_DB_PATH=/app/test_metadata.db
+      - LOG_LEVEL=debug
+    volumes:
+      - ./tests/integration/testdata:/app/testdata:ro
+      - test-metadata:/app
+    networks:
+      - test-network
+    depends_on:
+      chromadb-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # SQLite doesn't need a separate service - it's file-based
+  # Test metadata is created in the mounted volume
+
+volumes:
+  chromadb-test-data:
+    driver: local
+  test-metadata:
+    driver: local
+
+networks:
+  test-network:
+    driver: bridge

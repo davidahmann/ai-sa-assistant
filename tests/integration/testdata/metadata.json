@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Test metadata for Phase 1 integration testing",
+  "last_updated": "2024-07-09T14:30:00Z",
+  "metadata_schema": {
+    "doc_id": "string",
+    "title": "string",
+    "platform": "string",
+    "scenario": "string",
+    "type": "string",
+    "source_url": "string",
+    "path": "string",
+    "tags": "array",
+    "difficulty": "string",
+    "estimated_time": "string"
+  },
+  "documents": [
+    {
+      "doc_id": "test-aws-migration",
+      "title": "AWS Migration Test Document",
+      "platform": "aws",
+      "scenario": "migration",
+      "type": "playbook",
+      "source_url": "https://example.com/aws-migration",
+      "path": "tests/integration/testdata/test-aws-migration.md",
+      "tags": ["aws", "migration", "ec2", "vpc", "mgn"],
+      "difficulty": "intermediate",
+      "estimated_time": "30 minutes"
+    },
+    {
+      "doc_id": "test-azure-hybrid",
+      "title": "Azure Hybrid Architecture Test Document",
+      "platform": "azure",
+      "scenario": "hybrid",
+      "type": "playbook",
+      "source_url": "https://example.com/azure-hybrid",
+      "path": "tests/integration/testdata/test-azure-hybrid.md",
+      "tags": ["azure", "hybrid", "expressroute", "vmware", "hcx"],
+      "difficulty": "advanced",
+      "estimated_time": "45 minutes"
+    },
+    {
+      "doc_id": "test-security-compliance",
+      "title": "Security Compliance Test Document",
+      "platform": "multi-cloud",
+      "scenario": "security-compliance",
+      "type": "compliance",
+      "source_url": "https://example.com/security-compliance",
+      "path": "tests/integration/testdata/test-security-compliance.md",
+      "tags": ["security", "compliance", "hipaa", "gdpr", "monitoring"],
+      "difficulty": "advanced",
+      "estimated_time": "60 minutes"
+    },
+    {
+      "doc_id": "test-malformed-doc",
+      "title": "Malformed Test Document",
+      "platform": "aws",
+      "scenario": "test",
+      "type": "test",
+      "source_url": "https://example.com/malformed",
+      "path": "tests/integration/testdata/nonexistent-file.md",
+      "tags": ["test", "error"],
+      "difficulty": "beginner",
+      "estimated_time": "5 minutes"
+    },
+    {
+      "doc_id": "test-fallback-scenario",
+      "title": "Fallback Test Document",
+      "platform": "generic",
+      "scenario": "fallback",
+      "type": "test",
+      "source_url": "https://example.com/fallback",
+      "path": "tests/integration/testdata/test-fallback-scenario.md",
+      "tags": ["fallback", "test", "retrieval"],
+      "difficulty": "beginner",
+      "estimated_time": "5 minutes"
+    }
+  ]
+}

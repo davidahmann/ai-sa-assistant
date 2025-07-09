@@ -31,8 +31,17 @@ func setupRealMetadataStore(t *testing.T) (*Store, []Entry) {
 		t.Fatalf("Failed to create store: %v", err)
 	}
 
-	// Find the actual metadata.json file
-	metadataPath := filepath.Join("..", "..", "docs", "metadata.json")
+	// Find the actual metadata.json file using absolute path to avoid security validation
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	metadataPath := filepath.Join(workingDir, "..", "..", "docs", "metadata.json")
+	metadataPath, err = filepath.Abs(metadataPath)
+	if err != nil {
+		t.Fatalf("Failed to get absolute path: %v", err)
+	}
+
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
 		t.Skip("metadata.json not found, skipping integration test")
 	}
@@ -454,7 +463,8 @@ func TestIntegrationConcurrency(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	store, err := NewStore(":memory:", logger)
+	// Use shared cache for in-memory database to support concurrent access
+	store, err := NewStore("file:memdb1?mode=memory&cache=shared", logger)
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
