@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package config provides configuration management for the AI SA Assistant.
+// It handles loading and validation of configuration from files and environment variables
+// using Viper, with support for OpenAI API keys, service endpoints, and other settings.
 package config
 
 import (
@@ -23,6 +26,28 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
+)
+
+const (
+	// DefaultMaxChunks is the default maximum number of results to return from a vector search
+	DefaultMaxChunks = 5
+	// DefaultFallbackThreshold is the threshold below which fallback search is triggered
+	DefaultFallbackThreshold = 3
+	// DefaultConfidenceThreshold defines the default confidence threshold for search results
+	DefaultConfidenceThreshold = 0.7
+	// DefaultFallbackScoreThreshold defines the default score threshold for fallback search
+	DefaultFallbackScoreThreshold = 0.7
+	// DefaultMaxWebSearchResults defines the default maximum number of web search results
+	DefaultMaxWebSearchResults = 3
+	// DefaultMaxTokens defines the default maximum number of tokens for responses
+	DefaultMaxTokens = 2000
+	// DefaultTemperature defines the default temperature for LLM responses
+	DefaultTemperature = 0.3
+
+	// MaskedValueMinLength is the minimum length for masking config values when displaying them
+	MaskedValueMinLength = 8
+	// MaskedValueKeepChars defines how many characters to keep visible when masking config values
+	MaskedValueKeepChars = 8
 )
 
 var (
@@ -201,13 +226,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("metadata.db_path", "./metadata.db")
 
 	// Retrieval defaults
-	v.SetDefault("retrieval.max_chunks", 5)
-	v.SetDefault("retrieval.fallback_threshold", 3)
-	v.SetDefault("retrieval.confidence_threshold", 0.7)
-	v.SetDefault("retrieval.fallback_score_threshold", 0.7)
+	v.SetDefault("retrieval.max_chunks", DefaultMaxChunks)
+	v.SetDefault("retrieval.fallback_threshold", DefaultFallbackThreshold)
+	v.SetDefault("retrieval.confidence_threshold", DefaultConfidenceThreshold)
+	v.SetDefault("retrieval.fallback_score_threshold", DefaultFallbackScoreThreshold)
 
 	// Web search defaults
-	v.SetDefault("websearch.max_results", 3)
+	v.SetDefault("websearch.max_results", DefaultMaxWebSearchResults)
 	v.SetDefault("websearch.freshness_keywords", []string{
 		"latest", "recent", "update", "new", "current", "announced", "release",
 		"Q1 2025", "Q2 2025", "Q3 2025", "Q4 2025", "2025", "2024",
@@ -217,8 +242,8 @@ func setDefaults(v *viper.Viper) {
 
 	// Synthesis defaults
 	v.SetDefault("synthesis.model", "gpt-4o")
-	v.SetDefault("synthesis.max_tokens", 2000)
-	v.SetDefault("synthesis.temperature", 0.3)
+	v.SetDefault("synthesis.max_tokens", DefaultMaxTokens)
+	v.SetDefault("synthesis.temperature", DefaultTemperature)
 
 	// Logging defaults
 	v.SetDefault("logging.level", "info")
@@ -277,7 +302,7 @@ func setConfigFile(v *viper.Viper, configPath string) error {
 func setEnvironmentMappings(v *viper.Viper) {
 	// Map common environment variables
 	envMappings := map[string]string{
-		"OPENAI_API_KEY":    "openai.apikey",
+		"OPENAI_API_KEY":    "openai.apikey", // pragma: allowlist secret
 		"OPENAI_ENDPOINT":   "openai.endpoint",
 		"TEAMS_WEBHOOK_URL": "teams.webhook_url",
 		"CHROMA_URL":        "chroma.url",
@@ -443,10 +468,10 @@ func (c *Config) MaskSensitiveValues() *Config {
 
 // maskValue masks sensitive values, showing only the first 8 characters
 func maskValue(value string) string {
-	if len(value) <= 8 {
+	if len(value) <= MaskedValueMinLength {
 		return strings.Repeat("*", len(value))
 	}
-	return value[:8] + strings.Repeat("*", len(value)-8)
+	return value[:MaskedValueKeepChars] + strings.Repeat("*", len(value)-MaskedValueKeepChars)
 }
 
 // contains checks if a slice contains a specific string

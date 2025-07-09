@@ -458,7 +458,8 @@ More content here.
 }
 
 func BenchmarkFindSentenceBreak(b *testing.B) {
-	text := "This is a long text with multiple sentences. Each sentence should be properly detected. The function should find the right break point efficiently."
+	text := "This is a long text with multiple sentences. Each sentence should be properly detected. " +
+		"The function should find the right break point efficiently."
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package main provides the document ingestion CLI tool for the AI SA Assistant.
+// It processes documents, generates embeddings, and loads them into ChromaDB for retrieval.
 package main
 
 import (
@@ -38,6 +40,7 @@ const (
 	maxConcurrentChunks   = 10
 )
 
+// IngestionPipeline represents the ingestion pipeline configuration
 type IngestionPipeline struct {
 	openaiClient  *openai.Client
 	chromaClient  *chroma.Client
@@ -46,6 +49,7 @@ type IngestionPipeline struct {
 	chunkSize     int
 }
 
+// IngestionStats represents statistics from the ingestion process
 type IngestionStats struct {
 	ProcessedCount int
 	SuccessCount   int
@@ -85,7 +89,7 @@ This tool is essential for populating the knowledge base with synthetic document
 	}
 }
 
-func runIngestionCommand(cmd *cobra.Command, args []string) error {
+func runIngestionCommand(_ *cobra.Command, _ []string) error {
 	logger, _ := zap.NewProduction()
 	defer func() { _ = logger.Sync() }()
 
@@ -120,7 +124,7 @@ func runIngestionPipeline(
 	cfg *config.Config,
 	docsPath string,
 	chunkSize int,
-	forceReindex bool,
+	_ bool,
 	logger *zap.Logger,
 ) (*IngestionStats, error) {
 	ctx := context.Background()
@@ -241,13 +245,47 @@ func runIngestionPipeline(
 	return stats, nil
 }
 
+// validateFilePath ensures the file path is safe and within expected bounds
+func validateFilePath(basePath, filePath string) error {
+	// Clean and resolve the path
+	cleanPath := filepath.Clean(filePath)
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve absolute path: %w", err)
+	}
+
+	// Ensure base path is absolute
+	absBasePath, err := filepath.Abs(basePath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve absolute base path: %w", err)
+	}
+
+	// Check if the file path is within the base directory
+	relPath, err := filepath.Rel(absBasePath, absPath)
+	if err != nil {
+		return fmt.Errorf("failed to compute relative path: %w", err)
+	}
+
+	// Prevent directory traversal attacks
+	if strings.HasPrefix(relPath, "..") || strings.Contains(relPath, "/../") {
+		return fmt.Errorf("invalid file path: directory traversal detected")
+	}
+
+	return nil
+}
+
 func (p *IngestionPipeline) processDocument(
 	ctx context.Context,
-	entry metadata.MetadataEntry,
+	entry metadata.Entry,
 	filePath string,
 ) (int, error) {
+	// Validate file path for security
+	if err := validateFilePath(".", filePath); err != nil {
+		return 0, fmt.Errorf("invalid file path %s: %w", filePath, err)
+	}
+
 	// Read document content
-	content, err := os.ReadFile(filePath)
+	content, err := os.ReadFile(filePath) // #nosec G304 - path validated above
 	if err != nil {
 		return 0, fmt.Errorf("failed to read file %s: %w", filePath, err)
 	}

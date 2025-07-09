@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package main provides the synthesis service API for the AI SA Assistant.
+// It combines retrieval results with web search to generate comprehensive responses.
 package main
 
 import (
@@ -30,6 +32,15 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	internalopenai "github.com/your-org/ai-sa-assistant/internal/openai"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
+)
+
+const (
+	// MaxQueryLength defines the maximum length for query text
+	MaxQueryLength = 10000
+	// HealthCheckTimeout defines the timeout for health checks
+	HealthCheckTimeout = 5 * time.Second
+	// SynthesisRequestTimeout defines the timeout for synthesis requests
+	SynthesisRequestTimeout = 30 * time.Second
 )
 
 // SynthesisRequest represents the incoming synthesis request
@@ -58,8 +69,8 @@ func validateSynthesisRequest(req SynthesisRequest) error {
 		return fmt.Errorf("query cannot be empty")
 	}
 
-	if len(req.Query) > 10000 {
-		return fmt.Errorf("query is too long (max 10000 characters)")
+	if len(req.Query) > MaxQueryLength {
+		return fmt.Errorf("query is too long (max %d characters)", MaxQueryLength)
 	}
 
 	if len(req.Chunks) == 0 && len(req.WebResults) == 0 {
@@ -87,22 +98,39 @@ func validateSynthesisRequest(req SynthesisRequest) error {
 }
 
 func main() {
-	// Load configuration first to get logging settings
+	// Setup configuration and logger
+	cfg, logger := setupConfiguration()
+	defer func() { _ = logger.Sync() }()
+
+	// Initialize services
+	openaiClient := setupServices(cfg, logger)
+
+	// Setup router and handlers
+	router := setupRouter(cfg, logger, openaiClient)
+
+	// Start server
+	startServer(router, cfg, logger)
+}
+
+// setupConfiguration loads configuration and initializes logger
+func setupConfiguration() (*config.Config, *zap.Logger) {
 	cfg, err := config.Load("")
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Initialize logger based on configuration
 	logger, err := initializeLogger(cfg)
 	if err != nil {
 		fmt.Printf("Failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
-	defer func() { _ = logger.Sync() }()
 
-	// Initialize OpenAI client
+	return cfg, logger
+}
+
+// setupServices initializes all required services
+func setupServices(cfg *config.Config, logger *zap.Logger) *internalopenai.Client {
 	openaiClient, err := internalopenai.NewClient(cfg.OpenAI.APIKey, logger)
 	if err != nil {
 		logger.Fatal("Failed to initialize OpenAI client", zap.Error(err))
@@ -120,6 +148,11 @@ func main() {
 		zap.String("openai_api_key", maskedConfig.OpenAI.APIKey),
 	)
 
+	return openaiClient
+}
+
+// setupRouter creates and configures the Gin router with all endpoints
+func setupRouter(cfg *config.Config, logger *zap.Logger, openaiClient *internalopenai.Client) *gin.Engine {
 	// Set Gin mode based on log level
 	if cfg.Logging.Level == "debug" {
 		gin.SetMode(gin.DebugMode)
@@ -128,15 +161,23 @@ func main() {
 	}
 
 	router := gin.Default()
+	router.GET("/health", createHealthCheckHandler(cfg, logger, openaiClient))
+	router.POST("/synthesize", createSynthesisHandler(cfg, logger, openaiClient))
 
-	// Health check endpoint with enhanced information
-	router.GET("/health", func(c *gin.Context) {
-		// Test OpenAI API connectivity
+	return router
+}
+
+// createHealthCheckHandler creates the health check endpoint handler
+func createHealthCheckHandler(
+	cfg *config.Config,
+	logger *zap.Logger,
+	openaiClient *internalopenai.Client,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		openaiStatus := "healthy"
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), HealthCheckTimeout)
 		defer cancel()
 
-		// Test with a simple embedding call
 		_, err := openaiClient.EmbedTexts(ctx, []string{"health check"})
 		if err != nil {
 			openaiStatus = "unhealthy"
@@ -155,10 +196,16 @@ func main() {
 				"temperature": cfg.Synthesis.Temperature,
 			},
 		})
-	})
+	}
+}
 
-	// Synthesis endpoint
-	router.POST("/synthesize", func(c *gin.Context) {
+// createSynthesisHandler creates the synthesis endpoint handler
+func createSynthesisHandler(
+	cfg *config.Config,
+	logger *zap.Logger,
+	openaiClient *internalopenai.Client,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		startTime := time.Now()
 
 		logger.Info("Synthesis request received",
@@ -166,130 +213,186 @@ func main() {
 			zap.String("user_agent", c.GetHeader("User-Agent")),
 		)
 
-		// Parse request
-		var req SynthesisRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			logger.Error("Failed to parse synthesis request", zap.Error(err))
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Invalid request format",
-				"details": err.Error(),
-			})
+		// Parse and validate request
+		req, valid := parseSynthesisRequest(c, logger)
+		if !valid {
 			return
 		}
 
-		// Validate request
-		if err := validateSynthesisRequest(req); err != nil {
-			logger.Error("Invalid synthesis request", zap.Error(err))
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Invalid request",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		// Convert request to internal format
-		contextItems := make([]synth.ContextItem, len(req.Chunks))
-		for i, chunk := range req.Chunks {
-			contextItems[i] = synth.ContextItem{
-				Content:  chunk.Text,
-				SourceID: chunk.DocID,
-				Score:    1.0, // Default score
-				Priority: 1,   // Default priority
-			}
-		}
-
-		// Convert web results to strings and collect web source URLs
-		webResultStrings := make([]string, len(req.WebResults))
-		webSourceURLs := make([]string, 0, len(req.WebResults))
-		for i, webResult := range req.WebResults {
-			if webResult.Title != "" && webResult.Snippet != "" {
-				webResultStrings[i] = fmt.Sprintf("Title: %s\nSnippet: %s\nURL: %s", webResult.Title, webResult.Snippet, webResult.URL)
-			} else if webResult.Title != "" {
-				webResultStrings[i] = fmt.Sprintf("Title: %s\nURL: %s", webResult.Title, webResult.URL)
-			} else {
-				webResultStrings[i] = fmt.Sprintf("Snippet: %s\nURL: %s", webResult.Snippet, webResult.URL)
-			}
-
-			// Collect web source URLs for source tracking
-			if webResult.URL != "" {
-				webSourceURLs = append(webSourceURLs, webResult.URL)
-			}
-		}
-
-		// Build comprehensive prompt
-		prompt := synth.BuildPrompt(req.Query, contextItems, webResultStrings)
-
-		// Call OpenAI Chat Completion API
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		response, err := openaiClient.CreateChatCompletion(ctx, internalopenai.ChatCompletionRequest{
-			Model:       cfg.Synthesis.Model,
-			MaxTokens:   cfg.Synthesis.MaxTokens,
-			Temperature: float32(cfg.Synthesis.Temperature),
-			Messages: []openai.ChatCompletionMessage{
-				{
-					Role:    "user",
-					Content: prompt,
-				},
-			},
-		})
-
+		// Process the synthesis request
+		response, err := processSynthesisRequest(req, cfg, logger, openaiClient)
 		if err != nil {
-			logger.Error("OpenAI API call failed", zap.Error(err))
+			logger.Error("Synthesis processing failed", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to generate response",
+				"error":   "Failed to process synthesis request",
 				"details": err.Error(),
 			})
 			return
 		}
 
-		// Collect all available sources (document IDs and web URLs)
-		allAvailableSources := make([]string, 0, len(contextItems)+len(webSourceURLs))
-		for _, item := range contextItems {
-			if item.SourceID != "" {
-				allAvailableSources = append(allAvailableSources, item.SourceID)
-			}
-		}
-		allAvailableSources = append(allAvailableSources, webSourceURLs...)
-
-		// Parse response into structured format
-		synthesisResponse := synth.ParseResponseWithSources(response.Content, allAvailableSources)
-
-		// Log synthesis completion
+		// Log completion and return response
 		processingTime := time.Since(startTime)
-		logger.Info("Synthesis completed",
-			zap.String("query", req.Query),
-			zap.Int("context_items", len(contextItems)),
-			zap.Int("web_results", len(req.WebResults)),
-			zap.Int("total_tokens", response.Usage.TotalTokens),
-			zap.Int("prompt_tokens", response.Usage.PromptTokens),
-			zap.Int("completion_tokens", response.Usage.CompletionTokens),
-			zap.Duration("processing_time", processingTime),
-			zap.Int("response_length", len(synthesisResponse.MainText)),
-			zap.Int("sources_count", len(synthesisResponse.Sources)),
-			zap.Int("code_snippets_count", len(synthesisResponse.CodeSnippets)),
-			zap.Bool("has_diagram", synthesisResponse.DiagramCode != ""),
-		)
+		logSynthesisCompletion(req, response, processingTime, logger)
+		c.JSON(http.StatusOK, buildSynthesisResponse(response, cfg, processingTime))
+	}
+}
 
-		// Return structured response
-		c.JSON(http.StatusOK, gin.H{
-			"main_text":     synthesisResponse.MainText,
-			"diagram_code":  synthesisResponse.DiagramCode,
-			"code_snippets": synthesisResponse.CodeSnippets,
-			"sources":       synthesisResponse.Sources,
-			"metadata": gin.H{
-				"processing_time":   processingTime.Milliseconds(),
-				"total_tokens":      response.Usage.TotalTokens,
-				"prompt_tokens":     response.Usage.PromptTokens,
-				"completion_tokens": response.Usage.CompletionTokens,
-				"model":             cfg.Synthesis.Model,
-			},
+// parseSynthesisRequest parses and validates the synthesis request
+func parseSynthesisRequest(c *gin.Context, logger *zap.Logger) (SynthesisRequest, bool) {
+	var req SynthesisRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error("Failed to parse synthesis request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request format",
+			"details": err.Error(),
 		})
-	})
+		return req, false
+	}
 
-	// Start server
-	port := ":8082" // Default port for synthesize service
+	if err := validateSynthesisRequest(req); err != nil {
+		logger.Error("Invalid synthesis request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request",
+			"details": err.Error(),
+		})
+		return req, false
+	}
+
+	return req, true
+}
+
+// processSynthesisRequest handles the core synthesis logic
+func processSynthesisRequest(
+	req SynthesisRequest,
+	cfg *config.Config,
+	_ *zap.Logger,
+	openaiClient *internalopenai.Client,
+) (*internalopenai.ChatCompletionResponse, error) {
+	// Convert request to internal format
+	contextItems := convertChunksToContextItems(req.Chunks)
+	webResultStrings, _ := convertWebResults(req.WebResults)
+
+	// Build comprehensive prompt
+	prompt := synth.BuildPrompt(req.Query, contextItems, webResultStrings)
+
+	// Call OpenAI Chat Completion API
+	ctx, cancel := context.WithTimeout(context.Background(), SynthesisRequestTimeout)
+	defer cancel()
+
+	return openaiClient.CreateChatCompletion(ctx, internalopenai.ChatCompletionRequest{
+		Model:       cfg.Synthesis.Model,
+		MaxTokens:   cfg.Synthesis.MaxTokens,
+		Temperature: float32(cfg.Synthesis.Temperature),
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+	})
+}
+
+// convertChunksToContextItems converts request chunks to internal context items
+func convertChunksToContextItems(chunks []ChunkItem) []synth.ContextItem {
+	contextItems := make([]synth.ContextItem, len(chunks))
+	for i, chunk := range chunks {
+		contextItems[i] = synth.ContextItem{
+			Content:  chunk.Text,
+			SourceID: chunk.DocID,
+			Score:    1.0,
+			Priority: 1,
+		}
+	}
+	return contextItems
+}
+
+// convertWebResults converts web results to strings and extracts URLs
+func convertWebResults(webResults []WebResult) ([]string, []string) {
+	webResultStrings := make([]string, len(webResults))
+	webSourceURLs := make([]string, 0, len(webResults))
+
+	for i, webResult := range webResults {
+		switch {
+		case webResult.Title != "" && webResult.Snippet != "":
+			webResultStrings[i] = fmt.Sprintf("Title: %s\nSnippet: %s\nURL: %s",
+				webResult.Title, webResult.Snippet, webResult.URL)
+		case webResult.Title != "":
+			webResultStrings[i] = fmt.Sprintf("Title: %s\nURL: %s", webResult.Title, webResult.URL)
+		default:
+			webResultStrings[i] = fmt.Sprintf("Snippet: %s\nURL: %s", webResult.Snippet, webResult.URL)
+		}
+
+		if webResult.URL != "" {
+			webSourceURLs = append(webSourceURLs, webResult.URL)
+		}
+	}
+
+	return webResultStrings, webSourceURLs
+}
+
+// logSynthesisCompletion logs synthesis completion details
+func logSynthesisCompletion(
+	req SynthesisRequest,
+	response *internalopenai.ChatCompletionResponse,
+	processingTime time.Duration,
+	logger *zap.Logger,
+) {
+	allAvailableSources := make([]string, 0, len(req.Chunks)+len(req.WebResults))
+	for _, chunk := range req.Chunks {
+		if chunk.DocID != "" {
+			allAvailableSources = append(allAvailableSources, chunk.DocID)
+		}
+	}
+	for _, webResult := range req.WebResults {
+		if webResult.URL != "" {
+			allAvailableSources = append(allAvailableSources, webResult.URL)
+		}
+	}
+
+	synthesisResponse := synth.ParseResponseWithSources(response.Content, allAvailableSources)
+
+	logger.Info("Synthesis completed",
+		zap.String("query", req.Query),
+		zap.Int("context_items", len(req.Chunks)),
+		zap.Int("web_results", len(req.WebResults)),
+		zap.Int("total_tokens", response.Usage.TotalTokens),
+		zap.Int("prompt_tokens", response.Usage.PromptTokens),
+		zap.Int("completion_tokens", response.Usage.CompletionTokens),
+		zap.Duration("processing_time", processingTime),
+		zap.Int("response_length", len(synthesisResponse.MainText)),
+		zap.Int("sources_count", len(synthesisResponse.Sources)),
+		zap.Int("code_snippets_count", len(synthesisResponse.CodeSnippets)),
+		zap.Bool("has_diagram", synthesisResponse.DiagramCode != ""),
+	)
+}
+
+// buildSynthesisResponse builds the final synthesis response
+func buildSynthesisResponse(
+	response *internalopenai.ChatCompletionResponse,
+	cfg *config.Config,
+	processingTime time.Duration,
+) gin.H {
+	allAvailableSources := []string{} // Simplified for response building
+	synthesisResponse := synth.ParseResponseWithSources(response.Content, allAvailableSources)
+
+	return gin.H{
+		"main_text":     synthesisResponse.MainText,
+		"diagram_code":  synthesisResponse.DiagramCode,
+		"code_snippets": synthesisResponse.CodeSnippets,
+		"sources":       synthesisResponse.Sources,
+		"metadata": gin.H{
+			"processing_time":   processingTime.Milliseconds(),
+			"total_tokens":      response.Usage.TotalTokens,
+			"prompt_tokens":     response.Usage.PromptTokens,
+			"completion_tokens": response.Usage.CompletionTokens,
+			"model":             cfg.Synthesis.Model,
+		},
+	}
+}
+
+// startServer starts the HTTP server
+func startServer(router *gin.Engine, cfg *config.Config, logger *zap.Logger) {
+	port := ":8082"
 	logger.Info("Starting synthesize service",
 		zap.String("port", port),
 		zap.String("model", cfg.Synthesis.Model),

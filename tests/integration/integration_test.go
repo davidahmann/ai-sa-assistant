@@ -223,7 +223,8 @@ func TestIngestionPipeline(t *testing.T) {
 		}
 		body, _ = json.Marshal(addReq)
 
-		resp, err = client.Post("http://localhost:8000/api/v1/collections/test_ingestion_collection/add", "application/json", bytes.NewBuffer(body))
+		resp, err = client.Post("http://localhost:8000/api/v1/collections/test_ingestion_collection/add",
+			"application/json", bytes.NewBuffer(body))
 		if err != nil {
 			t.Fatalf("Failed to add document to collection: %v", err)
 		}
@@ -242,7 +243,8 @@ func TestIngestionPipeline(t *testing.T) {
 		}
 		body, _ = json.Marshal(queryReq)
 
-		resp, err = client.Post("http://localhost:8000/api/v1/collections/test_ingestion_collection/query", "application/json", bytes.NewBuffer(body))
+		resp, err = client.Post("http://localhost:8000/api/v1/collections/test_ingestion_collection/query",
+			"application/json", bytes.NewBuffer(body))
 		if err != nil {
 			t.Fatalf("Failed to query collection: %v", err)
 		}
@@ -363,64 +365,90 @@ func TestEndToEndWorkflow(t *testing.T) {
 }
 
 // TestDataConsistency tests data consistency across services
+// setupHTTPClient creates an HTTP client for integration tests
+func setupHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 30 * time.Second,
+	}
+}
+
+// makeSearchRequest creates and sends a search request to the retrieve service
+func makeSearchRequest(client *http.Client, query string, filters map[string]string) (*http.Response, error) {
+	filterReq := map[string]interface{}{
+		"query":   query,
+		"filters": filters,
+	}
+	body, _ := json.Marshal(filterReq)
+
+	resp, err := client.Post("http://localhost:8081/search", "application/json", bytes.NewBuffer(body))
+	return resp, err
+}
+
+// validateSearchResponse validates the structure and content of search response
+func validateSearchResponse(t *testing.T, resp *http.Response) {
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 for search request, got %d", resp.StatusCode)
+	}
+
+	var searchResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&searchResponse); err != nil {
+		t.Errorf("Failed to decode search response: %v", err)
+		return
+	}
+
+	// Verify that we got results
+	if chunks, ok := searchResponse["chunks"].([]interface{}); ok {
+		if len(chunks) == 0 {
+			t.Error("Expected at least one chunk for AWS migration query")
+		}
+
+		// Verify each chunk has required metadata
+		validateChunkStructure(t, chunks)
+	} else {
+		t.Error("Expected chunks to be an array")
+	}
+}
+
+// validateChunkStructure validates that each chunk has the required fields
+func validateChunkStructure(t *testing.T, chunks []interface{}) {
+	requiredFields := []string{"doc_id", "content", "metadata"}
+	for i, chunk := range chunks {
+		if chunkMap, ok := chunk.(map[string]interface{}); ok {
+			for _, field := range requiredFields {
+				if _, exists := chunkMap[field]; !exists {
+					t.Errorf("Chunk %d missing required field: %s", i, field)
+				}
+			}
+		} else {
+			t.Errorf("Chunk %d is not a valid object", i)
+		}
+	}
+}
+
+// runMetadataConsistencyTest runs the metadata consistency test
+func runMetadataConsistencyTest(t *testing.T, client *http.Client) {
+	resp, err := makeSearchRequest(client, "AWS migration", map[string]string{
+		"scenario": "migration",
+		"platform": "aws",
+	})
+	if err != nil {
+		t.Skipf("Retrieve service not available, skipping consistency test: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	validateSearchResponse(t, resp)
+}
+
 func TestDataConsistency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping data consistency test in short mode")
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	client := setupHTTPClient()
 
 	// Test that documents in metadata store match those in ChromaDB
 	t.Run("MetadataChromaConsistency", func(t *testing.T) {
-		// Query for AWS migration documents
-		filterReq := map[string]interface{}{
-			"query": "AWS migration",
-			"filters": map[string]string{
-				"scenario": "migration",
-				"platform": "aws",
-			},
-		}
-		body, _ := json.Marshal(filterReq)
-
-		resp, err := client.Post("http://localhost:8081/search", "application/json", bytes.NewBuffer(body))
-		if err != nil {
-			t.Skipf("Retrieve service not available, skipping consistency test: %v", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected 200 for search request, got %d", resp.StatusCode)
-		}
-
-		var searchResponse map[string]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&searchResponse); err != nil {
-			t.Errorf("Failed to decode search response: %v", err)
-		}
-
-		// Verify that we got results
-		if chunks, ok := searchResponse["chunks"].([]interface{}); ok {
-			if len(chunks) == 0 {
-				t.Error("Expected at least one chunk for AWS migration query")
-			}
-
-			// Verify each chunk has required metadata
-			for i, chunk := range chunks {
-				if chunkMap, ok := chunk.(map[string]interface{}); ok {
-					requiredFields := []string{"doc_id", "content", "metadata"}
-					for _, field := range requiredFields {
-						if _, exists := chunkMap[field]; !exists {
-							t.Errorf("Chunk %d missing required field: %s", i, field)
-						}
-					}
-				} else {
-					t.Errorf("Chunk %d is not a valid object", i)
-				}
-			}
-		} else {
-			t.Error("Expected chunks to be an array")
-		}
+		runMetadataConsistencyTest(t, client)
 	})
 }
 

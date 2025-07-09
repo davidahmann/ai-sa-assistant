@@ -312,7 +312,10 @@ func isValidSourceCitation(citation string) bool {
 	// Skip if it looks like a Mermaid diagram node (single words or simple identifiers)
 	if len(strings.Fields(citation)) == 1 && !strings.Contains(citation, ".") && !strings.Contains(citation, "/") {
 		// Common technology/tool names are valid sources even if they're single words
-		validSingleWordSources := []string{"terraform", "bash", "k8s", "kubernetes", "aws", "azure", "gcp", "docker", "ansible", "python", "java", "go", "rust", "typescript", "javascript"}
+		validSingleWordSources := []string{
+			"terraform", "bash", "k8s", "kubernetes", "aws", "azure", "gcp", "docker",
+			"ansible", "python", "java", "go", "rust", "typescript", "javascript",
+		}
 		for _, validSource := range validSingleWordSources {
 			if citationLower == validSource {
 				return true
@@ -1225,7 +1228,7 @@ func containsHardcodedSecrets(code string) bool {
 					continue
 				}
 				// Check this line against secret patterns // pragma: allowlist secret
-				for _, secretPattern := range secretPatterns {
+				for _, secretPattern := range secretPatterns { // pragma: allowlist secret
 					if secretPattern.MatchString(line) {
 						return true
 					}

@@ -63,7 +63,7 @@ feedback:
   db_path: "./test_feedback.db"
 `
 
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create test config file: %v", err)
 	}
@@ -74,7 +74,7 @@ feedback:
 	}
 
 	// Test basic configuration loading
-	if config.OpenAI.APIKey != "sk-test-key" {
+	if config.OpenAI.APIKey != "sk-test-key" { // pragma: allowlist secret // pragma: allowlist secret
 		t.Errorf("Expected OpenAI API key 'sk-test-key', got '%s'", config.OpenAI.APIKey)
 	}
 
@@ -98,7 +98,7 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 
 	configContent := `
 openai:
-  apikey: "sk-default-key"
+  apikey: "sk-default-key" # pragma: allowlist secret
 teams:
   webhook_url: "https://default.webhook.com/test"
 chroma:
@@ -110,7 +110,7 @@ logging:
   format: "json"
 `
 
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create test config file: %v", err)
 	}
@@ -136,7 +136,7 @@ logging:
 	}
 
 	// Test environment variable overrides
-	if config.OpenAI.APIKey != "sk-env-key" {
+	if config.OpenAI.APIKey != "sk-env-key" { // pragma: allowlist secret
 		t.Errorf("Expected OpenAI API key from env 'sk-env-key', got '%s'", config.OpenAI.APIKey)
 	}
 
@@ -168,7 +168,7 @@ func TestConfigValidation(t *testing.T) {
 			name: "Valid configuration",
 			config: Config{
 				OpenAI: OpenAIConfig{
-					APIKey:   "sk-test-key",
+					APIKey:   "sk-test-key", // pragma: allowlist secret
 					Endpoint: "https://api.openai.com/v1",
 				},
 				Teams: TeamsConfig{
@@ -250,7 +250,7 @@ func TestConfigValidation(t *testing.T) {
 			name: "Missing Teams webhook URL",
 			config: Config{
 				OpenAI: OpenAIConfig{
-					APIKey: "sk-test-key",
+					APIKey: "sk-test-key", // pragma: allowlist secret
 				},
 				Teams: TeamsConfig{
 					WebhookURL: "",
@@ -289,7 +289,7 @@ func TestConfigValidation(t *testing.T) {
 			name: "Invalid max_chunks",
 			config: Config{
 				OpenAI: OpenAIConfig{
-					APIKey: "sk-test-key",
+					APIKey: "sk-test-key", // pragma: allowlist secret
 				},
 				Teams: TeamsConfig{
 					WebhookURL: "https://test.webhook.com/test",
@@ -325,7 +325,7 @@ func TestConfigValidation(t *testing.T) {
 			name: "Invalid confidence threshold",
 			config: Config{
 				OpenAI: OpenAIConfig{
-					APIKey: "sk-test-key",
+					APIKey: "sk-test-key", // pragma: allowlist secret
 				},
 				Teams: TeamsConfig{
 					WebhookURL: "https://test.webhook.com/test",
@@ -363,7 +363,7 @@ func TestConfigValidation(t *testing.T) {
 			name: "Invalid log level",
 			config: Config{
 				OpenAI: OpenAIConfig{
-					APIKey: "sk-test-key",
+					APIKey: "sk-test-key", // pragma: allowlist secret
 				},
 				Teams: TeamsConfig{
 					WebhookURL: "https://test.webhook.com/test",
@@ -402,7 +402,7 @@ func TestConfigValidation(t *testing.T) {
 			name: "Invalid synthesis temperature",
 			config: Config{
 				OpenAI: OpenAIConfig{
-					APIKey: "sk-test-key",
+					APIKey: "sk-test-key", // pragma: allowlist secret
 				},
 				Teams: TeamsConfig{
 					WebhookURL: "https://test.webhook.com/test",
@@ -441,7 +441,7 @@ func TestConfigValidation(t *testing.T) {
 			name: "Invalid fallback score threshold",
 			config: Config{
 				OpenAI: OpenAIConfig{
-					APIKey: "sk-test-key",
+					APIKey: "sk-test-key", // pragma: allowlist secret
 				},
 				Teams: TeamsConfig{
 					WebhookURL: "https://test.webhook.com/test",
@@ -510,13 +510,13 @@ func TestMaskSensitiveValues(t *testing.T) {
 	masked := config.MaskSensitiveValues()
 
 	// Original config should remain unchanged
-	if config.OpenAI.APIKey != "sk-test-1234567890abcdef" {
+	if config.OpenAI.APIKey != "sk-test-1234567890abcdef" { // pragma: allowlist secret
 		t.Errorf("Original config API key should remain unchanged")
 	}
 
 	// Masked config should have sensitive values masked
-	expectedAPIKey := "sk-test-" + "****************"
-	if masked.OpenAI.APIKey != expectedAPIKey {
+	expectedAPIKey := "sk-test-" + "****************" // pragma: allowlist secret
+	if masked.OpenAI.APIKey != expectedAPIKey {       // pragma: allowlist secret
 		t.Errorf("Expected masked API key '%s', got '%s'", expectedAPIKey, masked.OpenAI.APIKey)
 	}
 
@@ -535,7 +535,7 @@ func TestConfigPathEnvironmentVariable(t *testing.T) {
 
 	configContent := `
 openai:
-  apikey: "sk-custom-key"
+  apikey: "sk-custom-key" # pragma: allowlist secret
 teams:
   webhook_url: "https://custom.webhook.com/test"
 chroma:
@@ -544,7 +544,7 @@ metadata:
   db_path: "./metadata.db"
 `
 
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create test config file: %v", err)
 	}
@@ -560,7 +560,7 @@ metadata:
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	if config.OpenAI.APIKey != "sk-custom-key" {
+	if config.OpenAI.APIKey != "sk-custom-key" { // pragma: allowlist secret
 		t.Errorf("Expected OpenAI API key from custom config 'sk-custom-key', got '%s'", config.OpenAI.APIKey)
 	}
 }
@@ -581,7 +581,7 @@ metadata:
   db_path: "./metadata.db"
 `
 
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create test config file: %v", err)
 	}
@@ -595,7 +595,7 @@ metadata:
 		t.Fatalf("Failed to load config with options: %v", err)
 	}
 
-	if config.OpenAI.APIKey != "sk-test-key" {
+	if config.OpenAI.APIKey != "sk-test-key" { // pragma: allowlist secret
 		t.Errorf("Expected OpenAI API key 'sk-test-key', got '%s'", config.OpenAI.APIKey)
 	}
 
@@ -612,7 +612,7 @@ metadata:
 `
 
 	configPathInvalid := filepath.Join(tmpDir, "config_invalid.yaml")
-	err = os.WriteFile(configPathInvalid, []byte(configContentInvalid), 0644)
+	err = os.WriteFile(configPathInvalid, []byte(configContentInvalid), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create test config file: %v", err)
 	}
@@ -638,7 +638,7 @@ teams:
   webhook_url: "https://test.webhook.com/test"  # pragma: allowlist secret
 `
 
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create test config file: %v", err)
 	}

@@ -27,6 +27,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// HTTPMethodPost represents POST HTTP method
+	HTTPMethodPost = "POST"
+)
+
 // mockServer creates a test HTTP server with configurable responses
 func mockServer(responses map[string]func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
 	mux := http.NewServeMux()
@@ -91,7 +96,7 @@ func TestNewClientWithOptions(t *testing.T) {
 
 func TestHealthCheck_Success(t *testing.T) {
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
-		"/api/v1/heartbeat": func(w http.ResponseWriter, r *http.Request) {
+		"/api/v1/heartbeat": func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		},
 	})
@@ -107,7 +112,7 @@ func TestHealthCheck_Success(t *testing.T) {
 
 func TestHealthCheck_Failure(t *testing.T) {
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
-		"/api/v1/heartbeat": func(w http.ResponseWriter, r *http.Request) {
+		"/api/v1/heartbeat": func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		},
 	})
@@ -124,8 +129,8 @@ func TestHealthCheck_Failure(t *testing.T) {
 func TestAddDocuments_Success(t *testing.T) {
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
 		"/api/v1/collections/test/add": func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != "POST" {
-				t.Errorf("Expected POST request, got %s", r.Method)
+			if r.Method != HTTPMethodPost {
+				t.Errorf("Expected %s request, got %s", HTTPMethodPost, r.Method)
 			}
 
 			if r.Header.Get("Content-Type") != "application/json" {
@@ -167,11 +172,11 @@ func TestAddDocuments_Success(t *testing.T) {
 	}
 }
 
-func TestAddDocuments_ChromaError(t *testing.T) {
+func TestAddDocuments_Error(t *testing.T) {
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
-		"/api/v1/collections/test/add": func(w http.ResponseWriter, r *http.Request) {
+		"/api/v1/collections/test/add": func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(ChromaError{
+			_ = json.NewEncoder(w).Encode(Error{
 				Detail: "Invalid document format",
 				Type:   "ValidationError",
 			})
@@ -189,7 +194,7 @@ func TestAddDocuments_ChromaError(t *testing.T) {
 		t.Error("Expected AddDocuments to fail, got nil error")
 	}
 
-	// Error should contain ChromaError details due to retry wrapping
+	// Error should contain Error details due to retry wrapping
 	if !containsString(err.Error(), "Invalid document format") {
 		t.Errorf("Expected error to contain 'Invalid document format', got %s", err.Error())
 	}
@@ -219,8 +224,8 @@ func TestSearch_Success(t *testing.T) {
 
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
 		"/api/v1/collections/test/query": func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != "POST" {
-				t.Errorf("Expected POST request, got %s", r.Method)
+			if r.Method != HTTPMethodPost {
+				t.Errorf("Expected %s request, got %s", HTTPMethodPost, r.Method)
 			}
 
 			w.WriteHeader(http.StatusOK)
@@ -327,8 +332,8 @@ func TestCreateCollection_Success(t *testing.T) {
 
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
 		"/api/v1/collections": func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != "POST" {
-				t.Errorf("Expected POST request, got %s", r.Method)
+			if r.Method != HTTPMethodPost {
+				t.Errorf("Expected %s request, got %s", HTTPMethodPost, r.Method)
 			}
 
 			_ = json.NewDecoder(r.Body).Decode(&receivedRequest)
@@ -470,7 +475,7 @@ func TestListCollections_Success(t *testing.T) {
 func TestRetryWithBackoff_Success(t *testing.T) {
 	callCount := 0
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
-		"/api/v1/heartbeat": func(w http.ResponseWriter, r *http.Request) {
+		"/api/v1/heartbeat": func(w http.ResponseWriter, _ *http.Request) {
 			callCount++
 			if callCount < 3 {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -497,7 +502,7 @@ func TestRetryWithBackoff_Success(t *testing.T) {
 func TestRetryWithBackoff_MaxRetriesExceeded(t *testing.T) {
 	callCount := 0
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
-		"/api/v1/heartbeat": func(w http.ResponseWriter, r *http.Request) {
+		"/api/v1/heartbeat": func(w http.ResponseWriter, _ *http.Request) {
 			callCount++
 			w.WriteHeader(http.StatusInternalServerError)
 		},
@@ -517,11 +522,11 @@ func TestRetryWithBackoff_MaxRetriesExceeded(t *testing.T) {
 	}
 }
 
-func TestMakeRequest_ChromaError(t *testing.T) {
+func TestMakeRequest_Error(t *testing.T) {
 	server := mockServer(map[string]func(w http.ResponseWriter, r *http.Request){
-		"/api/v1/test": func(w http.ResponseWriter, r *http.Request) {
+		"/api/v1/test": func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(ChromaError{
+			_ = json.NewEncoder(w).Encode(Error{
 				Detail: "Invalid request format",
 				Type:   "ValidationError",
 			})
@@ -546,18 +551,16 @@ func TestMakeRequest_ChromaError(t *testing.T) {
 	}
 
 	// makeRequest should return ChromaError directly (not wrapped by retry)
-	chromaErr, ok := err.(ChromaError)
+	chromaErr, ok := err.(Error)
 	if !ok {
 		t.Errorf("Expected ChromaError, got %T: %v", err, err)
-	} else {
-		if chromaErr.Detail != "Invalid request format" {
-			t.Errorf("Expected detail 'Invalid request format', got %s", chromaErr.Detail)
-		}
+	} else if chromaErr.Detail != "Invalid request format" {
+		t.Errorf("Expected detail 'Invalid request format', got %s", chromaErr.Detail)
 	}
 }
 
 func TestChromeError_Error(t *testing.T) {
-	err := ChromaError{
+	err := Error{
 		Detail: "Collection not found",
 		Type:   "NotFoundError",
 	}

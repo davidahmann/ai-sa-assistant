@@ -5,6 +5,13 @@
 *.so
 *.dylib
 
+# Built service binaries
+/ingest
+/retrieve
+/synthesize
+/teamsbot
+/websearch
+
 # Test binary
 *.test
 

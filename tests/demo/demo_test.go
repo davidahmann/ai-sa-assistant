@@ -38,26 +38,34 @@ type DemoScenario struct {
 func TestDemoScenarios(t *testing.T) {
 	scenarios := []DemoScenario{
 		{
-			Name:        "AWS_Lift_and_Shift",
-			Query:       "@SA-Assistant Generate a high-level lift-and-shift plan for migrating 120 on-prem Windows and Linux VMs to AWS, including EC2 instance recommendations, VPC/subnet topology, and the latest AWS MGN best practices from Q2 2025.",
+			Name: "AWS_Lift_and_Shift",
+			Query: "@SA-Assistant Generate a high-level lift-and-shift plan for migrating 120 on-prem " +
+				"Windows and Linux VMs to AWS, " +
+				"including EC2 instance recommendations, VPC/subnet topology, and the latest AWS MGN best practices from Q2 2025.",
 			ExpectedKey: "AWS",
 			Timeout:     30 * time.Second,
 		},
 		{
-			Name:        "Azure_Hybrid_Architecture",
-			Query:       "@SA-Assistant Outline a hybrid reference architecture connecting our on-prem VMware environment to Azure, covering ExpressRoute configuration, VMware HCX migration, active-active failover, and June 2025 Azure Hybrid announcements.",
+			Name: "Azure_Hybrid_Architecture",
+			Query: "@SA-Assistant Outline a hybrid reference architecture connecting our on-prem VMware environment to Azure, " +
+				"covering ExpressRoute configuration, VMware HCX migration, active-active failover, " +
+				"and June 2025 Azure Hybrid announcements.",
 			ExpectedKey: "Azure",
 			Timeout:     30 * time.Second,
 		},
 		{
-			Name:        "Azure_Disaster_Recovery",
-			Query:       "@SA-Assistant Design a DR solution in Azure for critical workloads with RTO = 2 hours and RPO = 15 minutes, including geo-replication options, failover orchestration, and cost-optimized standby.",
+			Name: "Azure_Disaster_Recovery",
+			Query: "@SA-Assistant Design a DR solution in Azure for critical workloads with RTO = 2 hours " +
+				"and RPO = 15 minutes, " +
+				"including geo-replication options, failover orchestration, and cost-optimized standby.",
 			ExpectedKey: "disaster recovery",
 			Timeout:     30 * time.Second,
 		},
 		{
-			Name:        "Security_Compliance",
-			Query:       "@SA-Assistant Summarize HIPAA and GDPR encryption, logging, and policy enforcement requirements for our AWS landing zone, and include any recent AWS compliance feature updates.",
+			Name: "Security_Compliance",
+			Query: "@SA-Assistant Summarize HIPAA and GDPR encryption, logging, and policy enforcement " +
+				"requirements for our AWS landing zone, " +
+				"and include any recent AWS compliance feature updates.",
 			ExpectedKey: "HIPAA",
 			Timeout:     30 * time.Second,
 		},

@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package chunker provides functionality for splitting documents into smaller chunks
+// suitable for embedding and retrieval. It supports various chunking strategies
+// including section-based chunking and metadata extraction.
 package chunker
 
 import (
@@ -104,13 +107,14 @@ func ParseMarkdown(content string) string {
 
 	for _, line := range lines {
 		// Convert headers to plain text
-		if strings.HasPrefix(line, "# ") {
+		switch {
+		case strings.HasPrefix(line, "# "):
 			cleanLines = append(cleanLines, strings.TrimPrefix(line, "# "))
-		} else if strings.HasPrefix(line, "## ") {
+		case strings.HasPrefix(line, "## "):
 			cleanLines = append(cleanLines, strings.TrimPrefix(line, "## "))
-		} else if strings.HasPrefix(line, "### ") {
+		case strings.HasPrefix(line, "### "):
 			cleanLines = append(cleanLines, strings.TrimPrefix(line, "### "))
-		} else {
+		default:
 			cleanLines = append(cleanLines, line)
 		}
 	}

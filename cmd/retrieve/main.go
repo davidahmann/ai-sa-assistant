@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package main provides the retrieval service API for the AI SA Assistant.
+// It handles hybrid search combining metadata filtering and vector search.
 package main
 
 import (
@@ -28,6 +30,19 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/openai"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+)
+
+const (
+	// DefaultRetryAttempts defines the default number of retry attempts
+	DefaultRetryAttempts = 3
+	// HealthCheckTimeout defines the timeout for health checks
+	HealthCheckTimeout = 5 * time.Second
+	// SearchRequestTimeout defines the timeout for search requests
+	SearchRequestTimeout = 30 * time.Second
+	// HealthStatusHealthy represents healthy status
+	HealthStatusHealthy = "healthy"
+	// HealthStatusUnhealthy represents unhealthy status
+	HealthStatusUnhealthy = "unhealthy"
 )
 
 // SearchRequest represents the JSON payload for search requests
@@ -183,7 +198,7 @@ func initializeDependencies(cfg *config.Config, logger *zap.Logger) (*ServiceDep
 		cfg.Chroma.URL,
 		cfg.Chroma.CollectionName,
 		logger,
-		3,
+		DefaultRetryAttempts,
 		time.Second,
 	)
 
@@ -207,10 +222,10 @@ func initializeDependencies(cfg *config.Config, logger *zap.Logger) (*ServiceDep
 // createHealthHandler creates the health check endpoint handler
 func createHealthHandler(deps *ServiceDependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), HealthCheckTimeout)
 		defer cancel()
 
-		status := "healthy"
+		status := HealthStatusHealthy
 		statusCode := http.StatusOK
 		dependencies := make(map[string]interface{})
 
@@ -218,14 +233,14 @@ func createHealthHandler(deps *ServiceDependencies) gin.HandlerFunc {
 		if err := deps.ChromaClient.HealthCheck(); err != nil {
 			deps.Logger.Error("ChromaDB health check failed", zap.Error(err))
 			dependencies["chroma"] = map[string]interface{}{
-				"status": "unhealthy",
+				"status": HealthStatusUnhealthy,
 				"error":  err.Error(),
 			}
-			status = "unhealthy"
+			status = HealthStatusUnhealthy
 			statusCode = http.StatusServiceUnavailable
 		} else {
 			dependencies["chroma"] = map[string]interface{}{
-				"status": "healthy",
+				"status": HealthStatusHealthy,
 				"url":    deps.Config.Chroma.URL,
 			}
 		}
@@ -234,14 +249,14 @@ func createHealthHandler(deps *ServiceDependencies) gin.HandlerFunc {
 		if _, err := deps.OpenAIClient.EmbedQuery(ctx, "health check"); err != nil {
 			deps.Logger.Error("OpenAI health check failed", zap.Error(err))
 			dependencies["openai"] = map[string]interface{}{
-				"status": "unhealthy",
+				"status": HealthStatusUnhealthy,
 				"error":  err.Error(),
 			}
-			status = "unhealthy"
+			status = HealthStatusUnhealthy
 			statusCode = http.StatusServiceUnavailable
 		} else {
 			dependencies["openai"] = map[string]interface{}{
-				"status": "healthy",
+				"status": HealthStatusHealthy,
 			}
 		}
 
@@ -249,10 +264,10 @@ func createHealthHandler(deps *ServiceDependencies) gin.HandlerFunc {
 		if _, err := deps.MetadataStore.GetStats(); err != nil {
 			deps.Logger.Error("Metadata store health check failed", zap.Error(err))
 			dependencies["metadata"] = map[string]interface{}{
-				"status": "unhealthy",
+				"status": HealthStatusUnhealthy,
 				"error":  err.Error(),
 			}
-			status = "unhealthy"
+			status = HealthStatusUnhealthy
 			statusCode = http.StatusServiceUnavailable
 		} else {
 			dependencies["metadata"] = map[string]interface{}{
@@ -279,11 +294,199 @@ func createHealthHandler(deps *ServiceDependencies) gin.HandlerFunc {
 	}
 }
 
+// validateSearchRequest validates and parses the incoming search request
+func validateSearchRequest(c *gin.Context, logger *zap.Logger) (SearchRequest, bool) {
+	var searchReq SearchRequest
+	if err := c.ShouldBindJSON(&searchReq); err != nil {
+		logger.Error("Invalid search request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request format: " + err.Error(),
+		})
+		return searchReq, false
+	}
+
+	if searchReq.Query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Query parameter is required",
+		})
+		return searchReq, false
+	}
+
+	logger.Info("Processing search request",
+		zap.String("query", searchReq.Query),
+		zap.Any("filters", searchReq.Filters),
+	)
+
+	return searchReq, true
+}
+
+// applyMetadataFilters applies metadata filters if present in the request
+func applyMetadataFilters(searchReq SearchRequest, deps *ServiceDependencies) ([]string, error) {
+	if len(searchReq.Filters) == 0 {
+		return nil, nil
+	}
+
+	filterOpts := metadata.FilterOptions{
+		AndFilters: true,
+	}
+
+	if platform, ok := searchReq.Filters["platform"].(string); ok {
+		filterOpts.Platform = platform
+	}
+	if scenario, ok := searchReq.Filters["scenario"].(string); ok {
+		filterOpts.Scenario = scenario
+	}
+	if docType, ok := searchReq.Filters["type"].(string); ok {
+		filterOpts.Type = docType
+	}
+
+	filteredDocIDs, err := deps.MetadataStore.FilterDocuments(filterOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	deps.Logger.Info("Applied metadata filters",
+		zap.Any("filters", filterOpts),
+		zap.Int("filtered_doc_count", len(filteredDocIDs)),
+	)
+
+	return filteredDocIDs, nil
+}
+
+// generateQueryEmbedding generates an embedding for the search query
+func generateQueryEmbedding(ctx context.Context, query string, deps *ServiceDependencies) ([]float32, error) {
+	return deps.OpenAIClient.EmbedQuery(ctx, query)
+}
+
+// performVectorSearchWithFallback performs vector search with intelligent fallback logic
+func performVectorSearchWithFallback(
+	queryEmbedding []float32,
+	filteredDocIDs []string,
+	deps *ServiceDependencies,
+) ([]chroma.SearchResult, bool, string, error) {
+	maxChunks := deps.Config.Retrieval.MaxChunks
+	searchResults, err := deps.ChromaClient.Search(queryEmbedding, maxChunks, filteredDocIDs)
+	if err != nil {
+		return nil, false, "", err
+	}
+
+	// Apply fallback logic only if we have filtered doc IDs
+	if len(filteredDocIDs) == 0 {
+		return searchResults, false, "", nil
+	}
+
+	fallbackTriggered, fallbackReason := shouldApplyFallback(searchResults, deps.Config.Retrieval)
+	if !fallbackTriggered {
+		return searchResults, false, "", nil
+	}
+
+	// Perform fallback search
+	fallbackResults, err := performFallbackSearch(queryEmbedding, maxChunks, fallbackReason, deps)
+	if err != nil {
+		return searchResults, false, "", nil // Return original results if fallback fails
+	}
+
+	return fallbackResults, true, fallbackReason, nil
+}
+
+// shouldApplyFallback determines if fallback search is needed
+func shouldApplyFallback(searchResults []chroma.SearchResult, config config.RetrievalConfig) (bool, string) {
+	if len(searchResults) < config.FallbackThreshold {
+		return true, fmt.Sprintf("insufficient results (%d < %d)", len(searchResults), config.FallbackThreshold)
+	}
+
+	// Calculate average similarity score
+	var totalScore float64
+	for _, result := range searchResults {
+		similarity := 1.0 - result.Distance
+		totalScore += similarity
+	}
+
+	if len(searchResults) == 0 {
+		return false, ""
+	}
+
+	avgScore := totalScore / float64(len(searchResults))
+	if avgScore < config.FallbackScoreThreshold {
+		return true, fmt.Sprintf("low average similarity score (%.3f < %.3f)", avgScore, config.FallbackScoreThreshold)
+	}
+
+	return false, ""
+}
+
+// performFallbackSearch performs the fallback search without document ID filter
+func performFallbackSearch(
+	queryEmbedding []float32,
+	maxChunks int,
+	reason string,
+	deps *ServiceDependencies,
+) ([]chroma.SearchResult, error) {
+	deps.Logger.Info("Applying fallback search without document ID filter",
+		zap.String("reason", reason),
+		zap.Int("fallback_threshold", deps.Config.Retrieval.FallbackThreshold),
+		zap.Float64("fallback_score_threshold", deps.Config.Retrieval.FallbackScoreThreshold),
+	)
+
+	fallbackResults, err := deps.ChromaClient.Search(queryEmbedding, maxChunks, nil)
+	if err != nil {
+		deps.Logger.Error("Fallback search failed", zap.Error(err))
+		return nil, err
+	}
+
+	deps.Logger.Info("Fallback search completed",
+		zap.Int("fallback_results", len(fallbackResults)),
+		zap.String("reason", reason),
+	)
+
+	return fallbackResults, nil
+}
+
+// buildSearchResponse filters results by confidence and builds the final response
+func buildSearchResponse(
+	searchResults []chroma.SearchResult,
+	query string,
+	fallbackTriggered bool,
+	fallbackReason string,
+	deps *ServiceDependencies,
+) SearchResponse {
+	confidenceThreshold := deps.Config.Retrieval.ConfidenceThreshold
+	var filteredResults []chroma.SearchResult
+	for _, result := range searchResults {
+		similarity := 1.0 - result.Distance
+		if similarity >= confidenceThreshold {
+			filteredResults = append(filteredResults, result)
+		}
+	}
+
+	chunks := make([]SearchChunk, len(filteredResults))
+	for i, result := range filteredResults {
+		metadataMap := make(map[string]interface{})
+		for k, v := range result.Metadata {
+			metadataMap[k] = v
+		}
+
+		chunks[i] = SearchChunk{
+			Text:     result.Content,
+			Score:    1.0 - result.Distance,
+			DocID:    result.ID,
+			Metadata: metadataMap,
+		}
+	}
+
+	return SearchResponse{
+		Chunks:            chunks,
+		Count:             len(chunks),
+		Query:             query,
+		FallbackTriggered: fallbackTriggered,
+		FallbackReason:    fallbackReason,
+	}
+}
+
 // createSearchHandler creates the main search endpoint handler
 func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), SearchRequestTimeout)
 		defer cancel()
 
 		deps.Logger.Info("Search request received",
@@ -291,63 +494,24 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 			zap.String("user_agent", c.GetHeader("User-Agent")),
 		)
 
-		// Parse and validate request
-		var searchReq SearchRequest
-		if err := c.ShouldBindJSON(&searchReq); err != nil {
-			deps.Logger.Error("Invalid search request", zap.Error(err))
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid request format: " + err.Error(),
+		// Step 1: Validate request
+		searchReq, valid := validateSearchRequest(c, deps.Logger)
+		if !valid {
+			return
+		}
+
+		// Step 2: Apply metadata filters
+		filteredDocIDs, err := applyMetadataFilters(searchReq, deps)
+		if err != nil {
+			deps.Logger.Error("Failed to filter documents", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to filter documents",
 			})
 			return
 		}
 
-		if searchReq.Query == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Query parameter is required",
-			})
-			return
-		}
-
-		deps.Logger.Info("Processing search request",
-			zap.String("query", searchReq.Query),
-			zap.Any("filters", searchReq.Filters),
-		)
-
-		// Step 1: Apply metadata filters if present
-		var filteredDocIDs []string
-		if len(searchReq.Filters) > 0 {
-			filterOpts := metadata.FilterOptions{
-				AndFilters: true,
-			}
-
-			if platform, ok := searchReq.Filters["platform"].(string); ok {
-				filterOpts.Platform = platform
-			}
-			if scenario, ok := searchReq.Filters["scenario"].(string); ok {
-				filterOpts.Scenario = scenario
-			}
-			if docType, ok := searchReq.Filters["type"].(string); ok {
-				filterOpts.Type = docType
-			}
-
-			var err error
-			filteredDocIDs, err = deps.MetadataStore.FilterDocuments(filterOpts)
-			if err != nil {
-				deps.Logger.Error("Failed to filter documents", zap.Error(err))
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "Failed to filter documents",
-				})
-				return
-			}
-
-			deps.Logger.Info("Applied metadata filters",
-				zap.Any("filters", filterOpts),
-				zap.Int("filtered_doc_count", len(filteredDocIDs)),
-			)
-		}
-
-		// Step 2: Generate query embedding
-		queryEmbedding, err := deps.OpenAIClient.EmbedQuery(ctx, searchReq.Query)
+		// Step 3: Generate query embedding
+		queryEmbedding, err := generateQueryEmbedding(ctx, searchReq.Query, deps)
 		if err != nil {
 			deps.Logger.Error("Failed to generate query embedding", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -356,121 +520,30 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Step 3: Perform vector search
-		maxChunks := deps.Config.Retrieval.MaxChunks
-		searchResults, err := deps.ChromaClient.Search(queryEmbedding, maxChunks, filteredDocIDs)
+		// Step 4: Perform vector search with fallback
+		searchResults, fallbackTriggered, fallbackReason, err := performVectorSearchWithFallback(
+			queryEmbedding, filteredDocIDs, deps)
 		if err != nil {
-			deps.Logger.Error("ChromaDB search failed", zap.Error(err))
+			deps.Logger.Error("Vector search failed", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "Vector search failed",
 			})
 			return
 		}
 
-		// Step 4: Apply intelligent fallback logic
-		fallbackTriggered := false
-		fallbackReason := ""
-
-		if len(filteredDocIDs) > 0 {
-			// Calculate average similarity score for quality assessment
-			var totalScore float64
-			for _, result := range searchResults {
-				similarity := 1.0 - result.Distance
-				totalScore += similarity
-			}
-
-			var avgScore float64
-			if len(searchResults) > 0 {
-				avgScore = totalScore / float64(len(searchResults))
-			}
-
-			// Check if fallback is needed based on count or average score
-			needsFallback := false
-			if len(searchResults) < deps.Config.Retrieval.FallbackThreshold {
-				fallbackReason = fmt.Sprintf(
-					"insufficient results (%d < %d)",
-					len(searchResults),
-					deps.Config.Retrieval.FallbackThreshold,
-				)
-				needsFallback = true
-			} else if avgScore < deps.Config.Retrieval.FallbackScoreThreshold {
-				fallbackReason = fmt.Sprintf(
-					"low average similarity score (%.3f < %.3f)",
-					avgScore,
-					deps.Config.Retrieval.FallbackScoreThreshold,
-				)
-				needsFallback = true
-			}
-
-			if needsFallback {
-				deps.Logger.Info("Applying fallback search without document ID filter",
-					zap.Int("initial_results", len(searchResults)),
-					zap.Float64("avg_score", avgScore),
-					zap.String("reason", fallbackReason),
-					zap.Int("fallback_threshold", deps.Config.Retrieval.FallbackThreshold),
-					zap.Float64("fallback_score_threshold", deps.Config.Retrieval.FallbackScoreThreshold),
-				)
-
-				fallbackResults, err := deps.ChromaClient.Search(queryEmbedding, maxChunks, nil)
-				if err != nil {
-					deps.Logger.Error("Fallback search failed", zap.Error(err))
-				} else {
-					searchResults = fallbackResults
-					fallbackTriggered = true
-					deps.Logger.Info("Fallback search completed",
-						zap.Int("fallback_results", len(searchResults)),
-						zap.String("reason", fallbackReason),
-					)
-				}
-			}
-		}
-
-		// Step 5: Filter results by confidence threshold
-		confidenceThreshold := deps.Config.Retrieval.ConfidenceThreshold
-		var filteredResults []chroma.SearchResult
-		for _, result := range searchResults {
-			// Convert distance to similarity score (lower distance = higher similarity)
-			similarity := 1.0 - result.Distance
-			if similarity >= confidenceThreshold {
-				filteredResults = append(filteredResults, result)
-			}
-		}
-
-		// Step 6: Format response
-		chunks := make([]SearchChunk, len(filteredResults))
-		for i, result := range filteredResults {
-			// Convert metadata to interface{} map
-			metadataMap := make(map[string]interface{})
-			for k, v := range result.Metadata {
-				metadataMap[k] = v
-			}
-
-			chunks[i] = SearchChunk{
-				Text:     result.Content,
-				Score:    1.0 - result.Distance, // Convert distance to similarity score
-				DocID:    result.ID,
-				Metadata: metadataMap,
-			}
-		}
+		// Step 5: Filter results by confidence and format response
+		response := buildSearchResponse(searchResults, searchReq.Query, fallbackTriggered, fallbackReason, deps)
 
 		processingTime := time.Since(start)
 		deps.Logger.Info("Search completed successfully",
 			zap.String("query", searchReq.Query),
 			zap.Int("total_results", len(searchResults)),
-			zap.Int("filtered_results", len(filteredResults)),
-			zap.Float64("confidence_threshold", confidenceThreshold),
+			zap.Int("filtered_results", response.Count),
+			zap.Float64("confidence_threshold", deps.Config.Retrieval.ConfidenceThreshold),
 			zap.Bool("fallback_triggered", fallbackTriggered),
 			zap.String("fallback_reason", fallbackReason),
 			zap.Duration("processing_time", processingTime),
 		)
-
-		response := SearchResponse{
-			Chunks:            chunks,
-			Count:             len(chunks),
-			Query:             searchReq.Query,
-			FallbackTriggered: fallbackTriggered,
-			FallbackReason:    fallbackReason,
-		}
 
 		c.JSON(http.StatusOK, response)
 	}

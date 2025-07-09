@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package chroma provides a client for interacting with ChromaDB vector database.
+// It implements functionality for storing, retrieving, and searching document embeddings
+// with support for metadata filtering and collection management.
 package chroma
 
 import (
@@ -24,6 +27,17 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+)
+
+const (
+	// DefaultRetryAttempts defines the default number of retry attempts
+	DefaultRetryAttempts = 3
+	// DefaultHTTPTimeout defines the default HTTP client timeout
+	DefaultHTTPTimeout = 30 * time.Second
+	// HTTPClientErrorStatus defines the HTTP status code threshold for client errors
+	HTTPClientErrorStatus = 400
+	// ExponentialBackoffBase defines the base for exponential backoff calculations
+	ExponentialBackoffBase = 2
 )
 
 // Client wraps the ChromaDB REST API
@@ -39,15 +53,17 @@ type Client struct {
 // NewClient creates a new ChromaDB client with default settings
 func NewClient(baseURL, collection string) *Client {
 	logger, _ := zap.NewProduction()
-	return NewClientWithOptions(baseURL, collection, logger, 3, time.Second)
+	return NewClientWithOptions(baseURL, collection, logger, DefaultRetryAttempts, time.Second)
 }
 
 // NewClientWithOptions creates a new ChromaDB client with custom settings
-func NewClientWithOptions(baseURL, collection string, logger *zap.Logger, maxRetries int, baseRetryDelay time.Duration) *Client {
+func NewClientWithOptions(
+	baseURL, collection string, logger *zap.Logger, maxRetries int, baseRetryDelay time.Duration,
+) *Client {
 	return &Client{
 		baseURL:        baseURL,
 		collection:     collection,
-		httpClient:     &http.Client{Timeout: 30 * time.Second},
+		httpClient:     &http.Client{Timeout: DefaultHTTPTimeout},
 		logger:         logger,
 		maxRetries:     maxRetries,
 		baseRetryDelay: baseRetryDelay,
@@ -104,13 +120,13 @@ type CreateCollectionRequest struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// ChromaError represents an error response from ChromaDB
-type ChromaError struct {
+// Error represents an error response from ChromaDB
+type Error struct {
 	Detail string `json:"detail"`
 	Type   string `json:"type"`
 }
 
-func (e ChromaError) Error() string {
+func (e Error) Error() string {
 	return fmt.Sprintf("ChromaDB error [%s]: %s", e.Type, e.Detail)
 }
 
@@ -120,7 +136,7 @@ func (c *Client) retryWithBackoff(operation func() error, operationName string) 
 
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		if attempt > 0 {
-			delay := time.Duration(math.Pow(2, float64(attempt-1))) * c.baseRetryDelay
+			delay := time.Duration(math.Pow(ExponentialBackoffBase, float64(attempt-1))) * c.baseRetryDelay
 			c.logger.Info("Retrying operation after delay",
 				zap.String("operation", operationName),
 				zap.Int("attempt", attempt),
@@ -159,7 +175,7 @@ func (c *Client) makeRequest(req *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= HTTPClientErrorStatus {
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
 				c.logger.Debug("Failed to close response body", zap.Error(err))
@@ -167,7 +183,7 @@ func (c *Client) makeRequest(req *http.Request) (*http.Response, error) {
 		}()
 		body, _ := io.ReadAll(resp.Body)
 
-		var chromaErr ChromaError
+		var chromaErr Error
 		if json.Unmarshal(body, &chromaErr) == nil {
 			return nil, chromaErr
 		}
@@ -245,72 +261,17 @@ func (c *Client) Search(queryEmbedding []float32, nResults int, docIDs []string)
 
 	var results []SearchResult
 	err := c.retryWithBackoff(func() error {
-		url := fmt.Sprintf("%s/api/v1/collections/%s/query", c.baseURL, c.collection)
+		// Build search request
+		searchReq := c.buildSearchRequest(queryEmbedding, nResults, docIDs)
 
-		searchReq := SearchRequest{
-			QueryEmbeddings: [][]float32{queryEmbedding},
-			NResults:        nResults,
-		}
-
-		// Add document ID filter if provided
-		if len(docIDs) > 0 {
-			searchReq.Where = map[string]interface{}{
-				"doc_id": map[string]interface{}{
-					"$in": docIDs,
-				},
-			}
-		}
-
-		jsonPayload, err := json.Marshal(searchReq)
-		if err != nil {
-			return fmt.Errorf("failed to marshal search request: %w", err)
-		}
-
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
-		if err != nil {
-			return fmt.Errorf("failed to create search request: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := c.makeRequest(req)
+		// Execute search request
+		searchResp, err := c.executeSearchRequest(searchReq)
 		if err != nil {
 			return err
 		}
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				c.logger.Debug("Failed to close response body", zap.Error(err))
-			}
-		}()
 
-		var searchResp SearchResponse
-		if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
-			return fmt.Errorf("failed to decode search response: %w", err)
-		}
-
-		// Convert response to SearchResult slice
-		results = []SearchResult{}
-		if len(searchResp.IDs) > 0 {
-			for i, id := range searchResp.IDs[0] {
-				result := SearchResult{
-					ID:       id,
-					Content:  searchResp.Documents[0][i],
-					Distance: searchResp.Distances[0][i],
-				}
-
-				// Convert metadata
-				if len(searchResp.Metadatas) > 0 && len(searchResp.Metadatas[0]) > i {
-					result.Metadata = make(map[string]string)
-					for k, v := range searchResp.Metadatas[0][i] {
-						if str, ok := v.(string); ok {
-							result.Metadata[k] = str
-						}
-					}
-				}
-
-				results = append(results, result)
-			}
-		}
+		// Process search response
+		results = c.processSearchResponse(searchResp)
 
 		c.logger.Info("Search completed successfully",
 			zap.String("collection", c.collection),
@@ -320,6 +281,97 @@ func (c *Client) Search(queryEmbedding []float32, nResults int, docIDs []string)
 	}, "Search")
 
 	return results, err
+}
+
+// buildSearchRequest creates a search request with optional document ID filtering
+func (c *Client) buildSearchRequest(queryEmbedding []float32, nResults int, docIDs []string) SearchRequest {
+	searchReq := SearchRequest{
+		QueryEmbeddings: [][]float32{queryEmbedding},
+		NResults:        nResults,
+	}
+
+	// Add document ID filter if provided
+	if len(docIDs) > 0 {
+		searchReq.Where = map[string]interface{}{
+			"doc_id": map[string]interface{}{
+				"$in": docIDs,
+			},
+		}
+	}
+
+	return searchReq
+}
+
+// executeSearchRequest executes the search request and returns the response
+func (c *Client) executeSearchRequest(searchReq SearchRequest) (SearchResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/collections/%s/query", c.baseURL, c.collection)
+
+	jsonPayload, err := json.Marshal(searchReq)
+	if err != nil {
+		return SearchResponse{}, fmt.Errorf("failed to marshal search request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return SearchResponse{}, fmt.Errorf("failed to create search request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.makeRequest(req)
+	if err != nil {
+		return SearchResponse{}, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.Debug("Failed to close response body", zap.Error(err))
+		}
+	}()
+
+	var searchResp SearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
+		return SearchResponse{}, fmt.Errorf("failed to decode search response: %w", err)
+	}
+
+	return searchResp, nil
+}
+
+// processSearchResponse converts the search response to SearchResult slice
+func (c *Client) processSearchResponse(searchResp SearchResponse) []SearchResult {
+	results := []SearchResult{}
+	if len(searchResp.IDs) == 0 {
+		return results
+	}
+
+	for i, id := range searchResp.IDs[0] {
+		result := SearchResult{
+			ID:       id,
+			Content:  searchResp.Documents[0][i],
+			Distance: searchResp.Distances[0][i],
+		}
+
+		// Convert metadata if available
+		result.Metadata = c.convertMetadata(searchResp.Metadatas, i)
+		results = append(results, result)
+	}
+
+	return results
+}
+
+// convertMetadata converts metadata from the search response to string map
+func (c *Client) convertMetadata(metadatas [][]map[string]interface{}, index int) map[string]string {
+	if len(metadatas) == 0 || len(metadatas[0]) <= index {
+		return nil
+	}
+
+	metadata := make(map[string]string)
+	for k, v := range metadatas[0][index] {
+		if str, ok := v.(string); ok {
+			metadata[k] = str
+		}
+	}
+
+	return metadata
 }
 
 // HealthCheck checks if ChromaDB is healthy

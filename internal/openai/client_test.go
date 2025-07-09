@@ -29,7 +29,7 @@ import (
 )
 
 // mockOpenAIServer creates a mock OpenAI server for testing
-func mockOpenAIServer(t testing.TB, responses map[string]string) *httptest.Server {
+func mockOpenAIServer(_ testing.TB, responses map[string]string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/embeddings" {
 			if response, ok := responses["embeddings"]; ok {
@@ -61,7 +61,8 @@ func createMockEmbeddingResponse(numEmbeddings int) string {
 		for j := 0; j < ExpectedEmbeddingDimensions; j++ {
 			embedding[j] = fmt.Sprintf("0.%d", j%100)
 		}
-		embeddings[i] = fmt.Sprintf(`{"object": "embedding", "embedding": [%s], "index": %d}`, strings.Join(embedding, ","), i)
+		embeddings[i] = fmt.Sprintf(`{"object": "embedding", "embedding": [%s], "index": %d}`,
+			strings.Join(embedding, ","), i)
 	}
 
 	return fmt.Sprintf(`{
@@ -111,7 +112,7 @@ func TestNewClient(t *testing.T) {
 	}{
 		{
 			name:      "valid API key",
-			apiKey:    "sk-test1234567890abcdef",
+			apiKey:    "sk-test1234567890abcdef", // pragma: allowlist secret
 			expectErr: false,
 		},
 		{
@@ -121,7 +122,7 @@ func TestNewClient(t *testing.T) {
 		},
 		{
 			name:      "invalid API key format",
-			apiKey:    "invalid-key",
+			apiKey:    "invalid-key", // pragma: allowlist secret
 			expectErr: true,
 		},
 	}
@@ -174,6 +175,80 @@ func TestNewClient(t *testing.T) {
 }
 
 // TestEmbedTexts tests the batch embedding functionality
+// setupMockEmbeddingClient creates a mock OpenAI client for embedding tests
+func setupMockEmbeddingClient(t *testing.T, logger *zap.Logger, textCount int) *Client {
+	server := mockOpenAIServer(t, map[string]string{
+		"embeddings": createMockEmbeddingResponse(textCount),
+	})
+	t.Cleanup(func() { server.Close() })
+
+	config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret
+	config.BaseURL = server.URL + "/v1"
+	client := openai.NewClientWithConfig(config)
+
+	return &Client{
+		client: client,
+		logger: logger,
+		model:  EmbeddingModel,
+	}
+}
+
+// validateEmbeddingResponse validates the structure and content of embedding response
+func validateEmbeddingResponse(t *testing.T, response *EmbeddingResponse, expectedCount int) {
+	if len(response.Embeddings) != expectedCount {
+		t.Errorf("Expected %d embeddings, got %d", expectedCount, len(response.Embeddings))
+	}
+
+	for i, embedding := range response.Embeddings {
+		if len(embedding) != ExpectedEmbeddingDimensions {
+			t.Errorf("Embedding %d has %d dimensions, expected %d", i, len(embedding), ExpectedEmbeddingDimensions)
+		}
+	}
+}
+
+// validateUsageTracking validates that usage tracking fields are properly set
+func validateUsageTracking(t *testing.T, usage EmbeddingUsage, expectNonZero bool) {
+	if !expectNonZero {
+		return
+	}
+
+	if usage.TokensUsed == 0 {
+		t.Error("Expected non-zero tokens used")
+	}
+	if usage.RequestCount == 0 {
+		t.Error("Expected non-zero request count")
+	}
+	if usage.EstimatedCost == 0 {
+		t.Error("Expected non-zero estimated cost")
+	}
+	if usage.ProcessingTime == 0 {
+		t.Error("Expected non-zero processing time")
+	}
+}
+
+// runEmbeddingTest executes a single embedding test case
+func runEmbeddingTest(t *testing.T, logger *zap.Logger, texts []string, expectErr bool) {
+	c := setupMockEmbeddingClient(t, logger, len(texts))
+
+	ctx := context.Background()
+	response, err := c.EmbedTexts(ctx, texts)
+
+	if expectErr {
+		if err == nil {
+			t.Error("Expected error")
+		}
+		return
+	}
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+		return
+	}
+
+	validateEmbeddingResponse(t, response, len(texts))
+	validateUsageTracking(t, response.Usage, len(texts) > 0)
+}
+
 func TestEmbedTexts(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
@@ -201,62 +276,7 @@ func TestEmbedTexts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := mockOpenAIServer(t, map[string]string{
-				"embeddings": createMockEmbeddingResponse(len(tt.texts)),
-			})
-			defer server.Close()
-
-			config := openai.DefaultConfig("sk-test1234567890abcdef")
-			config.BaseURL = server.URL + "/v1"
-			client := openai.NewClientWithConfig(config)
-
-			c := &Client{
-				client: client,
-				logger: logger,
-				model:  EmbeddingModel,
-			}
-
-			ctx := context.Background()
-			response, err := c.EmbedTexts(ctx, tt.texts)
-
-			if tt.expectErr {
-				if err == nil {
-					t.Error("Expected error")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("Unexpected error: %v", err)
-				return
-			}
-
-			if len(response.Embeddings) != len(tt.texts) {
-				t.Errorf("Expected %d embeddings, got %d", len(tt.texts), len(response.Embeddings))
-			}
-
-			// Verify embedding dimensions
-			for i, embedding := range response.Embeddings {
-				if len(embedding) != ExpectedEmbeddingDimensions {
-					t.Errorf("Embedding %d has %d dimensions, expected %d", i, len(embedding), ExpectedEmbeddingDimensions)
-				}
-			}
-
-			// Verify usage tracking
-			if len(tt.texts) > 0 {
-				if response.Usage.TokensUsed == 0 {
-					t.Error("Expected non-zero tokens used")
-				}
-				if response.Usage.RequestCount == 0 {
-					t.Error("Expected non-zero request count")
-				}
-				if response.Usage.EstimatedCost == 0 {
-					t.Error("Expected non-zero estimated cost")
-				}
-				if response.Usage.ProcessingTime == 0 {
-					t.Error("Expected non-zero processing time")
-				}
-			}
+			runEmbeddingTest(t, logger, tt.texts, tt.expectErr)
 		})
 	}
 }
@@ -289,7 +309,7 @@ func TestEmbedQuery(t *testing.T) {
 			})
 			defer server.Close()
 
-			config := openai.DefaultConfig("sk-test1234567890abcdef")
+			config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret // pragma: allowlist secret
 			config.BaseURL = server.URL + "/v1"
 			client := openai.NewClientWithConfig(config)
 
@@ -327,7 +347,7 @@ func TestRetryLogic(t *testing.T) {
 
 	// Mock server that returns rate limit error first, then success
 	attempt := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		attempt++
 		if attempt == 1 {
 			// First attempt: rate limit error
@@ -343,7 +363,7 @@ func TestRetryLogic(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := openai.DefaultConfig("sk-test1234567890abcdef")
+	config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret
 	config.BaseURL = server.URL + "/v1"
 	client := openai.NewClientWithConfig(config)
 
@@ -415,14 +435,14 @@ func TestErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.statusCode)
 				_, _ = w.Write([]byte(tt.response))
 			}))
 			defer server.Close()
 
-			config := openai.DefaultConfig("sk-test1234567890abcdef")
+			config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret // pragma: allowlist secret
 			config.BaseURL = server.URL + "/v1"
 			client := openai.NewClientWithConfig(config)
 
@@ -438,17 +458,13 @@ func TestErrorHandling(t *testing.T) {
 			if tt.expectErr {
 				if err == nil {
 					t.Error("Expected error")
+					return
 				}
-				if tt.retryable {
-					// For retryable errors, should exhaust retries
-					if !strings.Contains(err.Error(), "exhausted all retry attempts") {
-						t.Errorf("Expected retry exhaustion error, got: %v", err)
-					}
+				if tt.retryable && !strings.Contains(err.Error(), "exhausted all retry attempts") {
+					t.Errorf("Expected retry exhaustion error, got: %v", err)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
+			} else if err != nil {
+				t.Errorf("Unexpected error: %v", err)
 			}
 		})
 	}
@@ -459,7 +475,7 @@ func TestEmbeddingDimensionValidation(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Mock server that returns embeddings with wrong dimensions
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		// Return embedding with wrong dimensions (should be 1536, but we'll return 512)
@@ -481,7 +497,7 @@ func TestEmbeddingDimensionValidation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := openai.DefaultConfig("sk-test1234567890abcdef")
+	config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret
 	config.BaseURL = server.URL + "/v1"
 	client := openai.NewClientWithConfig(config)
 
@@ -513,7 +529,7 @@ func TestLegacyMethods(t *testing.T) {
 		})
 		defer server.Close()
 
-		config := openai.DefaultConfig("sk-test1234567890abcdef")
+		config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret
 		config.BaseURL = server.URL + "/v1"
 		client := openai.NewClientWithConfig(config)
 
@@ -540,7 +556,7 @@ func TestLegacyMethods(t *testing.T) {
 		})
 		defer server.Close()
 
-		config := openai.DefaultConfig("sk-test1234567890abcdef")
+		config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret
 		config.BaseURL = server.URL + "/v1"
 		client := openai.NewClientWithConfig(config)
 
@@ -570,7 +586,7 @@ func TestCreateChatCompletion(t *testing.T) {
 	})
 	defer server.Close()
 
-	config := openai.DefaultConfig("sk-test1234567890abcdef")
+	config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret
 	config.BaseURL = server.URL + "/v1"
 	client := openai.NewClientWithConfig(config)
 
@@ -616,7 +632,7 @@ func TestContextCancellation(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Mock server that delays response
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(2 * time.Second)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -624,7 +640,7 @@ func TestContextCancellation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := openai.DefaultConfig("sk-test1234567890abcdef")
+	config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret
 	config.BaseURL = server.URL + "/v1"
 	client := openai.NewClientWithConfig(config)
 
@@ -657,7 +673,7 @@ func TestCostEstimation(t *testing.T) {
 	})
 	defer server.Close()
 
-	config := openai.DefaultConfig("sk-test1234567890abcdef")
+	config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret
 	config.BaseURL = server.URL + "/v1"
 	client := openai.NewClientWithConfig(config)
 
@@ -758,7 +774,7 @@ func BenchmarkEmbedTexts(b *testing.B) {
 	})
 	defer server.Close()
 
-	config := openai.DefaultConfig("sk-test1234567890abcdef")
+	config := openai.DefaultConfig("sk-test1234567890abcdef") // pragma: allowlist secret
 	config.BaseURL = server.URL + "/v1"
 	client := openai.NewClientWithConfig(config)
 

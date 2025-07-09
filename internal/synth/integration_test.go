@@ -36,27 +36,42 @@ func TestPromptIntegrationWithLLM(t *testing.T) {
 	}
 
 	client := openai.NewClient(apiKey)
+	tests := setupLLMIntegrationTestCases()
 
-	tests := []struct {
-		name             string
-		query            string
-		contextItems     []ContextItem
-		webResults       []string
-		queryType        QueryType
-		expectedPatterns []string // Patterns we expect to find in LLM response
-	}{
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runLLMIntegrationTest(t, client, tt)
+		})
+	}
+}
+
+// LLMTestCase represents a test case for LLM integration testing
+type LLMTestCase struct {
+	name             string
+	query            string
+	contextItems     []ContextItem
+	webResults       []string
+	queryType        QueryType
+	expectedPatterns []string
+}
+
+// setupLLMIntegrationTestCases creates test cases for LLM integration tests
+func setupLLMIntegrationTestCases() []LLMTestCase {
+	return []LLMTestCase{
 		{
 			name:  "Technical AWS Architecture Query",
 			query: "Design a highly available web application architecture on AWS with auto-scaling capabilities",
 			contextItems: []ContextItem{
 				{
-					Content:  "AWS Auto Scaling helps maintain application availability and allows you to automatically add or remove EC2 instances according to defined conditions.",
+					Content: "AWS Auto Scaling helps maintain application availability and allows you to automatically " +
+						"add or remove EC2 instances according to defined conditions.",
 					SourceID: "aws-autoscaling-doc",
 					Priority: 1,
 					Score:    0.9,
 				},
 				{
-					Content:  "Application Load Balancer distributes incoming traffic across multiple EC2 instances in multiple Availability Zones.",
+					Content: "Application Load Balancer distributes incoming traffic across multiple EC2 instances " +
+						"in multiple Availability Zones.",
 					SourceID: "aws-alb-doc",
 					Priority: 1,
 					Score:    0.85,
@@ -80,13 +95,15 @@ func TestPromptIntegrationWithLLM(t *testing.T) {
 			query: "What are the cost implications and ROI of migrating to cloud infrastructure?",
 			contextItems: []ContextItem{
 				{
-					Content:  "Cloud migration typically reduces operational costs by 20-30% within the first year through improved resource utilization and reduced maintenance overhead.",
+					Content: "Cloud migration typically reduces operational costs by 20-30% within the first year " +
+						"through improved resource utilization and reduced maintenance overhead.",
 					SourceID: "cost-analysis-report",
 					Priority: 1,
 					Score:    0.9,
 				},
 				{
-					Content:  "ROI calculations should include both direct cost savings (hardware, power, cooling) and indirect benefits (increased agility, faster deployment).",
+					Content: "ROI calculations should include both direct cost savings (hardware, power, cooling) " +
+						"and indirect benefits (increased agility, faster deployment).",
 					SourceID: "roi-methodology",
 					Priority: 1,
 					Score:    0.8,
@@ -105,100 +122,137 @@ func TestPromptIntegrationWithLLM(t *testing.T) {
 			},
 		},
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Generate prompt
-			config := PromptConfig{
-				MaxTokens:       6000,
-				MaxContextItems: 10,
-				MaxWebResults:   5,
-				QueryType:       tt.queryType,
-			}
+// runLLMIntegrationTest executes a single LLM integration test
+func runLLMIntegrationTest(t *testing.T, client *openai.Client, tt LLMTestCase) {
+	// Generate and validate prompt
+	prompt := generateValidatedPrompt(t, tt)
 
-			prompt := BuildPromptWithConfig(tt.query, tt.contextItems, tt.webResults, config)
+	// Get LLM response
+	response := getLLMResponse(t, client, prompt)
 
-			// Validate prompt before sending to LLM
-			if err := ValidatePrompt(prompt); err != nil {
-				t.Fatalf("Generated prompt failed validation: %v", err)
-			}
+	// Log response for manual inspection
+	t.Logf("LLM Response for %s:\n%s", tt.name, response)
 
-			// Send to OpenAI
-			resp, err := client.CreateChatCompletion(
-				context.Background(),
-				openai.ChatCompletionRequest{
-					Model: openai.GPT4o,
-					Messages: []openai.ChatCompletionMessage{
-						{
-							Role:    openai.ChatMessageRoleUser,
-							Content: prompt,
-						},
-					},
-					MaxTokens:   2000,
-					Temperature: 0.7,
+	// Validate response
+	validateLLMResponse(t, tt, response)
+
+	// Rate limit respect
+	time.Sleep(1 * time.Second)
+}
+
+// generateValidatedPrompt generates and validates a prompt for testing
+func generateValidatedPrompt(t *testing.T, tt LLMTestCase) string {
+	config := PromptConfig{
+		MaxTokens:       6000,
+		MaxContextItems: 10,
+		MaxWebResults:   5,
+		QueryType:       tt.queryType,
+	}
+
+	prompt := BuildPromptWithConfig(tt.query, tt.contextItems, tt.webResults, config)
+
+	if err := ValidatePrompt(prompt); err != nil {
+		t.Fatalf("Generated prompt failed validation: %v", err)
+	}
+
+	return prompt
+}
+
+// getLLMResponse calls the OpenAI API and returns the response
+func getLLMResponse(t *testing.T, client *openai.Client, prompt string) string {
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: openai.GPT4o,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: prompt,
 				},
-			)
+			},
+			MaxTokens:   2000,
+			Temperature: 0.7,
+		},
+	)
 
-			if err != nil {
-				t.Fatalf("OpenAI API call failed: %v", err)
-			}
+	if err != nil {
+		t.Fatalf("OpenAI API call failed: %v", err)
+	}
 
-			if len(resp.Choices) == 0 {
-				t.Fatal("No response choices returned from OpenAI")
-			}
+	if len(resp.Choices) == 0 {
+		t.Fatal("No response choices returned from OpenAI")
+	}
 
-			response := resp.Choices[0].Message.Content
+	return resp.Choices[0].Message.Content
+}
 
-			// Log the response for manual inspection
-			t.Logf("LLM Response for %s:\n%s", tt.name, response)
+// validateLLMResponse validates the LLM response against expected patterns and structure
+func validateLLMResponse(t *testing.T, tt LLMTestCase, response string) {
+	// Check for expected patterns
+	for _, pattern := range tt.expectedPatterns {
+		if !strings.Contains(response, pattern) {
+			t.Errorf("Expected response to contain '%s', but it didn't", pattern)
+		}
+	}
 
-			// Check for expected patterns
-			for _, pattern := range tt.expectedPatterns {
-				if !strings.Contains(response, pattern) {
-					t.Errorf("Expected response to contain '%s', but it didn't", pattern)
-				}
-			}
+	// Parse and validate structured response
+	parsedResponse := ParseResponse(response)
 
-			// Parse and validate structured response
-			parsedResponse := ParseResponse(response)
+	// Validate basic structure
+	validateBasicResponseStructure(t, &parsedResponse)
 
-			// Validate that citations are present
-			if len(parsedResponse.Sources) == 0 {
-				t.Error("Expected response to contain source citations")
-			}
+	// Validate query-type specific requirements
+	validateQueryTypeSpecificResponse(t, tt.queryType, &parsedResponse)
+}
 
-			// Validate that main text is substantial
-			if len(parsedResponse.MainText) < 200 {
-				t.Error("Expected substantial main text content")
-			}
+// validateBasicResponseStructure validates basic response structure requirements
+func validateBasicResponseStructure(t *testing.T, parsedResponse *SynthesisResponse) {
+	if len(parsedResponse.Sources) == 0 {
+		t.Error("Expected response to contain source citations")
+	}
 
-			// For technical queries, expect diagrams or code
-			if tt.queryType == TechnicalQuery {
-				if parsedResponse.DiagramCode == "" && len(parsedResponse.CodeSnippets) == 0 {
-					t.Error("Technical query should generate either diagram or code snippets")
-				}
-			}
+	if len(parsedResponse.MainText) < 200 {
+		t.Error("Expected substantial main text content")
+	}
+}
 
-			// Validate Mermaid diagram syntax if present
-			if parsedResponse.DiagramCode != "" {
-				if !strings.Contains(parsedResponse.DiagramCode, "graph TD") {
-					t.Error("Mermaid diagram should use 'graph TD' syntax")
-				}
-			}
+// validateQueryTypeSpecificResponse validates query-type specific response requirements
+func validateQueryTypeSpecificResponse(t *testing.T, queryType QueryType, parsedResponse *SynthesisResponse) {
+	if queryType == TechnicalQuery {
+		validateTechnicalResponse(t, parsedResponse)
+	}
 
-			// Validate code snippets
-			for _, snippet := range parsedResponse.CodeSnippets {
-				if snippet.Language == "" {
-					t.Error("Code snippet should have language identifier")
-				}
-				if len(snippet.Code) < 10 {
-					t.Error("Code snippet should have substantial content")
-				}
-			}
+	validateDiagramSyntax(t, parsedResponse)
+	validateCodeSnippets(t, parsedResponse)
+}
 
-			// Add a small delay to respect rate limits
-			time.Sleep(1 * time.Second)
-		})
+// validateTechnicalResponse validates technical query specific requirements
+func validateTechnicalResponse(t *testing.T, parsedResponse *SynthesisResponse) {
+	if parsedResponse.DiagramCode == "" && len(parsedResponse.CodeSnippets) == 0 {
+		t.Error("Technical query should generate either diagram or code snippets")
+	}
+}
+
+// validateDiagramSyntax validates Mermaid diagram syntax
+func validateDiagramSyntax(t *testing.T, parsedResponse *SynthesisResponse) {
+	if parsedResponse.DiagramCode != "" {
+		if !strings.Contains(parsedResponse.DiagramCode, "graph TD") {
+			t.Error("Mermaid diagram should use 'graph TD' syntax")
+		}
+	}
+}
+
+// validateCodeSnippets validates code snippet requirements
+func validateCodeSnippets(t *testing.T, parsedResponse *SynthesisResponse) {
+	for _, snippet := range parsedResponse.CodeSnippets {
+		if snippet.Language == "" {
+			t.Error("Code snippet should have language identifier")
+		}
+		if len(snippet.Code) < 10 {
+			t.Error("Code snippet should have substantial content")
+		}
 	}
 }
 

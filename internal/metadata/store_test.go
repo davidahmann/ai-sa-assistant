@@ -82,7 +82,7 @@ func TestAddMetadata(t *testing.T) {
 		}
 	}()
 
-	entry := MetadataEntry{
+	entry := Entry{
 		DocID:         "test-doc.md",
 		Title:         "Test Document",
 		Platform:      "aws",
@@ -136,11 +136,11 @@ func TestLoadFromJSON(t *testing.T) {
 	}()
 
 	// Create test metadata JSON
-	metadataIndex := MetadataIndex{
+	metadataIndex := Index{
 		SchemaVersion: "1.0",
 		Description:   "Test metadata",
 		LastUpdated:   "2024-01-01",
-		Documents: []MetadataEntry{
+		Documents: []Entry{
 			{
 				DocID:         "doc1.md",
 				Title:         "Document 1",
@@ -177,7 +177,7 @@ func TestLoadFromJSON(t *testing.T) {
 		t.Fatalf("Failed to marshal metadata: %v", err)
 	}
 
-	err = os.WriteFile(jsonPath, jsonData, 0644)
+	err = os.WriteFile(jsonPath, jsonData, 0600)
 	if err != nil {
 		t.Fatalf("Failed to write JSON file: %v", err)
 	}
@@ -213,20 +213,15 @@ func TestLoadFromJSON(t *testing.T) {
 	}
 }
 
-func TestFilterDocuments(t *testing.T) {
+// setupTestStoreForFiltering creates a test store with predefined test data
+func setupTestStoreForFiltering(t *testing.T) *Store {
 	logger := zap.NewNop()
 	store, err := NewStore(":memory:", logger)
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer func() {
-		if closeErr := store.Close(); closeErr != nil {
-			t.Logf("Failed to close store: %v", closeErr)
-		}
-	}()
 
-	// Add test data
-	testEntries := []MetadataEntry{
+	testEntries := []Entry{
 		{
 			DocID:         "aws-migration.md",
 			Title:         "AWS Migration Guide",
@@ -272,6 +267,64 @@ func TestFilterDocuments(t *testing.T) {
 		}
 	}
 
+	return store
+}
+
+// validateDocumentIDsExact checks if the returned document IDs match expected ones exactly
+func validateDocumentIDsExact(t *testing.T, docIDs []string, expectedIDs []string) {
+	if len(docIDs) != len(expectedIDs) {
+		t.Errorf("Expected %d documents, got %d", len(expectedIDs), len(docIDs))
+		return
+	}
+
+	expectedMap := make(map[string]bool)
+	for _, id := range expectedIDs {
+		expectedMap[id] = true
+	}
+
+	for _, docID := range docIDs {
+		if !expectedMap[docID] {
+			t.Errorf("Unexpected document ID: %s", docID)
+		}
+	}
+}
+
+// validateSingleDocumentID checks if exactly one document with the expected ID is returned
+func validateSingleDocumentID(t *testing.T, docIDs []string, expectedID string) {
+	if len(docIDs) != 1 {
+		t.Errorf("Expected 1 document, got %d", len(docIDs))
+		return
+	}
+
+	if docIDs[0] != expectedID {
+		t.Errorf("Expected '%s', got '%s'", expectedID, docIDs[0])
+	}
+}
+
+// validateDocumentCount checks if the number of returned documents matches expected count
+func validateDocumentCount(t *testing.T, docIDs []string, expectedCount int) {
+	if len(docIDs) != expectedCount {
+		t.Errorf("Expected %d documents, got %d", expectedCount, len(docIDs))
+	}
+}
+
+// runFilterTest executes a filter test and validates the results
+func runFilterTest(t *testing.T, store *Store, filters FilterOptions, validator func([]string)) {
+	docIDs, err := store.FilterDocuments(filters)
+	if err != nil {
+		t.Fatalf("Failed to filter documents: %v", err)
+	}
+	validator(docIDs)
+}
+
+func TestFilterDocuments(t *testing.T) {
+	store := setupTestStoreForFiltering(t)
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
+
 	// Test filtering by platform
 	t.Run("FilterByPlatform", func(t *testing.T) {
 		filters := FilterOptions{
@@ -279,26 +332,9 @@ func TestFilterDocuments(t *testing.T) {
 			AndFilters: true,
 		}
 
-		docIDs, err := store.FilterDocuments(filters)
-		if err != nil {
-			t.Fatalf("Failed to filter documents: %v", err)
-		}
-
-		if len(docIDs) != 2 {
-			t.Errorf("Expected 2 documents, got %d", len(docIDs))
-		}
-
-		// Verify both AWS documents are returned
-		expectedIDs := map[string]bool{
-			"aws-migration.md": true,
-			"aws-security.md":  true,
-		}
-
-		for _, docID := range docIDs {
-			if !expectedIDs[docID] {
-				t.Errorf("Unexpected document ID: %s", docID)
-			}
-		}
+		runFilterTest(t, store, filters, func(docIDs []string) {
+			validateDocumentIDsExact(t, docIDs, []string{"aws-migration.md", "aws-security.md"})
+		})
 	})
 
 	// Test filtering by scenario
@@ -308,18 +344,9 @@ func TestFilterDocuments(t *testing.T) {
 			AndFilters: true,
 		}
 
-		docIDs, err := store.FilterDocuments(filters)
-		if err != nil {
-			t.Fatalf("Failed to filter documents: %v", err)
-		}
-
-		if len(docIDs) != 1 {
-			t.Errorf("Expected 1 document, got %d", len(docIDs))
-		}
-
-		if docIDs[0] != "aws-migration.md" {
-			t.Errorf("Expected 'aws-migration.md', got '%s'", docIDs[0])
-		}
+		runFilterTest(t, store, filters, func(docIDs []string) {
+			validateSingleDocumentID(t, docIDs, "aws-migration.md")
+		})
 	})
 
 	// Test filtering by type
@@ -329,14 +356,9 @@ func TestFilterDocuments(t *testing.T) {
 			AndFilters: true,
 		}
 
-		docIDs, err := store.FilterDocuments(filters)
-		if err != nil {
-			t.Fatalf("Failed to filter documents: %v", err)
-		}
-
-		if len(docIDs) != 2 {
-			t.Errorf("Expected 2 documents, got %d", len(docIDs))
-		}
+		runFilterTest(t, store, filters, func(docIDs []string) {
+			validateDocumentCount(t, docIDs, 2)
+		})
 	})
 
 	// Test filtering by tags
@@ -346,18 +368,9 @@ func TestFilterDocuments(t *testing.T) {
 			AndFilters: true,
 		}
 
-		docIDs, err := store.FilterDocuments(filters)
-		if err != nil {
-			t.Fatalf("Failed to filter documents: %v", err)
-		}
-
-		if len(docIDs) != 1 {
-			t.Errorf("Expected 1 document, got %d", len(docIDs))
-		}
-
-		if docIDs[0] != "aws-migration.md" {
-			t.Errorf("Expected 'aws-migration.md', got '%s'", docIDs[0])
-		}
+		runFilterTest(t, store, filters, func(docIDs []string) {
+			validateSingleDocumentID(t, docIDs, "aws-migration.md")
+		})
 	})
 
 	// Test complex filtering (AND combination)
@@ -368,18 +381,9 @@ func TestFilterDocuments(t *testing.T) {
 			AndFilters: true,
 		}
 
-		docIDs, err := store.FilterDocuments(filters)
-		if err != nil {
-			t.Fatalf("Failed to filter documents: %v", err)
-		}
-
-		if len(docIDs) != 1 {
-			t.Errorf("Expected 1 document, got %d", len(docIDs))
-		}
-
-		if docIDs[0] != "aws-migration.md" {
-			t.Errorf("Expected 'aws-migration.md', got '%s'", docIDs[0])
-		}
+		runFilterTest(t, store, filters, func(docIDs []string) {
+			validateSingleDocumentID(t, docIDs, "aws-migration.md")
+		})
 	})
 
 	// Test IN filters
@@ -389,14 +393,9 @@ func TestFilterDocuments(t *testing.T) {
 			AndFilters: true,
 		}
 
-		docIDs, err := store.FilterDocuments(filters)
-		if err != nil {
-			t.Fatalf("Failed to filter documents: %v", err)
-		}
-
-		if len(docIDs) != 3 {
-			t.Errorf("Expected 3 documents, got %d", len(docIDs))
-		}
+		runFilterTest(t, store, filters, func(docIDs []string) {
+			validateDocumentCount(t, docIDs, 3)
+		})
 	})
 
 	// Test filtering by difficulty
@@ -406,14 +405,9 @@ func TestFilterDocuments(t *testing.T) {
 			AndFilters: true,
 		}
 
-		docIDs, err := store.FilterDocuments(filters)
-		if err != nil {
-			t.Fatalf("Failed to filter documents: %v", err)
-		}
-
-		if len(docIDs) != 2 {
-			t.Errorf("Expected 2 documents, got %d", len(docIDs))
-		}
+		runFilterTest(t, store, filters, func(docIDs []string) {
+			validateDocumentCount(t, docIDs, 2)
+		})
 	})
 }
 
@@ -429,7 +423,7 @@ func TestGetMetadataByDocID(t *testing.T) {
 		}
 	}()
 
-	entry := MetadataEntry{
+	entry := Entry{
 		DocID:         "test-doc.md",
 		Title:         "Test Document",
 		Platform:      "aws",
@@ -485,7 +479,7 @@ func TestGetAllMetadata(t *testing.T) {
 	}()
 
 	// Add test data
-	testEntries := []MetadataEntry{
+	testEntries := []Entry{
 		{
 			DocID:         "doc1.md",
 			Title:         "Document 1",
@@ -553,7 +547,7 @@ func TestGetStats(t *testing.T) {
 	}()
 
 	// Add test data
-	testEntries := []MetadataEntry{
+	testEntries := []Entry{
 		{
 			DocID:         "aws-doc1.md",
 			Title:         "AWS Document 1",
@@ -675,7 +669,8 @@ func TestMigrate(t *testing.T) {
 
 	// Verify indexes were created
 	var indexCount int
-	err = store.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'").Scan(&indexCount)
+	err = store.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'").
+		Scan(&indexCount)
 	if err != nil {
 		t.Fatalf("Failed to count indexes: %v", err)
 	}
@@ -698,7 +693,7 @@ func TestEmptyFilters(t *testing.T) {
 	}()
 
 	// Add test data
-	entry := MetadataEntry{
+	entry := Entry{
 		DocID:         "test-doc.md",
 		Title:         "Test Document",
 		Platform:      "aws",
@@ -768,7 +763,7 @@ func TestInvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	jsonPath := filepath.Join(tmpDir, "invalid.json")
 
-	err = os.WriteFile(jsonPath, []byte("invalid json content"), 0644)
+	err = os.WriteFile(jsonPath, []byte("invalid json content"), 0600)
 	if err != nil {
 		t.Fatalf("Failed to write invalid JSON file: %v", err)
 	}
@@ -794,7 +789,7 @@ func TestCloseStore(t *testing.T) {
 	}
 
 	// Test that operations fail after close
-	entry := MetadataEntry{
+	entry := Entry{
 		DocID:    "test-doc.md",
 		Title:    "Test Document",
 		Platform: "aws",

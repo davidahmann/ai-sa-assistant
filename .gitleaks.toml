@@ -1,0 +1,16 @@
+# GitLeaks configuration for AI-SA-Assistant
+# This file contains allowlist patterns for test secrets and false positives
+
+title = "AI-SA-Assistant GitLeaks Configuration"
+
+[allowlist]
+description = "Test secrets and false positives"
+commits = [ ]
+paths = [ ]
+regexes = [
+    "sk-test.*",              # Test API keys
+    "sk-custom-key",          # Custom test key
+    "test-key",               # Generic test keys
+    "apikey.*test",           # API key test patterns
+    "pragma: allowlist secret", # Lines with pragma comments
+]

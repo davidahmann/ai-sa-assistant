@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package metadata provides storage and retrieval of document metadata using SQLite.
+// It supports filtering documents by various criteria including scenarios, cloud providers,
+// and tags to optimize vector search performance in the RAG pipeline.
 package metadata
 
 import (
@@ -22,8 +25,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3" // SQLite driver for database/sql
 	"go.uber.org/zap"
+)
+
+const (
+	// DefaultDirectoryPermissions defines the default permissions for created directories
+	DefaultDirectoryPermissions = 0755
 )
 
 // Store handles queries to the SQLite metadata database
@@ -41,7 +49,7 @@ func NewStore(dbPath string, logger *zap.Logger) (*Store, error) {
 	logger.Info("Initializing metadata store", zap.String("db_path", dbPath))
 
 	// Ensure the directory exists
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), DefaultDirectoryPermissions); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
@@ -110,8 +118,8 @@ func (s *Store) initSchema() error {
 	return nil
 }
 
-// MetadataEntry represents a metadata entry matching the new metadata.json structure
-type MetadataEntry struct {
+// Entry represents a metadata entry matching the new metadata.json structure
+type Entry struct {
 	DocID         string   `json:"doc_id"`
 	Title         string   `json:"title"`
 	Platform      string   `json:"platform"`
@@ -124,17 +132,17 @@ type MetadataEntry struct {
 	EstimatedTime string   `json:"estimated_time"`
 }
 
-// MetadataIndex represents the root structure of metadata.json
-type MetadataIndex struct {
-	SchemaVersion  string          `json:"schema_version"`
-	Description    string          `json:"description"`
-	LastUpdated    string          `json:"last_updated"`
-	Documents      []MetadataEntry `json:"documents"`
-	MetadataSchema interface{}     `json:"metadata_schema"`
+// Index represents the root structure of metadata.json
+type Index struct {
+	SchemaVersion  string      `json:"schema_version"`
+	Description    string      `json:"description"`
+	LastUpdated    string      `json:"last_updated"`
+	Documents      []Entry     `json:"documents"`
+	MetadataSchema interface{} `json:"metadata_schema"`
 }
 
 // AddMetadata adds a metadata entry to the database
-func (s *Store) AddMetadata(entry MetadataEntry) error {
+func (s *Store) AddMetadata(entry Entry) error {
 	s.logger.Debug("Adding metadata entry", zap.String("doc_id", entry.DocID))
 
 	tagsJSON, err := json.Marshal(entry.Tags)
@@ -159,18 +167,41 @@ func (s *Store) AddMetadata(entry MetadataEntry) error {
 	return nil
 }
 
+// validateJSONPath ensures the JSON file path is safe
+func validateJSONPath(jsonPath string) error {
+	// Clean the path
+	cleanPath := filepath.Clean(jsonPath)
+
+	// Check for directory traversal attempts
+	if strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("invalid JSON path: directory traversal detected")
+	}
+
+	// Ensure it's a JSON file
+	if !strings.HasSuffix(strings.ToLower(cleanPath), ".json") {
+		return fmt.Errorf("invalid file type: expected JSON file")
+	}
+
+	return nil
+}
+
 // LoadFromJSON loads metadata from a JSON file and populates the database
 func (s *Store) LoadFromJSON(jsonPath string) error {
 	s.logger.Info("Loading metadata from JSON file", zap.String("json_path", jsonPath))
 
+	// Validate JSON path for security
+	if err := validateJSONPath(jsonPath); err != nil {
+		return fmt.Errorf("invalid JSON path %s: %w", jsonPath, err)
+	}
+
 	// Read JSON file
-	data, err := os.ReadFile(jsonPath)
+	data, err := os.ReadFile(jsonPath) // #nosec G304 - path validated above
 	if err != nil {
 		return fmt.Errorf("failed to read JSON file: %w", err)
 	}
 
 	// Parse JSON
-	var metadataIndex MetadataIndex
+	var metadataIndex Index
 	if err := json.Unmarshal(data, &metadataIndex); err != nil {
 		return fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
@@ -364,10 +395,11 @@ func (s *Store) FilterDocuments(filters FilterOptions) ([]string, error) {
 }
 
 // GetAllMetadata returns all metadata entries
-func (s *Store) GetAllMetadata() ([]MetadataEntry, error) {
+func (s *Store) GetAllMetadata() ([]Entry, error) {
 	s.logger.Debug("Getting all metadata entries")
 
-	query := "SELECT doc_id, title, platform, scenario, type, source_url, path, tags, difficulty, estimated_time FROM metadata"
+	query := "SELECT doc_id, title, platform, scenario, type, source_url, path, tags, difficulty, estimated_time " +
+		"FROM metadata"
 
 	rows, err := s.db.Query(query)
 	if err != nil {
@@ -380,9 +412,9 @@ func (s *Store) GetAllMetadata() ([]MetadataEntry, error) {
 		}
 	}()
 
-	var entries []MetadataEntry
+	var entries []Entry
 	for rows.Next() {
-		var entry MetadataEntry
+		var entry Entry
 		var tagsJSON string
 		err := rows.Scan(&entry.DocID, &entry.Title, &entry.Platform, &entry.Scenario, &entry.Type,
 			&entry.SourceURL, &entry.Path, &tagsJSON, &entry.Difficulty, &entry.EstimatedTime)
@@ -410,14 +442,15 @@ func (s *Store) GetAllMetadata() ([]MetadataEntry, error) {
 }
 
 // GetMetadataByDocID returns metadata for a specific document ID
-func (s *Store) GetMetadataByDocID(docID string) (*MetadataEntry, error) {
+func (s *Store) GetMetadataByDocID(docID string) (*Entry, error) {
 	s.logger.Debug("Getting metadata by doc_id", zap.String("doc_id", docID))
 
-	query := "SELECT doc_id, title, platform, scenario, type, source_url, path, tags, difficulty, estimated_time FROM metadata WHERE doc_id = ?"
+	query := "SELECT doc_id, title, platform, scenario, type, source_url, path, tags, difficulty, estimated_time " +
+		"FROM metadata WHERE doc_id = ?"
 
 	row := s.db.QueryRow(query, docID)
 
-	var entry MetadataEntry
+	var entry Entry
 	var tagsJSON string
 	err := row.Scan(&entry.DocID, &entry.Title, &entry.Platform, &entry.Scenario, &entry.Type,
 		&entry.SourceURL, &entry.Path, &tagsJSON, &entry.Difficulty, &entry.EstimatedTime)

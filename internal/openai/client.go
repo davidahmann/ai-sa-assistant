@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package openai provides a client wrapper for OpenAI API interactions.
+// It handles embedding generation, chat completions, and includes retry logic
+// with exponential backoff for robust API communication.
 package openai
 
 import (
@@ -36,6 +39,12 @@ const (
 	BaseRetryDelay = time.Second
 	// EmbeddingCostPer1KTokens defines the cost per 1K tokens for embeddings (in USD)
 	EmbeddingCostPer1KTokens = 0.00002
+	// ValidationTimeout defines the timeout for connection validation
+	ValidationTimeout = 10 * time.Second
+	// CostCalculationDivisor defines the divisor for cost calculation
+	CostCalculationDivisor = 1000.0
+	// QueryPreviewLength defines the length for query preview truncation
+	QueryPreviewLength = 100
 )
 
 // Client wraps the go-openai client with enhanced functionality
@@ -103,7 +112,7 @@ func NewClient(apiKey string, logger *zap.Logger) (*Client, error) {
 
 // validateConnection validates the OpenAI API connection
 func (c *Client) validateConnection() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), ValidationTimeout)
 	defer cancel()
 
 	// Test with a simple embedding request
@@ -156,7 +165,7 @@ func (c *Client) EmbedTexts(ctx context.Context, texts []string) (*EmbeddingResp
 	totalRequests++
 
 	processingTime := time.Since(start)
-	estimatedCost := float64(totalTokens) / 1000.0 * EmbeddingCostPer1KTokens
+	estimatedCost := float64(totalTokens) / CostCalculationDivisor * EmbeddingCostPer1KTokens
 
 	c.logger.Info("Batch embedding generation completed",
 		zap.Int("text_count", len(texts)),
@@ -184,7 +193,7 @@ func (c *Client) EmbedQuery(ctx context.Context, query string) ([]float32, error
 	}
 
 	c.logger.Debug("Starting query embedding generation",
-		zap.String("query_preview", truncateText(query, 100)),
+		zap.String("query_preview", truncateText(query, QueryPreviewLength)),
 		zap.String("model", c.model),
 	)
 
@@ -292,7 +301,8 @@ func (c *Client) createEmbeddings(ctx context.Context, texts []string) ([][]floa
 	}
 
 	if len(resp.Data) != len(texts) {
-		return nil, openai.Usage{}, fmt.Errorf("unexpected response: got %d embeddings for %d texts", len(resp.Data), len(texts))
+		return nil, openai.Usage{}, fmt.Errorf("unexpected response: got %d embeddings for %d texts",
+			len(resp.Data), len(texts))
 	}
 
 	embeddings := make([][]float32, len(resp.Data))
@@ -470,7 +480,8 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionReq
 
 // BuildSystemPrompt creates a system prompt for the assistant
 func BuildSystemPrompt() string {
-	return `You are an expert Cloud Solutions Architect assistant. Your role is to help Solutions Architects with pre-sales research and planning.
+	return `You are an expert Cloud Solutions Architect assistant. Your role is to help Solutions Architects ` +
+		`with pre-sales research and planning.
 
 Key responsibilities:
 1. Synthesize information from internal playbooks and live web sources

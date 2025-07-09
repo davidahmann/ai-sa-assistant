@@ -1,3 +1,20 @@
+// Copyright 2024 AI SA Assistant Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package teams provides functionality for creating and managing Microsoft Teams
+// Adaptive Cards. It handles the generation of rich, interactive cards that display
+// synthesis results, architecture diagrams, and user feedback elements.
 package teams
 
 import (
@@ -211,14 +228,14 @@ func GenerateSimpleCard(title, message string) (string, error) {
 	return string(cardJSON), nil
 }
 
-// TeamsWebhookPayload represents the payload sent to Teams
-type TeamsWebhookPayload struct {
-	Type        string                `json:"type"`
-	Attachments []TeamsCardAttachment `json:"attachments"`
+// WebhookPayload represents the payload sent to Teams
+type WebhookPayload struct {
+	Type        string           `json:"type"`
+	Attachments []CardAttachment `json:"attachments"`
 }
 
-// TeamsCardAttachment represents an attachment in the Teams payload
-type TeamsCardAttachment struct {
+// CardAttachment represents an attachment in the Teams payload
+type CardAttachment struct {
 	ContentType string      `json:"contentType"`
 	Content     interface{} `json:"content"`
 }
@@ -230,9 +247,9 @@ func CreateTeamsPayload(cardJSON string) (string, error) {
 		return "", fmt.Errorf("failed to unmarshal card JSON: %w", err)
 	}
 
-	payload := TeamsWebhookPayload{
+	payload := WebhookPayload{
 		Type: "message",
-		Attachments: []TeamsCardAttachment{
+		Attachments: []CardAttachment{
 			{
 				ContentType: "application/vnd.microsoft.card.adaptive",
 				Content:     card,

@@ -62,7 +62,8 @@ func TestConfigurationValidation(t *testing.T) {
 			}
 
 			if cfg.Retrieval.FallbackScoreThreshold != tt.expectedFallbackScoreThreshold {
-				t.Errorf("Expected fallback score threshold %f, got %f", tt.expectedFallbackScoreThreshold, cfg.Retrieval.FallbackScoreThreshold)
+				t.Errorf("Expected fallback score threshold %f, got %f",
+					tt.expectedFallbackScoreThreshold, cfg.Retrieval.FallbackScoreThreshold)
 			}
 		})
 	}
@@ -113,10 +114,8 @@ func TestSearchRequestValidation(t *testing.T) {
 				if searchReq.Query == "" {
 					t.Error("Expected non-empty query")
 				}
-			} else {
-				if err == nil && searchReq.Query != "" {
-					t.Error("Expected invalid request, but got valid one")
-				}
+			} else if err == nil && searchReq.Query != "" {
+				t.Error("Expected invalid request, but got valid one")
 			}
 		})
 	}
@@ -191,7 +190,8 @@ func TestSearchResponse(t *testing.T) {
 			}
 
 			if unmarshaledResponse.FallbackTriggered != tt.fallbackTriggered {
-				t.Errorf("Expected unmarshaled fallback triggered %v, got %v", tt.fallbackTriggered, unmarshaledResponse.FallbackTriggered)
+				t.Errorf("Expected unmarshaled fallback triggered %v, got %v",
+					tt.fallbackTriggered, unmarshaledResponse.FallbackTriggered)
 			}
 
 			// Check if fallback_reason is included in JSON when expected

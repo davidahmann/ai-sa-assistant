@@ -28,6 +28,8 @@ import (
 const (
 	testChromaURL     = "http://localhost:8000"
 	testCollection    = "integration-test-collection"
+	testDocID1        = "doc1"
+	testDocID3        = "doc3"
 	cleanupCollection = "cleanup-test-collection"
 )
 
@@ -140,11 +142,11 @@ func TestIntegration_DocumentOperations(t *testing.T) {
 	// Test add documents
 	documents := []Document{
 		{
-			ID:      "doc1",
+			ID:      testDocID1,
 			Content: "This is a test document about artificial intelligence",
 			Metadata: map[string]string{
 				"category": "ai",
-				"doc_id":   "doc1",
+				"doc_id":   testDocID1,
 			},
 		},
 		{
@@ -207,7 +209,7 @@ func TestIntegration_DocumentOperations(t *testing.T) {
 	}
 
 	// Test search with document ID filter
-	docIDFilter := []string{"doc1", "doc3"}
+	docIDFilter := []string{testDocID1, testDocID3}
 	filteredResults, err := docClient.Search(queryEmbedding, 2, docIDFilter)
 	if err != nil {
 		t.Fatalf("Failed to search with doc ID filter: %v", err)
@@ -219,7 +221,7 @@ func TestIntegration_DocumentOperations(t *testing.T) {
 
 	// Verify filtered results only contain requested doc IDs
 	for _, result := range filteredResults {
-		if result.ID != "doc1" && result.ID != "doc3" {
+		if result.ID != testDocID1 && result.ID != testDocID3 {
 			t.Errorf("Filtered result contains unexpected doc ID: %s", result.ID)
 		}
 	}
@@ -251,7 +253,9 @@ func TestIntegration_ErrorHandling(t *testing.T) {
 	}
 
 	// Test searching in non-existent collection
-	nonExistentClient := NewClientWithOptions(testChromaURL, "non-existent-collection", zap.NewNop(), 1, 100*time.Millisecond)
+	nonExistentClient := NewClientWithOptions(
+		testChromaURL, "non-existent-collection", zap.NewNop(), 1, 100*time.Millisecond,
+	)
 
 	queryEmbedding := []float32{0.1, 0.2, 0.3}
 	_, err = nonExistentClient.Search(queryEmbedding, 1, nil)
@@ -305,7 +309,7 @@ func TestIntegration_ConcurrentOperations(t *testing.T) {
 
 	// Add initial documents
 	documents := []Document{
-		{ID: "doc1", Content: "Document 1", Metadata: map[string]string{"doc_id": "doc1"}},
+		{ID: testDocID1, Content: "Document 1", Metadata: map[string]string{"doc_id": testDocID1}},
 		{ID: "doc2", Content: "Document 2", Metadata: map[string]string{"doc_id": "doc2"}},
 	}
 	embeddings := [][]float32{{0.1, 0.2}, {0.3, 0.4}}

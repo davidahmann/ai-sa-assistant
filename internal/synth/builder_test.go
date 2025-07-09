@@ -432,18 +432,22 @@ func TestValidatePrompt(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "Missing graph TD instructions",
-			prompt:      "User Query: test Solutions Architect [source_id] MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS " + strings.Repeat("a", 200),
+			name: "Missing graph TD instructions",
+			prompt: "User Query: test Solutions Architect [source_id] MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS " +
+				strings.Repeat("a", 200),
 			expectError: true,
 		},
 		{
-			name:        "Missing mermaid code block instructions",
-			prompt:      "User Query: test Solutions Architect [source_id] MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS graph TD " + strings.Repeat("a", 200),
+			name: "Missing mermaid code block instructions",
+			prompt: "User Query: test Solutions Architect [source_id] MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS graph TD " +
+				strings.Repeat("a", 200),
 			expectError: true,
 		},
 		{
-			name:        "Valid prompt with all requirements",
-			prompt:      "User Query: test Solutions Architect [source_id] MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS graph TD ```mermaid CODE GENERATION INSTRUCTIONS terraform AWS CLI Azure CLI PowerShell NEVER include hardcoded secrets meaningful comments " + strings.Repeat("a", 200),
+			name: "Valid prompt with all requirements",
+			prompt: "User Query: test Solutions Architect [source_id] MERMAID.JS DIAGRAM GENERATION INSTRUCTIONS " +
+				"graph TD ```mermaid CODE GENERATION INSTRUCTIONS terraform AWS CLI Azure CLI PowerShell " +
+				"NEVER include hardcoded secrets meaningful comments " + strings.Repeat("a", 200),
 			expectError: false,
 		},
 	}
@@ -833,40 +837,58 @@ func TestParseResponse(t *testing.T) {
 		expectedSources      int
 	}{
 		{
-			name:                 "Response with Mermaid diagram",
-			response:             "Here's a comprehensive AWS architecture solution:\n\n## Architecture Overview\nThis solution provides a highly available web application architecture.\n\n```mermaid\ngraph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n            ALB[Application Load Balancer]\n            EC2[EC2 Instances]\n            RDS[RDS Database]\n        end\n    end\n    Users --> ALB\n    ALB --> EC2\n    EC2 --> RDS\n```\n\nThe architecture includes load balancing and database replication [aws-guide].",
-			expectedMain:         "Here's a comprehensive AWS architecture solution:",
-			expectedDiagram:      "graph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n            ALB[Application Load Balancer]\n            EC2[EC2 Instances]\n            RDS[RDS Database]\n        end\n    end\n    Users --> ALB\n    ALB --> EC2\n    EC2 --> RDS",
+			name: "Response with Mermaid diagram",
+			response: "Here's a comprehensive AWS architecture solution:\n\n## Architecture Overview\n" +
+				"This solution provides a highly available web application architecture.\n\n" +
+				"```mermaid\ngraph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n" +
+				"            ALB[Application Load Balancer]\n            EC2[EC2 Instances]\n            RDS[RDS Database]\n" +
+				"        end\n    end\n    Users --> ALB\n    ALB --> EC2\n    EC2 --> RDS\n```\n\n" +
+				"The architecture includes load balancing and database replication [aws-guide].",
+			expectedMain: "Here's a comprehensive AWS architecture solution:",
+			expectedDiagram: "graph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n" +
+				"            ALB[Application Load Balancer]\n            EC2[EC2 Instances]\n            RDS[RDS Database]\n" +
+				"        end\n    end\n    Users --> ALB\n    ALB --> EC2\n    EC2 --> RDS",
 			expectedCodeSnippets: 0,
 			expectedSources:      1,
 		},
 		{
-			name:                 "Response with code snippet",
-			response:             "Here's how to deploy the infrastructure:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n  \n  tags = {\n    Name = \"main-vpc\"\n  }\n}\n```\n\nThis creates the VPC [terraform-guide].",
+			name: "Response with code snippet",
+			response: "Here's how to deploy the infrastructure:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n" +
+				"  cidr_block = \"10.0.0.0/16\"\n  \n  tags = {\n    Name = \"main-vpc\"\n  }\n}\n```\n\n" +
+				"This creates the VPC [terraform-guide].",
 			expectedMain:         "Here's how to deploy the infrastructure:",
 			expectedDiagram:      "",
 			expectedCodeSnippets: 1,
 			expectedSources:      1,
 		},
 		{
-			name:                 "Response with both diagram and code",
-			response:             "Complete solution with architecture and implementation:\n\n```mermaid\ngraph TD\n    VPC[VPC]\n    EC2[EC2]\n    VPC --> EC2\n```\n\nImplementation:\n\n```bash\naws ec2 create-vpc --cidr-block 10.0.0.0/16\n```\n\nReferences: [aws-docs] and [best-practices].",
+			name: "Response with both diagram and code",
+			response: "Complete solution with architecture and implementation:\n\n```mermaid\ngraph TD\n" +
+				"    VPC[VPC]\n    EC2[EC2]\n" +
+				"    VPC --> EC2\n```\n\n" +
+				"Implementation:\n\n```bash\naws ec2 create-vpc --cidr-block 10.0.0.0/16\n```\n\n" +
+				"References: [aws-docs] and [best-practices].",
 			expectedMain:         "Complete solution with architecture and implementation:",
 			expectedDiagram:      "graph TD\n    VPC[VPC]\n    EC2[EC2]\n    VPC --> EC2",
 			expectedCodeSnippets: 1,
 			expectedSources:      2,
 		},
 		{
-			name:                 "Response without special blocks",
-			response:             "This is a simple text response with recommendations.\n\t\t\t\nNo diagrams or code needed for this response [simple-guide].",
-			expectedMain:         "This is a simple text response with recommendations.\n\t\t\t\nNo diagrams or code needed for this response [simple-guide].",
+			name: "Response without special blocks",
+			response: "This is a simple text response with recommendations.\n\t\t\t\n" +
+				"No diagrams or code needed for this response [simple-guide].",
+			expectedMain: "This is a simple text response with recommendations.\n\t\t\t\n" +
+				"No diagrams or code needed for this response [simple-guide].",
 			expectedDiagram:      "",
 			expectedCodeSnippets: 0,
 			expectedSources:      1,
 		},
 		{
-			name:                 "Response with multiple code snippets",
-			response:             "Multi-language deployment:\n\n```terraform\nresource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n}\n```\n\n```bash\n#!/bin/bash\nterraform apply\n```\n\n```yaml\napiVersion: v1\nkind: Pod\n```\n\nSources: [terraform], [bash], [k8s].",
+			name: "Response with multiple code snippets",
+			response: "Multi-language deployment:\n\n```terraform\nresource \"aws_instance\" \"web\" {\n" +
+				"  ami = \"ami-12345\"\n}\n```\n\n" +
+				"```bash\n#!/bin/bash\nterraform apply\n```\n\n```yaml\napiVersion: v1\nkind: Pod\n```\n\n" +
+				"Sources: [terraform], [bash], [k8s].",
 			expectedMain:         "Multi-language deployment:",
 			expectedDiagram:      "",
 			expectedCodeSnippets: 3,
@@ -908,8 +930,9 @@ func TestExtractMermaidDiagram(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "Standard mermaid block",
-			response: "Text before diagram.\n\n```mermaid\ngraph TD\n    A[Start] --> B[Process]\n    B --> C[End]\n```\n\nText after diagram.",
+			name: "Standard mermaid block",
+			response: "Text before diagram.\n\n```mermaid\ngraph TD\n    A[Start] --> B[Process]\n    B --> C[End]\n```\n\n" +
+				"Text after diagram.",
 			expected: "graph TD\n    A[Start] --> B[Process]\n    B --> C[End]",
 		},
 		{
@@ -918,9 +941,23 @@ func TestExtractMermaidDiagram(t *testing.T) {
 			expected: "graph TD\n    VPC[VPC] --> EC2[EC2]\n    EC2 --> RDS[RDS]",
 		},
 		{
-			name:     "Complex AWS architecture diagram",
-			response: "```mermaid\ngraph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n            subgraph \"Public Subnet\"\n                ALB[Application Load Balancer]\n                NAT[NAT Gateway]\n            end\n            subgraph \"Private Subnet\"\n                EC2[EC2 Instances]\n                RDS[RDS Database]\n            end\n        end\n        S3[S3 Buckets]\n    end\n    Users[Users] --> ALB\n    ALB --> EC2\n    EC2 --> RDS\n    EC2 --> S3\n```",
-			expected: "graph TD\n    subgraph \"AWS Cloud\"\n        subgraph \"VPC: 10.0.0.0/16\"\n            subgraph \"Public Subnet\"\n                ALB[Application Load Balancer]\n                NAT[NAT Gateway]\n            end\n            subgraph \"Private Subnet\"\n                EC2[EC2 Instances]\n                RDS[RDS Database]\n            end\n        end\n        S3[S3 Buckets]\n    end\n    Users[Users] --> ALB\n    ALB --> EC2\n    EC2 --> RDS\n    EC2 --> S3",
+			name: "Complex AWS architecture diagram",
+			response: "```mermaid\ngraph TD\n    subgraph \"AWS Cloud\"\n" +
+				"        subgraph \"VPC: 10.0.0.0/16\"\n" +
+				"            subgraph \"Public Subnet\"\n                ALB[Application Load Balancer]\n" +
+				"                NAT[NAT Gateway]\n            end\n" +
+				"            subgraph \"Private Subnet\"\n                EC2[EC2 Instances]\n" +
+				"                RDS[RDS Database]\n            end\n" +
+				"        end\n        S3[S3 Buckets]\n    end\n    Users[Users] --> ALB\n" +
+				"    ALB --> EC2\n    EC2 --> RDS\n    EC2 --> S3\n```",
+			expected: "graph TD\n    subgraph \"AWS Cloud\"\n" +
+				"        subgraph \"VPC: 10.0.0.0/16\"\n" +
+				"            subgraph \"Public Subnet\"\n                ALB[Application Load Balancer]\n" +
+				"                NAT[NAT Gateway]\n            end\n" +
+				"            subgraph \"Private Subnet\"\n                EC2[EC2 Instances]\n" +
+				"                RDS[RDS Database]\n            end\n" +
+				"        end\n        S3[S3 Buckets]\n    end\n    Users[Users] --> ALB\n" +
+				"    ALB --> EC2\n    EC2 --> RDS\n    EC2 --> S3",
 		},
 		{
 			name:     "No mermaid diagram",
@@ -933,8 +970,10 @@ func TestExtractMermaidDiagram(t *testing.T) {
 			expected: "",
 		},
 		{
-			name:     "Multiple code blocks with one mermaid",
-			response: "First some Terraform:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```\n\nThen the architecture:\n\n```mermaid\ngraph TD\n    A --> B\n    B --> C\n```\n\nAnd some bash:\n\n```bash\necho \"Done\"\n```",
+			name: "Multiple code blocks with one mermaid",
+			response: "First some Terraform:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n" +
+				"  cidr_block = \"10.0.0.0/16\"\n}\n```\n\nThen the architecture:\n\n```mermaid\ngraph TD\n" +
+				"    A --> B\n    B --> C\n```\n\nAnd some bash:\n\n```bash\necho \"Done\"\n```",
 			expected: "graph TD\n    A --> B\n    B --> C",
 		},
 	}
@@ -956,8 +995,9 @@ func TestExtractCodeSnippets(t *testing.T) {
 		expected []CodeSnippet
 	}{
 		{
-			name:     "Single Terraform snippet",
-			response: "Here's the Terraform code:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			name: "Single Terraform snippet",
+			response: "Here's the Terraform code:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n" +
+				"  cidr_block = \"10.0.0.0/16\"\n}\n```",
 			expected: []CodeSnippet{
 				{
 					Language: "terraform",
@@ -966,8 +1006,10 @@ func TestExtractCodeSnippets(t *testing.T) {
 			},
 		},
 		{
-			name:     "Multiple language snippets",
-			response: "Terraform configuration:\n\n```terraform\nresource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n}\n```\n\nBash script:\n\n```bash\n#!/bin/bash\necho \"Safe deployment\"\n```\n\nYAML config:\n\n```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: web-pod\n```",
+			name: "Multiple language snippets",
+			response: "Terraform configuration:\n\n```terraform\nresource \"aws_instance\" \"web\" {\n" +
+				"  ami = \"ami-12345\"\n}\n```\n\nBash script:\n\n```bash\n#!/bin/bash\necho \"Safe deployment\"\n```\n\n" +
+				"YAML config:\n\n```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: web-pod\n```",
 			expected: []CodeSnippet{
 				{
 					Language: "terraform",
@@ -984,8 +1026,9 @@ func TestExtractCodeSnippets(t *testing.T) {
 			},
 		},
 		{
-			name:     "Mixed with mermaid (should exclude mermaid)",
-			response: "Architecture:\n\n```mermaid\ngraph TD\n    A --> B\n```\n\nImplementation:\n\n```python\nprint(\"Hello\")\n```",
+			name: "Mixed with mermaid (should exclude mermaid)",
+			response: "Architecture:\n\n```mermaid\ngraph TD\n    A --> B\n```\n\n" +
+				"Implementation:\n\n```python\nprint(\"Hello\")\n```",
 			expected: []CodeSnippet{
 				{
 					Language: "python",
@@ -1038,8 +1081,9 @@ func TestExtractSources(t *testing.T) {
 			expected: []string{"aws-docs"},
 		},
 		{
-			name:     "Multiple source citations",
-			response: "Based on best practices [best-practices] and AWS documentation [aws-docs], we recommend this approach [terraform-guide].",
+			name: "Multiple source citations",
+			response: "Based on best practices [best-practices] and AWS documentation [aws-docs], " +
+				"we recommend this approach [terraform-guide].",
 			expected: []string{"best-practices", "aws-docs", "terraform-guide"},
 		},
 		{
@@ -1128,8 +1172,9 @@ func TestRemoveCodeSnippets(t *testing.T) {
 			expected: "Text before.\n\n\n\nText after.",
 		},
 		{
-			name:     "Remove multiple code blocks",
-			input:    "First block:\n\n```terraform\nresource \"aws_vpc\" \"main\" {}\n```\n\nSecond block:\n\n```bash\nterraform apply\n```\n\nDone.",
+			name: "Remove multiple code blocks",
+			input: "First block:\n\n```terraform\nresource \"aws_vpc\" \"main\" {}\n```\n\n" +
+				"Second block:\n\n```bash\nterraform apply\n```\n\nDone.",
 			expected: "First block:\n\n\n\nSecond block:\n\n\n\nDone.",
 		},
 		{
@@ -1351,8 +1396,9 @@ func TestExtractCodeSnippetsWithSecurity(t *testing.T) {
 		expectedSecurityPass bool
 	}{
 		{
-			name:                 "Safe Terraform code",
-			response:             "Here's the Terraform:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			name: "Safe Terraform code",
+			response: "Here's the Terraform:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n" +
+				"  cidr_block = \"10.0.0.0/16\"\n}\n```",
 			expectedCount:        1,
 			expectedLanguages:    []string{"terraform"},
 			expectedSecurityPass: true,
@@ -1365,8 +1411,9 @@ func TestExtractCodeSnippetsWithSecurity(t *testing.T) {
 			expectedSecurityPass: false,
 		},
 		{
-			name:                 "Mixed safe and unsafe code",
-			response:             "Safe code:\n\n```bash\necho \"Hello\"\n```\n\nDangerous code:\n\n```bash\nrm -rf /\n```",
+			name: "Mixed safe and unsafe code",
+			response: "Safe code:\n\n```bash\necho \"Hello\"\n```\n\n" +
+				"Dangerous code:\n\n```bash\nrm -rf /\n```",
 			expectedCount:        1,
 			expectedLanguages:    []string{"bash"},
 			expectedSecurityPass: true,
@@ -1379,8 +1426,9 @@ func TestExtractCodeSnippetsWithSecurity(t *testing.T) {
 			expectedSecurityPass: true,
 		},
 		{
-			name:                 "Hardcoded secrets filtered out",
-			response:             "Config with secret:\n\n```yaml\napi_key: \"sk-1234567890abcdef1234567890abcdef1234567890abcdef\"\n```",
+			name: "Hardcoded secrets filtered out",
+			response: "Config with secret:\n\n```yaml\n" +
+				"api_key: \"sk-1234567890abcdef1234567890abcdef1234567890abcdef\"\n```",
 			expectedCount:        0,
 			expectedLanguages:    []string{},
 			expectedSecurityPass: false,
@@ -1508,11 +1556,13 @@ func TestParseResponseWithSources(t *testing.T) {
 		expectedCodeCount int
 	}{
 		{
-			name:              "Response with valid sources",
-			response:          "This solution uses AWS best practices [aws-guide] and latest updates [https://aws.amazon.com/updates]. Implementation details are in [terraform-guide].",
-			availableSources:  []string{"aws-guide", "terraform-guide", "https://aws.amazon.com/updates"},
-			expectedSources:   []string{"aws-guide", "https://aws.amazon.com/updates", "terraform-guide"},
-			expectedMainText:  "This solution uses AWS best practices [aws-guide] and latest updates [https://aws.amazon.com/updates]. Implementation details are in [terraform-guide].",
+			name: "Response with valid sources",
+			response: "This solution uses AWS best practices [aws-guide] and latest updates " +
+				"[https://aws.amazon.com/updates]. Implementation details are in [terraform-guide].",
+			availableSources: []string{"aws-guide", "terraform-guide", "https://aws.amazon.com/updates"},
+			expectedSources:  []string{"aws-guide", "https://aws.amazon.com/updates", "terraform-guide"},
+			expectedMainText: "This solution uses AWS best practices [aws-guide] and latest updates " +
+				"[https://aws.amazon.com/updates]. Implementation details are in [terraform-guide].",
 			expectedDiagram:   "",
 			expectedCodeCount: 0,
 		},
@@ -1526,17 +1576,20 @@ func TestParseResponseWithSources(t *testing.T) {
 			expectedCodeCount: 0,
 		},
 		{
-			name:              "Response with mixed document and URL sources",
-			response:          "Architecture details from [arch-doc] and recent updates from [https://docs.aws.amazon.com/ec2/latest/] provide comprehensive guidance [best-practices].",
-			availableSources:  []string{"arch-doc", "best-practices", "https://docs.aws.amazon.com/ec2/latest/"},
-			expectedSources:   []string{"arch-doc", "https://docs.aws.amazon.com/ec2/latest/", "best-practices"},
-			expectedMainText:  "Architecture details from [arch-doc] and recent updates from [https://docs.aws.amazon.com/ec2/latest/] provide comprehensive guidance [best-practices].",
+			name: "Response with mixed document and URL sources",
+			response: "Architecture details from [arch-doc] and recent updates from " +
+				"[https://docs.aws.amazon.com/ec2/latest/] provide comprehensive guidance [best-practices].",
+			availableSources: []string{"arch-doc", "best-practices", "https://docs.aws.amazon.com/ec2/latest/"},
+			expectedSources:  []string{"arch-doc", "https://docs.aws.amazon.com/ec2/latest/", "best-practices"},
+			expectedMainText: "Architecture details from [arch-doc] and recent updates from " +
+				"[https://docs.aws.amazon.com/ec2/latest/] provide comprehensive guidance [best-practices].",
 			expectedDiagram:   "",
 			expectedCodeCount: 0,
 		},
 		{
-			name:              "Response with diagram and sources",
-			response:          "Here's the architecture [aws-guide]:\n\n```mermaid\ngraph TD\n    A[VPC] --> B[EC2]\n    B --> C[RDS]\n```\n\nImplementation follows [terraform-guide].",
+			name: "Response with diagram and sources",
+			response: "Here's the architecture [aws-guide]:\n\n```mermaid\ngraph TD\n    A[VPC] --> B[EC2]\n" +
+				"    B --> C[RDS]\n```\n\nImplementation follows [terraform-guide].",
 			availableSources:  []string{"aws-guide", "terraform-guide"},
 			expectedSources:   []string{"aws-guide", "terraform-guide"},
 			expectedMainText:  "Here's the architecture [aws-guide]:",
@@ -1544,8 +1597,10 @@ func TestParseResponseWithSources(t *testing.T) {
 			expectedCodeCount: 0,
 		},
 		{
-			name:              "Response with code and sources",
-			response:          "Deploy with this configuration [terraform-guide]:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```\n\nBased on [aws-docs].",
+			name: "Response with code and sources",
+			response: "Deploy with this configuration [terraform-guide]:\n\n```terraform\n" +
+				"resource \"aws_vpc\" \"main\" {\n" +
+				"  cidr_block = \"10.0.0.0/16\"\n}\n```\n\nBased on [aws-docs].",
 			availableSources:  []string{"terraform-guide", "aws-docs"},
 			expectedSources:   []string{"terraform-guide", "aws-docs"},
 			expectedMainText:  "Deploy with this configuration [terraform-guide]:",
@@ -1578,7 +1633,8 @@ func TestParseResponseWithSources(t *testing.T) {
 
 			// Check sources
 			if len(result.Sources) != len(tt.expectedSources) {
-				t.Errorf("Expected %d sources, got %d. Expected: %v, Got: %v", len(tt.expectedSources), len(result.Sources), tt.expectedSources, result.Sources)
+				t.Errorf("Expected %d sources, got %d. Expected: %v, Got: %v", len(tt.expectedSources),
+					len(result.Sources), tt.expectedSources, result.Sources)
 			} else {
 				for _, expected := range tt.expectedSources {
 					found := false
@@ -1619,9 +1675,10 @@ func TestExtractURLFromWebResult(t *testing.T) {
 		expected  string
 	}{
 		{
-			name:      "Full web result with title, snippet, and URL",
-			webResult: "Title: AWS EC2 Updates\nSnippet: Latest EC2 instance types and pricing\nURL: https://aws.amazon.com/ec2/updates",
-			expected:  "https://aws.amazon.com/ec2/updates",
+			name: "Full web result with title, snippet, and URL",
+			webResult: "Title: AWS EC2 Updates\nSnippet: Latest EC2 instance types and pricing\n" +
+				"URL: https://aws.amazon.com/ec2/updates",
+			expected: "https://aws.amazon.com/ec2/updates",
 		},
 		{
 			name:      "Web result with title and URL only",
@@ -1639,14 +1696,16 @@ func TestExtractURLFromWebResult(t *testing.T) {
 			expected:  "",
 		},
 		{
-			name:      "Web result with multiple lines and URL",
-			webResult: "Title: Multi-line Title\nWith Additional Content\nSnippet: This is a longer snippet\nwith multiple lines\nURL: https://example.com/resource",
-			expected:  "https://example.com/resource",
+			name: "Web result with multiple lines and URL",
+			webResult: "Title: Multi-line Title\nWith Additional Content\nSnippet: This is a longer snippet\n" +
+				"with multiple lines\nURL: https://example.com/resource",
+			expected: "https://example.com/resource",
 		},
 		{
-			name:      "Web result with URL in different position",
-			webResult: "URL: https://docs.aws.amazon.com/\nTitle: AWS Documentation\nSnippet: Official AWS docs",
-			expected:  "https://docs.aws.amazon.com/",
+			name: "Web result with URL in different position",
+			webResult: "URL: https://docs.aws.amazon.com/\nTitle: AWS Documentation\n" +
+				"Snippet: Official AWS docs",
+			expected: "https://docs.aws.amazon.com/",
 		},
 		{
 			name:      "Empty web result",
@@ -1654,9 +1713,10 @@ func TestExtractURLFromWebResult(t *testing.T) {
 			expected:  "",
 		},
 		{
-			name:      "Web result with URL containing parameters",
-			webResult: "Title: Search Results\nURL: https://example.com/search?q=aws&type=docs\nSnippet: Search results for AWS documentation",
-			expected:  "https://example.com/search?q=aws&type=docs",
+			name: "Web result with URL containing parameters",
+			webResult: "Title: Search Results\nURL: https://example.com/search?q=aws&type=docs\n" +
+				"Snippet: Search results for AWS documentation",
+			expected: "https://example.com/search?q=aws&type=docs",
 		},
 	}
 

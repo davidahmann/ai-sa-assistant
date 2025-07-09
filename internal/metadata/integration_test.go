@@ -23,21 +23,13 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestIntegrationWithRealMetadata(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
+// setupRealMetadataStore creates a store and loads real metadata from file
+func setupRealMetadataStore(t *testing.T) (*Store, []Entry) {
 	logger := zap.NewNop()
 	store, err := NewStore(":memory:", logger)
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer func() {
-		if closeErr := store.Close(); closeErr != nil {
-			t.Logf("Failed to close store: %v", closeErr)
-		}
-	}()
 
 	// Find the actual metadata.json file
 	metadataPath := filepath.Join("..", "..", "docs", "metadata.json")
@@ -62,85 +54,65 @@ func TestIntegrationWithRealMetadata(t *testing.T) {
 	}
 
 	t.Logf("Loaded %d metadata entries from real file", len(entries))
+	return store, entries
+}
 
-	// Test filtering for AWS documents
-	awsFilters := FilterOptions{
+// runFilterTestAndLog runs a filter test and logs the results
+func runFilterTestAndLog(t *testing.T, store *Store, testName string, filters FilterOptions) []string {
+	docIDs, err := store.FilterDocuments(filters)
+	if err != nil {
+		t.Fatalf("Failed to filter %s documents: %v", testName, err)
+	}
+	t.Logf("Found %d %s documents", len(docIDs), testName)
+	return docIDs
+}
+
+func TestIntegrationWithRealMetadata(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	store, entries := setupRealMetadataStore(t)
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
+		}
+	}()
+
+	// Test basic platform filtering
+	runFilterTestAndLog(t, store, "AWS", FilterOptions{
 		Platform:   "aws",
 		AndFilters: true,
-	}
+	})
 
-	awsDocs, err := store.FilterDocuments(awsFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter AWS documents: %v", err)
-	}
-
-	t.Logf("Found %d AWS documents", len(awsDocs))
-
-	// Test filtering for Azure documents
-	azureFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "Azure", FilterOptions{
 		Platform:   "azure",
 		AndFilters: true,
-	}
+	})
 
-	azureDocs, err := store.FilterDocuments(azureFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter Azure documents: %v", err)
-	}
-
-	t.Logf("Found %d Azure documents", len(azureDocs))
-
-	// Test filtering for migration scenario
-	migrationFilters := FilterOptions{
+	// Test scenario filtering
+	runFilterTestAndLog(t, store, "migration", FilterOptions{
 		Scenario:   "migration",
 		AndFilters: true,
-	}
+	})
 
-	migrationDocs, err := store.FilterDocuments(migrationFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter migration documents: %v", err)
-	}
-
-	t.Logf("Found %d migration documents", len(migrationDocs))
-
-	// Test filtering for disaster recovery scenario
-	drFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "disaster recovery", FilterOptions{
 		Scenario:   "disaster-recovery",
 		AndFilters: true,
-	}
-
-	drDocs, err := store.FilterDocuments(drFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter disaster recovery documents: %v", err)
-	}
-
-	t.Logf("Found %d disaster recovery documents", len(drDocs))
+	})
 
 	// Test complex filtering (AWS AND migration)
-	complexFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "AWS migration", FilterOptions{
 		Platform:   "aws",
 		Scenario:   "migration",
 		AndFilters: true,
-	}
-
-	complexDocs, err := store.FilterDocuments(complexFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter AWS migration documents: %v", err)
-	}
-
-	t.Logf("Found %d AWS migration documents", len(complexDocs))
+	})
 
 	// Test tag filtering
-	tagFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "documents with 'migration' tag", FilterOptions{
 		Tags:       []string{"migration"},
 		AndFilters: true,
-	}
-
-	tagDocs, err := store.FilterDocuments(tagFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter by tags: %v", err)
-	}
-
-	t.Logf("Found %d documents with 'migration' tag", len(tagDocs))
+	})
 
 	// Test statistics
 	stats, err := store.GetStats()
@@ -156,134 +128,61 @@ func TestIntegrationWithRealMetadata(t *testing.T) {
 			stats["total_documents"], len(entries))
 	}
 
-	// Test Demo Scenario 1: AWS Lift-and-Shift
-	demo1Filters := FilterOptions{
+	// Test Demo Scenarios
+	runFilterTestAndLog(t, store, "Demo 1 (AWS Lift-and-Shift)", FilterOptions{
 		Platform:   "aws",
 		Scenario:   "migration",
 		AndFilters: true,
-	}
+	})
 
-	demo1Docs, err := store.FilterDocuments(demo1Filters)
-	if err != nil {
-		t.Fatalf("Failed to filter Demo 1 documents: %v", err)
-	}
-
-	t.Logf("Demo 1 (AWS Lift-and-Shift) found %d documents", len(demo1Docs))
-
-	// Test Demo Scenario 2: Azure Hybrid Architecture
-	demo2Filters := FilterOptions{
+	runFilterTestAndLog(t, store, "Demo 2 (Azure Hybrid Architecture)", FilterOptions{
 		Platform:   "azure",
 		Scenario:   "hybrid",
 		AndFilters: true,
-	}
+	})
 
-	demo2Docs, err := store.FilterDocuments(demo2Filters)
-	if err != nil {
-		t.Fatalf("Failed to filter Demo 2 documents: %v", err)
-	}
-
-	t.Logf("Demo 2 (Azure Hybrid Architecture) found %d documents", len(demo2Docs))
-
-	// Test Demo Scenario 3: Azure Disaster Recovery
-	demo3Filters := FilterOptions{
+	runFilterTestAndLog(t, store, "Demo 3 (Azure Disaster Recovery)", FilterOptions{
 		Platform:   "azure",
 		Scenario:   "disaster-recovery",
 		AndFilters: true,
-	}
+	})
 
-	demo3Docs, err := store.FilterDocuments(demo3Filters)
-	if err != nil {
-		t.Fatalf("Failed to filter Demo 3 documents: %v", err)
-	}
-
-	t.Logf("Demo 3 (Azure Disaster Recovery) found %d documents", len(demo3Docs))
-
-	// Test Demo Scenario 4: Security Compliance
-	demo4Filters := FilterOptions{
+	runFilterTestAndLog(t, store, "Demo 4 (Security Compliance)", FilterOptions{
 		Scenario:   "security-compliance",
 		AndFilters: true,
-	}
-
-	demo4Docs, err := store.FilterDocuments(demo4Filters)
-	if err != nil {
-		t.Fatalf("Failed to filter Demo 4 documents: %v", err)
-	}
-
-	t.Logf("Demo 4 (Security Compliance) found %d documents", len(demo4Docs))
+	})
 
 	// Test filtering by document type
-	playbookFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "playbook", FilterOptions{
 		Type:       "playbook",
 		AndFilters: true,
-	}
+	})
 
-	playbookDocs, err := store.FilterDocuments(playbookFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter playbook documents: %v", err)
-	}
-
-	t.Logf("Found %d playbook documents", len(playbookDocs))
-
-	runbookFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "runbook", FilterOptions{
 		Type:       "runbook",
 		AndFilters: true,
-	}
+	})
 
-	runbookDocs, err := store.FilterDocuments(runbookFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter runbook documents: %v", err)
-	}
-
-	t.Logf("Found %d runbook documents", len(runbookDocs))
-
-	sowFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "SOW", FilterOptions{
 		Type:       "sow",
 		AndFilters: true,
-	}
-
-	sowDocs, err := store.FilterDocuments(sowFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter SOW documents: %v", err)
-	}
-
-	t.Logf("Found %d SOW documents", len(sowDocs))
+	})
 
 	// Test filtering by difficulty
-	beginnerFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "beginner", FilterOptions{
 		Difficulty: "beginner",
 		AndFilters: true,
-	}
+	})
 
-	beginnerDocs, err := store.FilterDocuments(beginnerFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter beginner documents: %v", err)
-	}
-
-	t.Logf("Found %d beginner documents", len(beginnerDocs))
-
-	intermediateFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "intermediate", FilterOptions{
 		Difficulty: "intermediate",
 		AndFilters: true,
-	}
+	})
 
-	intermediateDocs, err := store.FilterDocuments(intermediateFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter intermediate documents: %v", err)
-	}
-
-	t.Logf("Found %d intermediate documents", len(intermediateDocs))
-
-	advancedFilters := FilterOptions{
+	runFilterTestAndLog(t, store, "advanced", FilterOptions{
 		Difficulty: "advanced",
 		AndFilters: true,
-	}
-
-	advancedDocs, err := store.FilterDocuments(advancedFilters)
-	if err != nil {
-		t.Fatalf("Failed to filter advanced documents: %v", err)
-	}
-
-	t.Logf("Found %d advanced documents", len(advancedDocs))
+	})
 
 	// Test specific document retrieval
 	for _, docID := range []string{"aws-lift-shift-guide.md", "azure-disaster-recovery.md", "security-compliance.md"} {
@@ -315,7 +214,7 @@ func TestIntegrationPersistence(t *testing.T) {
 		t.Fatalf("Failed to create store: %v", err)
 	}
 
-	entry := MetadataEntry{
+	entry := Entry{
 		DocID:         "test-persistence.md",
 		Title:         "Test Persistence",
 		Platform:      "aws",
@@ -383,7 +282,7 @@ func TestIntegrationMigration(t *testing.T) {
 		t.Fatalf("Failed to create store: %v", err)
 	}
 
-	entry := MetadataEntry{
+	entry := Entry{
 		DocID:         "migration-test.md",
 		Title:         "Migration Test",
 		Platform:      "aws",
@@ -450,10 +349,10 @@ func TestIntegrationBulkOperations(t *testing.T) {
 
 	// Create a large dataset
 	const numEntries = 1000
-	entries := make([]MetadataEntry, numEntries)
+	entries := make([]Entry, numEntries)
 
 	for i := 0; i < numEntries; i++ {
-		entries[i] = MetadataEntry{
+		entries[i] = Entry{
 			DocID:         fmt.Sprintf("bulk-test-%d.md", i),
 			Title:         fmt.Sprintf("Bulk Test Document %d", i),
 			Platform:      []string{"aws", "azure", "multi-cloud"}[i%3],
@@ -528,17 +427,17 @@ func TestIntegrationErrorHandling(t *testing.T) {
 	tmpDir := t.TempDir()
 	readOnlyPath := filepath.Join(tmpDir, "readonly")
 
-	err = os.MkdirAll(readOnlyPath, 0755)
+	err = os.MkdirAll(readOnlyPath, 0750)
 	if err != nil {
 		t.Fatalf("Failed to create readonly directory: %v", err)
 	}
 
-	err = os.Chmod(readOnlyPath, 0444)
+	err = os.Chmod(readOnlyPath, 0400)
 	if err != nil {
 		t.Logf("Failed to make directory readonly: %v", err)
 	} else {
 		defer func() {
-			_ = os.Chmod(readOnlyPath, 0755) // Restore permissions for cleanup
+			_ = os.Chmod(readOnlyPath, 0700) // #nosec G302 - restoring directory permissions for cleanup
 		}()
 
 		dbPath := filepath.Join(readOnlyPath, "readonly.db")
@@ -566,7 +465,7 @@ func TestIntegrationConcurrency(t *testing.T) {
 	}()
 
 	// Ensure schema is initialized by adding a test entry first
-	testEntry := MetadataEntry{
+	testEntry := Entry{
 		DocID:         "init-test.md",
 		Title:         "Init Test",
 		Platform:      "aws",
@@ -593,7 +492,7 @@ func TestIntegrationConcurrency(t *testing.T) {
 			defer func() { done <- true }()
 
 			for j := 0; j < entriesPerGoroutine; j++ {
-				entry := MetadataEntry{
+				entry := Entry{
 					DocID:         fmt.Sprintf("concurrent-%d-%d.md", goroutineID, j),
 					Title:         fmt.Sprintf("Concurrent Document %d-%d", goroutineID, j),
 					Platform:      "aws",
