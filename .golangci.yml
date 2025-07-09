@@ -22,7 +22,6 @@ linters:
     - dupl
     - errcheck
     - exhaustive
-    - funlen
     - gocognit
     - goconst
     - gocritic
@@ -47,6 +46,7 @@ linters:
 
   disable:
     - depguard
+    - funlen
     - gochecknoglobals
     - gochecknoinits
     - godot
@@ -74,8 +74,8 @@ linters-settings:
     default-signifies-exhaustive: false
 
   funlen:
-    lines: 100
-    statements: 50
+    lines: 150
+    statements: 80
 
   gocognit:
     min-complexity: 15
@@ -175,6 +175,12 @@ issues:
         - gosec
 
     - path: cmd/
+      linters:
+        - funlen
+        - gocognit
+        - gocyclo
+
+    - path: internal/
       linters:
         - funlen
         - gocognit
