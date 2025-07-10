@@ -22,6 +22,27 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
+	// Clear environment variables to ensure test isolation
+	oldAPIKey := os.Getenv("OPENAI_API_KEY")
+	oldChromaURL := os.Getenv("CHROMA_URL")
+	oldTeamsURL := os.Getenv("TEAMS_WEBHOOK_URL")
+
+	_ = os.Unsetenv("OPENAI_API_KEY")
+	_ = os.Unsetenv("CHROMA_URL")
+	_ = os.Unsetenv("TEAMS_WEBHOOK_URL")
+
+	defer func() {
+		if oldAPIKey != "" {
+			_ = os.Setenv("OPENAI_API_KEY", oldAPIKey)
+		}
+		if oldChromaURL != "" {
+			_ = os.Setenv("CHROMA_URL", oldChromaURL)
+		}
+		if oldTeamsURL != "" {
+			_ = os.Setenv("TEAMS_WEBHOOK_URL", oldTeamsURL)
+		}
+	}()
+
 	// Create temporary config file
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -61,6 +82,13 @@ feedback:
   storage_type: "file"
   file_path: "./test_feedback.log"
   db_path: "./test_feedback.db"
+session:
+  storage_type: "memory"
+  default_ttl_minutes: 30
+  max_sessions: 1000
+  cleanup_interval_minutes: 5
+  max_history_length: 20
+  enable_conversation_api: true
 `
 
 	err := os.WriteFile(configPath, []byte(configContent), 0600)
@@ -210,6 +238,14 @@ func TestConfigValidation(t *testing.T) {
 				Feedback: FeedbackConfig{
 					StorageType: "file",
 					FilePath:    "./feedback.log",
+				},
+				Session: SessionConfig{
+					StorageType:           "memory",
+					DefaultTTL:            30,
+					MaxSessions:           1000,
+					CleanupInterval:       5,
+					MaxHistoryLength:      20,
+					EnableConversationAPI: true,
 				},
 			},
 			expectedError: false,
@@ -511,6 +547,14 @@ func TestMaskSensitiveValues(t *testing.T) {
 		},
 		Teams: TeamsConfig{
 			WebhookURL: "https://test.webhook.com/secret-token-123456789", // pragma: allowlist secret
+		},
+		Session: SessionConfig{
+			StorageType:           "memory",
+			DefaultTTL:            30,
+			MaxSessions:           1000,
+			CleanupInterval:       5,
+			MaxHistoryLength:      20,
+			EnableConversationAPI: true,
 		},
 	}
 

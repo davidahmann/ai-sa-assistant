@@ -26,6 +26,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/ai-sa-assistant/internal/chroma"
+	"github.com/your-org/ai-sa-assistant/internal/classifier"
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/health"
 	"github.com/your-org/ai-sa-assistant/internal/metadata"
@@ -74,6 +75,7 @@ type ServiceDependencies struct {
 	MetadataStore *metadata.Store
 	ChromaClient  *chroma.Client
 	OpenAIClient  *openai.Client
+	Classifier    *classifier.QueryClassifier
 	Logger        *zap.Logger
 	Config        *config.Config
 }
@@ -234,12 +236,16 @@ func initializeDependencies(cfg *config.Config, logger *zap.Logger, testMode boo
 		}
 	}
 
+	// Initialize query classifier
+	queryClassifier := classifier.NewQueryClassifier()
+
 	logger.Info("Service dependencies initialized successfully")
 
 	return &ServiceDependencies{
 		MetadataStore: metadataStore,
 		ChromaClient:  chromaClient,
 		OpenAIClient:  openaiClient,
+		Classifier:    queryClassifier,
 		Logger:        logger,
 		Config:        cfg,
 	}, nil
@@ -583,7 +589,36 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Step 2: Apply metadata filters
+		// Step 2: Classify query for cloud-related topics
+		classificationResult := deps.Classifier.ClassifyQuery(searchReq.Query)
+		if !classificationResult.IsCloudRelated {
+			deps.Logger.Info("Query rejected - not cloud-related",
+				zap.String("query", searchReq.Query),
+				zap.String("category", classificationResult.Category),
+				zap.Float64("confidence", classificationResult.Confidence),
+				zap.String("rejection_reason", classificationResult.RejectionReason),
+			)
+
+			rejectionMessage := deps.Classifier.GetRejectionMessage(classificationResult)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": rejectionMessage,
+				"classification": gin.H{
+					"is_cloud_related": false,
+					"category":         classificationResult.Category,
+					"confidence":       classificationResult.Confidence,
+					"rejection_reason": classificationResult.RejectionReason,
+				},
+			})
+			return
+		}
+
+		deps.Logger.Info("Query accepted - cloud-related",
+			zap.String("query", searchReq.Query),
+			zap.String("category", classificationResult.Category),
+			zap.Float64("confidence", classificationResult.Confidence),
+		)
+
+		// Step 3: Apply metadata filters
 		filteredDocIDs, err := applyMetadataFilters(searchReq, deps)
 		if err != nil {
 			deps.Logger.Error("Failed to filter documents", zap.Error(err))
@@ -593,7 +628,7 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Step 3: Generate query embedding
+		// Step 4: Generate query embedding
 		queryEmbedding, err := generateQueryEmbedding(ctx, searchReq.Query, deps)
 		if err != nil {
 			deps.Logger.Error("Failed to generate query embedding", zap.Error(err))
@@ -603,7 +638,7 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Step 4: Perform vector search with fallback
+		// Step 5: Perform vector search with fallback
 		searchResults, fallbackTriggered, fallbackReason, err := performVectorSearchWithFallback(
 			ctx, queryEmbedding, filteredDocIDs, deps)
 		if err != nil {
@@ -614,7 +649,7 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Step 5: Filter results by confidence and format response
+		// Step 6: Filter results by confidence and format response
 		response := buildSearchResponse(searchResults, searchReq.Query, fallbackTriggered, fallbackReason, deps)
 
 		processingTime := time.Since(start)

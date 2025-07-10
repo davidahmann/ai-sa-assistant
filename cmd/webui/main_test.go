@@ -286,6 +286,9 @@ func TestGetOrCreateConversation(t *testing.T) {
 	conv2 := server.getOrCreateConversation(conv1.ID)
 	assert.Equal(t, conv1.ID, conv2.ID)
 
+	// Add small delay to ensure different timestamp-based IDs
+	time.Sleep(1 * time.Millisecond)
+
 	// Test creating new conversation with non-existent ID
 	conv3 := server.getOrCreateConversation("nonexistent")
 	assert.NotEmpty(t, conv3.ID)

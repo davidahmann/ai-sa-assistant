@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/your-org/ai-sa-assistant/internal/classifier"
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/conversation"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
@@ -119,6 +120,9 @@ func main() {
 	// Initialize conversation manager
 	conversationManager := conversation.NewManager(sessionManager, logger)
 
+	// Initialize query classifier
+	queryClassifier := classifier.NewQueryClassifier()
+
 	// Test diagram renderer connection
 	const testTimeout = 10 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
@@ -145,7 +149,7 @@ func main() {
 
 	// Teams webhook endpoint
 	router.POST("/teams-webhook", func(c *gin.Context) {
-		handleTeamsWebhook(c, cfg, orchestrator, messageParser, webhookValidator, logger)
+		handleTeamsWebhook(c, cfg, orchestrator, messageParser, webhookValidator, queryClassifier, logger)
 	})
 
 	// Feedback endpoint
@@ -178,6 +182,7 @@ func handleTeamsWebhook(
 	orchestrator *teams.Orchestrator,
 	messageParser *teams.MessageParser,
 	webhookValidator *teams.WebhookValidator,
+	queryClassifier *classifier.QueryClassifier,
 	logger *zap.Logger,
 ) {
 	// Read request body for validation
@@ -231,6 +236,69 @@ func handleTeamsWebhook(
 		c.JSON(http.StatusOK, gin.H{"message": "Message acknowledged but not processed"})
 		return
 	}
+
+	// Classify query for cloud-related topics
+	classificationResult := queryClassifier.ClassifyQuery(parsedQuery.Query)
+	if !classificationResult.IsCloudRelated {
+		logger.Info("Query rejected - not cloud-related",
+			zap.String("query", parsedQuery.Query),
+			zap.String("user_id", parsedQuery.UserID),
+			zap.String("category", classificationResult.Category),
+			zap.Float64("confidence", classificationResult.Confidence),
+			zap.String("rejection_reason", classificationResult.RejectionReason),
+		)
+
+		// Send rejection message back to Teams
+		rejectionMessage := queryClassifier.GetRejectionMessage(classificationResult)
+		cardJSON, cardErr := teams.GenerateSimpleCard("Topic Not Supported", rejectionMessage)
+		if cardErr != nil {
+			logger.Error("Failed to generate rejection card", zap.Error(cardErr))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process rejection"})
+			return
+		}
+
+		payload, cardErr := teams.CreateTeamsPayload(cardJSON)
+		if cardErr != nil {
+			logger.Error("Failed to create rejection payload", zap.Error(cardErr))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process rejection"})
+			return
+		}
+
+		req, cardErr := http.NewRequest("POST", cfg.Teams.WebhookURL, strings.NewReader(payload))
+		if cardErr != nil {
+			logger.Error("Failed to create rejection webhook request", zap.Error(cardErr))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process rejection"})
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{}
+		resp, cardErr := client.Do(req)
+		if cardErr != nil {
+			logger.Error("Failed to send rejection webhook", zap.Error(cardErr))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send rejection"})
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Query rejected - not cloud-related",
+			"classification": gin.H{
+				"is_cloud_related": false,
+				"category":         classificationResult.Category,
+				"confidence":       classificationResult.Confidence,
+				"rejection_reason": classificationResult.RejectionReason,
+			},
+		})
+		return
+	}
+
+	logger.Info("Query accepted - cloud-related",
+		zap.String("query", parsedQuery.Query),
+		zap.String("user_id", parsedQuery.UserID),
+		zap.String("category", classificationResult.Category),
+		zap.Float64("confidence", classificationResult.Confidence),
+	)
 
 	// Extract user ID for session management
 	userID := session.ExtractUserIDFromContext(parsedQuery.UserID, c.GetHeader("X-User-ID"), c.ClientIP())

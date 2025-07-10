@@ -344,6 +344,27 @@ metadata:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Clear environment variables to ensure test isolation
+			oldAPIKey := os.Getenv("OPENAI_API_KEY")
+			oldChromaURL := os.Getenv("CHROMA_URL")
+			oldTeamsURL := os.Getenv("TEAMS_WEBHOOK_URL")
+
+			_ = os.Unsetenv("OPENAI_API_KEY")
+			_ = os.Unsetenv("CHROMA_URL")
+			_ = os.Unsetenv("TEAMS_WEBHOOK_URL")
+
+			defer func() {
+				if oldAPIKey != "" {
+					_ = os.Setenv("OPENAI_API_KEY", oldAPIKey)
+				}
+				if oldChromaURL != "" {
+					_ = os.Setenv("CHROMA_URL", oldChromaURL)
+				}
+				if oldTeamsURL != "" {
+					_ = os.Setenv("TEAMS_WEBHOOK_URL", oldTeamsURL)
+				}
+			}()
+
 			cfg, err := config.Load(tt.configPath)
 
 			if tt.expectedError {
