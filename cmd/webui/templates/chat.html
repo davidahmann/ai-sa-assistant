@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>AI SA Assistant</h2>
+                <button class="new-conversation-btn" id="newConversationBtn">
+                    <span class="icon">+</span>
+                    New Conversation
+                </button>
+            </div>
+
+            <div class="conversations-list" id="conversationsList">
+                <!-- Conversations will be loaded here -->
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <span class="user-name">Solutions Architect</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile sidebar overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Main Chat Area -->
+        <div class="main-content">
+            <!-- Header -->
+            <div class="chat-header">
+                <button class="mobile-menu-btn" id="mobileMenuBtn">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+                <h3 class="conversation-title" id="conversationTitle">New Conversation</h3>
+                <div class="header-actions">
+                    <button class="header-btn" id="clearChatBtn" title="Clear Chat">
+                        <span class="icon">🗑️</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages Container -->
+            <div class="messages-container" id="messagesContainer">
+                <div class="welcome-message">
+                    <h2>Welcome to AI SA Assistant</h2>
+                    <p>Ask me about cloud architecture, migrations, security compliance, or disaster recovery planning.</p>
+                    <div class="example-questions">
+                        <h4>Try asking:</h4>
+                        <button class="example-btn" data-message="Generate a high-level lift-and-shift plan for migrating 120 on-prem Windows and Linux VMs to AWS">
+                            AWS Migration Plan
+                        </button>
+                        <button class="example-btn" data-message="Design a DR solution in Azure for critical workloads with RTO = 2 hours and RPO = 15 minutes">
+                            Azure DR Solution
+                        </button>
+                        <button class="example-btn" data-message="Outline a hybrid reference architecture connecting our on-prem VMware environment to Azure">
+                            Azure Hybrid Architecture
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-container">
+                <div class="input-area">
+                    <textarea
+                        id="messageInput"
+                        placeholder="Ask about cloud architecture, migrations, security..."
+                        rows="1"
+                        maxlength="2000"
+                    ></textarea>
+                    <button class="send-btn" id="sendBtn" disabled>
+                        <span class="icon">↑</span>
+                    </button>
+                </div>
+                <div class="input-footer">
+                    <span class="character-count" id="characterCount">0/2000</span>
+                    <span class="input-hint">Press Enter to send, Shift+Enter for new line</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div class="loading-indicator" id="loadingIndicator">
+        <div class="spinner"></div>
+        <span>AI is thinking...</span>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

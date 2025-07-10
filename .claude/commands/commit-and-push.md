@@ -1,12 +1,15 @@
 # Quick checks before staging
+
 git status
 git diff --cached --check
 git log --oneline -3
 
 # Stage everything in current directory
+
 git add .
 
 # Commit using Conventional Commits format
+
 git commit -m "fix(api): handle null user ID on login
 
 - add fallback for missing user context
@@ -14,10 +17,12 @@ git commit -m "fix(api): handle null user ID on login
 - update response error codes"
 
 # Push to upstream branch
+
 git log --oneline -1
 git push --set-upstream origin your-branch-name
 
 # Confirm clean working state
+
 git status  # should report: 'working tree clean'
 
 ---

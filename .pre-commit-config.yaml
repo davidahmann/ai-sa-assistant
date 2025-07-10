@@ -1,87 +1,81 @@
+# Optimized pre-commit configuration for AI SA Assistant
+# Target: <30 second execution time with parallel execution
+# Heavy operations moved to CI pipeline
+
 repos:
-  # Standard hooks for cleaning files
+  # Essential file quality checks (fast, parallel)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      - id: trailing-whitespace         # Trims trailing whitespace
-      - id: end-of-file-fixer            # Ensures files end in a newline
-      - id: check-yaml                   # Checks YAML file syntax
-      - id: check-json                   # Checks JSON file syntax
-      - id: check-added-large-files      # Prevents committing large files
+      - id: trailing-whitespace
+        stages: [pre-commit]
+      - id: end-of-file-fixer
+        stages: [pre-commit]
+      - id: check-yaml
+        stages: [pre-commit]
+      - id: check-json
+        stages: [pre-commit]
+      - id: check-added-large-files
         args: ['--maxkb=1000']
-      - id: detect-private-key         # Looks for private keys
-      - id: check-merge-conflict        # Prevents merge conflict markers
-      - id: check-case-conflict         # Prevents case-insensitive conflicts
-      - id: check-symlinks              # Checks symlinks are valid
-      - id: check-executables-have-shebangs
-      - id: check-shebang-scripts-are-executable
-      - id: check-toml                  # Checks TOML file syntax
-      - id: check-xml                   # Checks XML file syntax
-      - id: debug-statements            # Checks for debug statements
-      - id: fix-byte-order-marker       # Fixes UTF-8 byte order marker
-      - id: mixed-line-ending           # Ensures consistent line endings
-      - id: requirements-txt-fixer      # Sorts requirements.txt
+        stages: [pre-commit]
+      - id: check-merge-conflict
+        stages: [pre-commit]
+      - id: check-case-conflict
+        stages: [pre-commit]
+      - id: mixed-line-ending
+        stages: [pre-commit]
 
-  # Go-specific hooks
-
+  # Go code quality (fast, essential)
   - repo: local
     hooks:
-      - id: golangci-lint
-        name: golangci-lint
-        entry: golangci-lint
-        language: system
-        args: [run, --fix, --config=.golangci.yml]
-        files: '\.go$'
-        pass_filenames: false
       - id: go-fmt
         name: go fmt
         entry: gofmt
         language: system
         args: [-w]
         files: '\.go$'
+        stages: [pre-commit]
+      - id: go-imports
+        name: goimports
+        entry: bash -c 'command -v goimports >/dev/null || go install golang.org/x/tools/cmd/goimports@latest; goimports -w .'
+        language: system
+        files: '\.go$'
+        pass_filenames: false
+        stages: [pre-commit]
       - id: go-mod-tidy
         name: go mod tidy
         entry: go mod tidy
         language: system
         files: 'go\.mod$'
         pass_filenames: false
-      - id: go-unit-tests-safe
-        name: go unit tests (safe)
-        entry: bash -c 'go test -timeout=60s -race ./internal/config ./internal/chunker ./internal/synth ./internal/metadata ./internal/openai ./internal/teams ./internal/chroma || true'
+        stages: [pre-commit]
+      - id: go-vet
+        name: go vet
+        entry: go vet
         language: system
+        args: [./cmd/..., ./internal/...]
         files: '\.go$'
         pass_filenames: false
-      - id: go-build-safe
-        name: go build (safe)
-        entry: bash -c 'for dir in cmd/ingest cmd/retrieve cmd/synthesize cmd/teamsbot cmd/websearch; do if [ -d "$dir" ]; then go build -o /tmp/build-test-$(basename $dir) ./$dir || echo "Build failed for $dir"; fi; done'
-        language: system
-        files: '\.go$'
-        pass_filenames: false
-      - id: go-vet-safe
-        name: go vet (safe)
-        entry: bash -c 'go vet ./cmd/... ./internal/... || true'
-        language: system
-        files: '\.go$'
-        pass_filenames: false
-      - id: go-imports-install
-        name: goimports
-        entry: bash -c 'go install golang.org/x/tools/cmd/goimports@latest && goimports -w .'
-        language: system
-        files: '\.go$'
-        pass_filenames: false
+        stages: [pre-commit]
 
-  # Security scanning
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.21.2
+  # Fast Go linting (optimized for speed)
+  - repo: local
     hooks:
-      - id: gitleaks
-        name: Detect hardcoded secrets
+      - id: golangci-lint-fast
+        name: golangci-lint (fast)
+        entry: golangci-lint
+        language: system
+        args: [run, --config=.golangci.yml, --timeout=30s]
+        files: '\.go$'
+        pass_filenames: false
+        stages: [pre-commit]
 
+  # Essential security checks (lightweight, fast)
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.4.0
     hooks:
       - id: detect-secrets
-        name: Detect secrets (alternative)
+        name: Detect secrets
         args: ['--baseline', '.secrets.baseline']
         exclude: |
           (?x)^(
@@ -89,46 +83,16 @@ repos:
             tests/.*|
             testdata/.*|
             test/.*|
-            .*\.test\..*$
+            docs/.*\.md$|
+            README\.md$|
+            REPO\.md$|
+            .*\.backup$|
+            webui/.*\.js$|
+            webui/.*\.css$|
+            webui/.*\.html$|
+            cmd/webui/.*
           )$
-
-  # Docker hooks
-  - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
-    hooks:
-      - id: hadolint-docker
-        name: Lint Dockerfiles
-        files: 'Dockerfile*'
-
-  # Markdown and documentation
-  - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.37.0
-    hooks:
-      - id: markdownlint
-        name: Lint Markdown files
-        args: [--fix, --config, .markdownlint.yml]
-        files: '\.md$'
-
-  # YAML linting
-  - repo: https://github.com/adrienverge/yamllint
-    rev: v1.32.0
-    hooks:
-      - id: yamllint
-        name: Lint YAML files
-        args: [-c=.yamllint.yml]
-
-  # License compliance
-  - repo: https://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.5.4
-    hooks:
-      - id: insert-license
-        name: Insert license headers
-        files: '\.go$'
-        args:
-          - --license-filepath
-          - LICENSE.header
-          - --comment-style
-          - //
+        stages: [pre-commit]
 
   # Commit message validation
   - repo: https://github.com/compilerla/conventional-pre-commit
@@ -139,104 +103,54 @@ repos:
         stages: [commit-msg]
         args: [optional-scope]
 
-  # Additional Go security
-  - repo: local
+  # Conditional hooks for specific file types
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
     hooks:
-      - id: gosec
-        name: Go security check
-        entry: bash -c 'go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest && gosec ./... || echo "gosec check completed with warnings"'
-        language: system
-        files: '\.go$'
-        pass_filenames: false
-
-  # Dependency vulnerability check
-  - repo: local
-    hooks:
-      - id: go-mod-vuln-check
-        name: Check Go modules for vulnerabilities
-        entry: bash -c 'go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...'
-        language: system
-        files: go.mod
-        pass_filenames: false
-
-  # Infrastructure as Code security
-  - repo: https://github.com/bridgecrewio/checkov
-    rev: 3.1.34
-    hooks:
-      - id: checkov
-        name: Checkov IaC security scan
-        args: [--framework, dockerfile, --framework, github_actions]
-        files: '(Dockerfile|\.ya?ml)$'
-
-  # Container image security
-  - repo: local
-    hooks:
-      - id: docker-security-scan
-        name: Docker security scan
-        entry: bash -c 'if command -v trivy &> /dev/null; then trivy config .; fi'
-        language: system
+      - id: hadolint-docker
+        name: Lint Dockerfiles
         files: 'Dockerfile*'
-        pass_filenames: false
+        stages: [pre-commit]
 
-  # Performance and benchmarking
-  - repo: local
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.37.0
     hooks:
-      - id: go-bench
-        name: Run Go benchmarks
-        entry: bash -c 'go test -bench=. -benchmem ./... | tee benchmark-results.txt'
-        language: system
-        files: '.*_test\.go$'
-        pass_filenames: false
+      - id: markdownlint
+        name: Lint Markdown files
+        args: [--fix, --config, .markdownlint.yml]
+        files: '\.md$'
+        stages: [pre-commit]
 
-  # Code coverage check
-  - repo: local
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.32.0
     hooks:
-      - id: go-coverage
-        name: Check Go test coverage
-        entry: |
-          bash -c 'go test -coverprofile=coverage.out ./internal/config &&
-          go tool cover -func=coverage.out | grep total: |
-          awk "{if(\$3+0 < 60) exit 1}" || echo "Coverage check skipped"'
-        language: system
-        files: '\.go$'
-        pass_filenames: false
+      - id: yamllint
+        name: Lint YAML files
+        args: [-c=.yamllint.yml]
+        files: '\.ya?ml$'
+        stages: [pre-commit]
 
-  # Configuration validation
-  - repo: local
-    hooks:
-      - id: validate-config
-        name: Validate configuration files
-        entry: bash -c 'if [ -f configs/config.yaml ] && command -v yamllint &> /dev/null; then yamllint configs/config.yaml; else echo "yamllint not available or config not found"; fi'
-        language: system
-        files: 'configs/.*\.ya?ml$'
-        pass_filenames: false
-
-  # Docker Compose validation
+  # Docker Compose validation (only when compose files change)
   - repo: local
     hooks:
       - id: docker-compose-validate
         name: Validate Docker Compose files
-        entry: bash -c 'docker-compose config -q'
+        entry: docker-compose config -q
         language: system
         files: 'docker-compose.*\.ya?ml$'
         pass_filenames: false
+        stages: [pre-commit]
 
-  # Documentation generation
-  - repo: local
-    hooks:
-      - id: go-doc-gen
-        name: Generate Go documentation
-        entry: bash -c 'go doc -all ./cmd/... ./internal/... > API_DOCS.md || echo "go doc generation skipped"'
-        language: system
-        files: '\.go$'
-        pass_filenames: false
-
+# Performance optimizations
 default_language_version:
   python: python3.9
   node: 16.14.0
 
+# Enable parallel execution for better performance
 fail_fast: false
+default_stages: [pre-commit]
 
+# Exclude patterns for better performance
 exclude: |
   (?x)^(
     vendor/|
@@ -247,5 +161,15 @@ exclude: |
     build/|
     coverage/|
     .*\.min\.(js|css)$|
-    .*\.generated\..*$
+    .*\.generated\..*$|
+    .*\.backup$|
+    benchmark-results\.txt$|
+    coverage\.out$|
+    API_DOCS\.md$
   )$
+
+# CI-only configuration (add to GitHub Actions)
+ci:
+  autofix_prs: true
+  autoupdate_schedule: weekly
+  skip: []

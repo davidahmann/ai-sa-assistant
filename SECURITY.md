@@ -12,36 +12,42 @@ This project is currently in demo phase. Security updates are applied to the lat
 
 If you discover a security vulnerability in this project, please report it responsibly:
 
-### For Demo/Development Issues:
+### For Demo/Development Issues
+
 - Create a GitHub issue with the `security` label
 - Email the project maintainers directly if the issue is sensitive
 
-### What to Include:
+### What to Include
+
 - A description of the vulnerability
 - Steps to reproduce the issue
 - Potential impact assessment
 - Suggested fixes (if any)
 
-### Response Timeline:
+### Response Timeline
+
 - Initial acknowledgment: Within 48 hours
 - Security assessment: Within 1 week
 - Fix deployment: Within 2 weeks for critical issues
 
 ## Security Measures
 
-### Container Security:
+### Container Security
+
 - All containers run as non-root users
 - Minimal Alpine Linux base images with pinned versions
 - Regular dependency updates
 - Container image scanning in CI/CD
 
-### Application Security:
+### Application Security
+
 - Input validation and sanitization
 - No hardcoded secrets or credentials
 - Secure configuration management
 - Regular security scanning with gosec and semgrep
 
-### Infrastructure Security:
+### Infrastructure Security
+
 - All services run in isolated containers
 - Network segmentation between services
 - Health checks and monitoring
@@ -50,6 +56,7 @@ If you discover a security vulnerability in this project, please report it respo
 ## Known Limitations
 
 This is a demo project with the following security considerations:
+
 - Not intended for production use
 - Limited authentication and authorization
 - Demo configurations may not follow all production security practices

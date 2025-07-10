@@ -1,5 +1,4 @@
 
-
 Phase 1: Foundational Backend & Data Ingestion (Epic 1)
 
 Goal: To build the core infrastructure and data pipeline that ingests, understands, and securely stores our internal playbooks and vendor documentation. This phase lays the groundwork for all subsequent intelligence.

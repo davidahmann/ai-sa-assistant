@@ -60,6 +60,21 @@ services:
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
 
+  webui:
+    build:
+      context: .
+      dockerfile: cmd/webui/Dockerfile
+    ports:
+      - "8084:8080"
+    volumes:
+      - ./configs:/app/configs
+    depends_on:
+      - retrieve
+      - websearch
+      - synthesize
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
+
   ingest:
     build:
       context: .
