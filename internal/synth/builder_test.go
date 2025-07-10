@@ -1904,3 +1904,432 @@ func TestBuildPromptWithWebResultSourceAttribution(t *testing.T) {
 		})
 	}
 }
+
+func TestParseResponseWithEnhancedMetadata(t *testing.T) {
+	tests := []struct {
+		name             string
+		response         string
+		contextItems     []ContextItem
+		webResults       []string
+		expectedMain     string
+		expectedDiagram  string
+		expectedCodeCount int
+		expectedContextSources int
+		expectedWebSources     int
+	}{
+		{
+			name: "Complete response with all components",
+			response: "Here's a comprehensive AWS solution:\n\n## Architecture\n" +
+				"This uses EC2 instances [aws-guide] and latest updates [https://aws.amazon.com/ec2/].\n\n" +
+				"```mermaid\ngraph TD\n    VPC[VPC] --> EC2[EC2]\n    EC2 --> RDS[RDS]\n```\n\n" +
+				"Implementation:\n\n```terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			contextItems: []ContextItem{
+				{Content: "AWS best practices", SourceID: "aws-guide", Score: 0.85, Priority: 1},
+			},
+			webResults: []string{
+				"Title: EC2 Updates\nSnippet: Latest instance types\nURL: https://aws.amazon.com/ec2/",
+			},
+			expectedMain:     "Here's a comprehensive AWS solution:",
+			expectedDiagram:  "graph TD\n    VPC[VPC] --> EC2[EC2]\n    EC2 --> RDS[RDS]",
+			expectedCodeCount: 1,
+			expectedContextSources: 1,
+			expectedWebSources:     1,
+		},
+		{
+			name: "Response with processing stats",
+			response: "Simple response with source [test-doc].",
+			contextItems: []ContextItem{
+				{Content: "Test content", SourceID: "test-doc", Score: 0.9, Priority: 1},
+			},
+			webResults:             []string{},
+			expectedMain:           "Simple response with source [test-doc].",
+			expectedDiagram:        "",
+			expectedCodeCount:      0,
+			expectedContextSources: 1,
+			expectedWebSources:     0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stats := ProcessingStats{
+				TotalProcessingTime: 1000,
+				RetrievalTime:      300,
+				WebSearchTime:      200,
+				SynthesisTime:      500,
+			}
+			pipelineInfo := PipelineDecisionInfo{
+				QueryType: "TechnicalQuery",
+			}
+			result := ParseResponseWithEnhancedMetadata(tt.response, []string{}, tt.contextItems, tt.webResults, stats, pipelineInfo)
+
+			// Check basic parsing
+			if !strings.Contains(result.MainText, tt.expectedMain) {
+				t.Errorf("Expected main text to contain '%s'", tt.expectedMain)
+			}
+
+			if result.DiagramCode != tt.expectedDiagram {
+				t.Errorf("Expected diagram '%s', got '%s'", tt.expectedDiagram, result.DiagramCode)
+			}
+
+			if len(result.CodeSnippets) != tt.expectedCodeCount {
+				t.Errorf("Expected %d code snippets, got %d", tt.expectedCodeCount, len(result.CodeSnippets))
+			}
+
+			// Check enhanced metadata
+			if len(result.ContextSources) != tt.expectedContextSources {
+				t.Errorf("Expected %d context sources, got %d", tt.expectedContextSources, len(result.ContextSources))
+			}
+
+			if len(result.WebSources) != tt.expectedWebSources {
+				t.Errorf("Expected %d web sources, got %d", tt.expectedWebSources, len(result.WebSources))
+			}
+
+			// Check processing stats exist
+			if result.ProcessingStats.TotalProcessingTime == 0 {
+				t.Error("Expected processing stats to have total processing time")
+			}
+
+			// Check pipeline decision info exists
+			if result.PipelineDecision.QueryType == "" {
+				t.Error("Expected pipeline decision to have query type")
+			}
+		})
+	}
+}
+
+func TestBuildContextSourceInfo(t *testing.T) {
+	tests := []struct {
+		name         string
+		contextItems []ContextItem
+		response     string
+		expected     int
+	}{
+		{
+			name: "Single context item used in response",
+			contextItems: []ContextItem{
+				{Content: "AWS best practices", SourceID: "aws-guide", Score: 0.85, Priority: 1},
+			},
+			response: "This follows AWS guidelines [aws-guide] for security.",
+			expected: 1,
+		},
+		{
+			name: "Multiple context items, some used",
+			contextItems: []ContextItem{
+				{Content: "AWS guide", SourceID: "aws-guide", Score: 0.85, Priority: 1},
+				{Content: "Azure guide", SourceID: "azure-guide", Score: 0.90, Priority: 2},
+				{Content: "GCP guide", SourceID: "gcp-guide", Score: 0.75, Priority: 1},
+			},
+			response: "Using AWS [aws-guide] and Azure [azure-guide] best practices.",
+			expected: 3, // Returns all context items, not just cited ones
+		},
+		{
+			name: "No context items used",
+			contextItems: []ContextItem{
+				{Content: "Unused content", SourceID: "unused-doc", Score: 0.5, Priority: 1},
+			},
+			response: "This is a general response without citations.",
+			expected: 1, // Still includes all context items with usage tracking
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			citedSources := extractSources(tt.response)
+			result := buildContextSourceInfo(tt.contextItems, citedSources)
+
+			if len(result) != tt.expected {
+				t.Errorf("Expected %d context sources, got %d", tt.expected, len(result))
+			}
+
+			for _, source := range result {
+				if source.SourceID == "" {
+					t.Error("Expected source ID to be populated")
+				}
+				if source.Title == "" {
+					t.Error("Expected source title to be populated")
+				}
+				if source.SourceType == "" {
+					t.Error("Expected source type to be populated")
+				}
+			}
+		})
+	}
+}
+
+func TestBuildWebSourceInfo(t *testing.T) {
+	tests := []struct {
+		name       string
+		webResults []string
+		response   string
+		expected   int
+	}{
+		{
+			name: "Single web result with URL",
+			webResults: []string{
+				"Title: AWS Updates\nSnippet: Latest features\nURL: https://aws.amazon.com/updates",
+			},
+			response: "Latest information from [https://aws.amazon.com/updates].",
+			expected: 1,
+		},
+		{
+			name: "Multiple web results",
+			webResults: []string{
+				"Title: AWS Updates\nURL: https://aws.amazon.com/updates",
+				"Title: Azure News\nURL: https://azure.microsoft.com/news",
+			},
+			response: "Information from [https://aws.amazon.com/updates] and [https://azure.microsoft.com/news].",
+			expected: 2,
+		},
+		{
+			name: "Web result without URL",
+			webResults: []string{
+				"Title: Some Article\nSnippet: Content without URL",
+			},
+			response: "General information provided.",
+			expected: 0, // No URL means no web source info
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			citedSources := extractSources(tt.response)
+			result := buildWebSourceInfo(tt.webResults, citedSources)
+
+			if len(result) != tt.expected {
+				t.Errorf("Expected %d web sources, got %d", tt.expected, len(result))
+			}
+
+			for _, source := range result {
+				if source.URL == "" {
+					t.Error("Expected web source to have URL")
+				}
+				if source.Domain == "" {
+					t.Error("Expected web source to have domain")
+				}
+			}
+		})
+	}
+}
+
+func TestDetectSourceType(t *testing.T) {
+	tests := []struct {
+		name     string
+		sourceID string
+		expected string
+	}{
+		{
+			name:     "Runbook source",
+			sourceID: "aws-migration-runbook.md",
+			expected: "runbook",
+		},
+		{
+			name:     "Playbook source",
+			sourceID: "azure-deployment-playbook.pdf",
+			expected: "playbook",
+		},
+		{
+			name:     "SOW source",
+			sourceID: "security-assessment-sow.docx",
+			expected: "sow",
+		},
+		{
+			name:     "Guide source",
+			sourceID: "kubernetes-guide.md",
+			expected: "guide",
+		},
+		{
+			name:     "Policy source",
+			sourceID: "data-security-policy.txt",
+			expected: "policy",
+		},
+		{
+			name:     "Default to internal_doc",
+			sourceID: "random-document.pdf",
+			expected: "internal_doc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := detectSourceType(tt.sourceID)
+			if result != tt.expected {
+				t.Errorf("Expected source type '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestExtractTitleFromSourceID(t *testing.T) {
+	tests := []struct {
+		name     string
+		sourceID string
+		expected string
+	}{
+		{
+			name:     "Markdown file with dashes",
+			sourceID: "aws-migration-guide.md",
+			expected: "Aws Migration Guide",
+		},
+		{
+			name:     "PDF file with underscores",
+			sourceID: "azure_disaster_recovery_runbook.pdf",
+			expected: "Azure Disaster Recovery Runbook",
+		},
+		{
+			name:     "Text file mixed separators",
+			sourceID: "security-compliance_policy.txt",
+			expected: "Security Compliance Policy",
+		},
+		{
+			name:     "Simple filename",
+			sourceID: "guide.md",
+			expected: "Guide",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractTitleFromSourceID(tt.sourceID)
+			if result != tt.expected {
+				t.Errorf("Expected title '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestCalculateRelevanceScore(t *testing.T) {
+	tests := []struct {
+		name     string
+		item     ContextItem
+		expected float64
+	}{
+		{
+			name: "High priority item",
+			item: ContextItem{
+				SourceID: "aws-guide",
+				Score:    0.9,
+				Priority: 3,
+			},
+			expected: 1.0, // 0.9 + (3 * 0.1) = 1.2, clamped to 1.0
+		},
+		{
+			name: "Medium priority item",
+			item: ContextItem{
+				SourceID: "azure-guide",
+				Score:    0.7,
+				Priority: 2,
+			},
+			expected: 0.9, // 0.7 + (2 * 0.1) = 0.9
+		},
+		{
+			name: "Low priority item",
+			item: ContextItem{
+				SourceID: "test-doc",
+				Score:    0.5,
+				Priority: 1,
+			},
+			expected: 0.6, // 0.5 + (1 * 0.1) = 0.6
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateRelevanceScore(tt.item)
+			tolerance := 0.001
+			if result < tt.expected-tolerance || result > tt.expected+tolerance {
+				t.Errorf("Expected relevance score %.3f, got %.3f", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestExtractTitleAndSnippetFromWebResult(t *testing.T) {
+	tests := []struct {
+		name            string
+		webResult       string
+		expectedTitle   string
+		expectedSnippet string
+	}{
+		{
+			name: "Complete web result",
+			webResult: "Title: AWS EC2 Updates\nSnippet: New instance types available for better performance\n" +
+				"URL: https://aws.amazon.com/ec2/updates",
+			expectedTitle:   "AWS EC2 Updates",
+			expectedSnippet: "New instance types available for better performance",
+		},
+		{
+			name:            "Web result with title only",
+			webResult:       "Title: Azure Virtual Machines\nURL: https://azure.microsoft.com/vm",
+			expectedTitle:   "Azure Virtual Machines",
+			expectedSnippet: "",
+		},
+		{
+			name:            "Web result with snippet only",
+			webResult:       "Snippet: Information about cloud computing\nURL: https://example.com",
+			expectedTitle:   "",
+			expectedSnippet: "Information about cloud computing",
+		},
+		{
+			name:            "Web result without title or snippet",
+			webResult:       "URL: https://example.com/docs",
+			expectedTitle:   "",
+			expectedSnippet: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			title, snippet := extractTitleAndSnippetFromWebResult(tt.webResult)
+			if title != tt.expectedTitle {
+				t.Errorf("Expected title '%s', got '%s'", tt.expectedTitle, title)
+			}
+			if snippet != tt.expectedSnippet {
+				t.Errorf("Expected snippet '%s', got '%s'", tt.expectedSnippet, snippet)
+			}
+		})
+	}
+}
+
+func TestExtractDomainFromURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		expected string
+	}{
+		{
+			name:     "Standard HTTPS URL",
+			url:      "https://aws.amazon.com/ec2/updates",
+			expected: "aws.amazon.com",
+		},
+		{
+			name:     "HTTP URL with www",
+			url:      "http://www.microsoft.com/azure",
+			expected: "microsoft.com", // www. prefix is stripped
+		},
+		{
+			name:     "URL with path and parameters",
+			url:      "https://docs.google.com/compute?region=us-east1",
+			expected: "docs.google.com",
+		},
+		{
+			name:     "Invalid URL",
+			url:      "not-a-url",
+			expected: "not-a-url", // Function doesn't validate URLs
+		},
+		{
+			name:     "Empty URL",
+			url:      "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractDomainFromURL(tt.url)
+			if result != tt.expected {
+				t.Errorf("Expected domain '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}

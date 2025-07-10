@@ -87,17 +87,73 @@ type SynthesisRequest struct {
 
 // SynthesisResponse represents the structured response from synthesis
 type SynthesisResponse struct {
-	MainText     string        `json:"main_text"`
-	DiagramCode  string        `json:"diagram_code"`
-	DiagramURL   string        `json:"diagram_url,omitempty"`
-	CodeSnippets []CodeSnippet `json:"code_snippets"`
-	Sources      []string      `json:"sources"`
+	MainText         string               `json:"main_text"`
+	DiagramCode      string               `json:"diagram_code"`
+	DiagramURL       string               `json:"diagram_url,omitempty"`
+	CodeSnippets     []CodeSnippet        `json:"code_snippets"`
+	Sources          []string             `json:"sources"`
+	ContextSources   []ContextSourceInfo  `json:"context_sources,omitempty"`
+	WebSources       []WebSourceInfo      `json:"web_sources,omitempty"`
+	ProcessingStats  ProcessingStats      `json:"processing_stats,omitempty"`
+	PipelineDecision PipelineDecisionInfo `json:"pipeline_decision,omitempty"`
 }
 
 // CodeSnippet represents a code snippet with its language
 type CodeSnippet struct {
 	Language string `json:"language"`
 	Code     string `json:"code"`
+}
+
+// ContextSourceInfo represents detailed information about a context source
+type ContextSourceInfo struct {
+	SourceID    string  `json:"source_id"`
+	Title       string  `json:"title,omitempty"`
+	Confidence  float64 `json:"confidence"`
+	Relevance   float64 `json:"relevance"`
+	ChunkIndex  int     `json:"chunk_index"`
+	Preview     string  `json:"preview"`
+	SourceType  string  `json:"source_type"` // "internal_doc", "runbook", "playbook", etc.
+	TokenCount  int     `json:"token_count"`
+	Used        bool    `json:"used"` // Whether this source was actually cited in the response
+}
+
+// WebSourceInfo represents detailed information about a web search source
+type WebSourceInfo struct {
+	URL         string  `json:"url"`
+	Title       string  `json:"title,omitempty"`
+	Snippet     string  `json:"snippet,omitempty"`
+	Confidence  float64 `json:"confidence"`
+	Freshness   string  `json:"freshness,omitempty"`
+	Domain      string  `json:"domain"`
+	Used        bool    `json:"used"` // Whether this source was actually cited in the response
+}
+
+// ProcessingStats represents processing time and token usage statistics
+type ProcessingStats struct {
+	TotalProcessingTime    int `json:"total_processing_time_ms"`
+	RetrievalTime         int `json:"retrieval_time_ms"`
+	WebSearchTime         int `json:"web_search_time_ms"`
+	SynthesisTime         int `json:"synthesis_time_ms"`
+	InputTokens           int `json:"input_tokens"`
+	OutputTokens          int `json:"output_tokens"`
+	TotalTokens           int `json:"total_tokens"`
+	EstimatedCost         float64 `json:"estimated_cost_usd,omitempty"`
+	ModelUsed             string `json:"model_used"`
+	Temperature           float64 `json:"temperature"`
+}
+
+// PipelineDecisionInfo represents information about pipeline decisions made during processing
+type PipelineDecisionInfo struct {
+	MetadataFiltersApplied []string `json:"metadata_filters_applied,omitempty"`
+	FallbackSearchUsed     bool     `json:"fallback_search_used"`
+	WebSearchTriggered     bool     `json:"web_search_triggered"`
+	FreshnessKeywords      []string `json:"freshness_keywords,omitempty"`
+	QueryType              string   `json:"query_type"`
+	ArchitectureDiagram    bool     `json:"architecture_diagram_generated"`
+	CodeGenerated          bool     `json:"code_generated"`
+	ContextItemsFiltered   int      `json:"context_items_filtered"`
+	ContextItemsUsed       int      `json:"context_items_used"`
+	Reasoning              string   `json:"reasoning,omitempty"`
 }
 
 // BuildPrompt combines context into a comprehensive prompt for the LLM
@@ -373,15 +429,32 @@ func ParseResponse(response string) SynthesisResponse {
 
 // ParseResponseWithSources parses the LLM response into structured components with source validation
 func ParseResponseWithSources(response string, availableSources []string) SynthesisResponse {
+	return ParseResponseWithEnhancedMetadata(response, availableSources, nil, nil, ProcessingStats{}, PipelineDecisionInfo{})
+}
+
+// ParseResponseWithEnhancedMetadata parses the LLM response with full metadata including context sources, web sources, and processing stats
+func ParseResponseWithEnhancedMetadata(
+	response string,
+	availableSources []string,
+	contextItems []ContextItem,
+	webResults []string,
+	stats ProcessingStats,
+	pipelineInfo PipelineDecisionInfo,
+) SynthesisResponse {
 	result := SynthesisResponse{
-		MainText:     response,
-		CodeSnippets: []CodeSnippet{},
-		Sources:      []string{},
+		MainText:         response,
+		CodeSnippets:     []CodeSnippet{},
+		Sources:          []string{},
+		ContextSources:   []ContextSourceInfo{},
+		WebSources:       []WebSourceInfo{},
+		ProcessingStats:  stats,
+		PipelineDecision: pipelineInfo,
 	}
 
 	// Extract diagram code
 	if diagramCode := extractMermaidDiagram(response); diagramCode != "" {
 		result.DiagramCode = diagramCode
+		result.PipelineDecision.ArchitectureDiagram = true
 		// Remove diagram from main text
 		result.MainText = removeMermaidDiagram(response)
 	}
@@ -389,11 +462,22 @@ func ParseResponseWithSources(response string, availableSources []string) Synthe
 	// Extract code snippets
 	codeSnippets := extractCodeSnippets(response)
 	result.CodeSnippets = codeSnippets
+	result.PipelineDecision.CodeGenerated = len(codeSnippets) > 0
 	// Remove code snippets from main text
 	result.MainText = removeCodeSnippets(result.MainText)
 
 	// Extract sources from citations
 	citedSources := extractSources(response)
+
+	// Build context source information
+	if contextItems != nil {
+		result.ContextSources = buildContextSourceInfo(contextItems, citedSources)
+	}
+
+	// Build web source information
+	if webResults != nil {
+		result.WebSources = buildWebSourceInfo(webResults, citedSources)
+	}
 
 	// Validate and filter sources to only include those that are available
 	validSources := make([]string, 0)
@@ -1962,4 +2046,172 @@ func filterConversationForPrompt(messages []session.Message) []session.Message {
 	}
 
 	return filtered
+}
+
+// buildContextSourceInfo creates detailed context source information
+func buildContextSourceInfo(contextItems []ContextItem, citedSources []string) []ContextSourceInfo {
+	var contextSources []ContextSourceInfo
+	citedSourceMap := make(map[string]bool)
+	
+	for _, source := range citedSources {
+		citedSourceMap[source] = true
+	}
+
+	for i, item := range contextItems {
+		preview := item.Content
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+
+		sourceType := detectSourceType(item.SourceID)
+		
+		contextSource := ContextSourceInfo{
+			SourceID:   item.SourceID,
+			Title:      extractTitleFromSourceID(item.SourceID),
+			Confidence: item.Score,
+			Relevance:  calculateRelevanceScore(item),
+			ChunkIndex: i,
+			Preview:    preview,
+			SourceType: sourceType,
+			TokenCount: EstimateTokens(item.Content),
+			Used:       citedSourceMap[item.SourceID],
+		}
+		
+		contextSources = append(contextSources, contextSource)
+	}
+
+	return contextSources
+}
+
+// buildWebSourceInfo creates detailed web source information
+func buildWebSourceInfo(webResults []string, citedSources []string) []WebSourceInfo {
+	var webSources []WebSourceInfo
+	citedSourceMap := make(map[string]bool)
+	
+	for _, source := range citedSources {
+		citedSourceMap[source] = true
+	}
+
+	for _, result := range webResults {
+		url := extractURLFromWebResult(result)
+		if url == "" {
+			continue
+		}
+
+		title, snippet := extractTitleAndSnippetFromWebResult(result)
+		domain := extractDomainFromURL(url)
+		
+		webSource := WebSourceInfo{
+			URL:        url,
+			Title:      title,
+			Snippet:    snippet,
+			Confidence: 0.8, // Default confidence for web results
+			Freshness:  "recent",
+			Domain:     domain,
+			Used:       citedSourceMap[url],
+		}
+		
+		webSources = append(webSources, webSource)
+	}
+
+	return webSources
+}
+
+// detectSourceType determines the type of source based on its ID
+func detectSourceType(sourceID string) string {
+	sourceIDLower := strings.ToLower(sourceID)
+	
+	if strings.Contains(sourceIDLower, "runbook") {
+		return "runbook"
+	}
+	if strings.Contains(sourceIDLower, "playbook") {
+		return "playbook"
+	}
+	if strings.Contains(sourceIDLower, "sow") {
+		return "sow"
+	}
+	if strings.Contains(sourceIDLower, "guide") {
+		return "guide"
+	}
+	if strings.Contains(sourceIDLower, "policy") {
+		return "policy"
+	}
+	
+	return "internal_doc"
+}
+
+// extractTitleFromSourceID creates a human-readable title from a source ID
+func extractTitleFromSourceID(sourceID string) string {
+	// Remove file extension
+	title := strings.TrimSuffix(sourceID, ".md")
+	title = strings.TrimSuffix(title, ".pdf")
+	title = strings.TrimSuffix(title, ".txt")
+	
+	// Replace hyphens and underscores with spaces
+	title = strings.ReplaceAll(title, "-", " ")
+	title = strings.ReplaceAll(title, "_", " ")
+	
+	// Capitalize first letter of each word
+	words := strings.Fields(title)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(string(word[0])) + strings.ToLower(word[1:])
+		}
+	}
+	
+	return strings.Join(words, " ")
+}
+
+// calculateRelevanceScore calculates a relevance score based on context item properties
+func calculateRelevanceScore(item ContextItem) float64 {
+	// Base relevance is the confidence score
+	relevance := item.Score
+	
+	// Boost relevance based on priority
+	priorityBoost := float64(item.Priority) * 0.1
+	relevance += priorityBoost
+	
+	// Ensure relevance is between 0 and 1
+	if relevance > 1.0 {
+		relevance = 1.0
+	}
+	if relevance < 0.0 {
+		relevance = 0.0
+	}
+	
+	return relevance
+}
+
+// extractTitleAndSnippetFromWebResult extracts title and snippet from web search result
+func extractTitleAndSnippetFromWebResult(result string) (string, string) {
+	lines := strings.Split(result, "\n")
+	title := ""
+	snippet := ""
+	
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Title: ") {
+			title = strings.TrimSpace(strings.TrimPrefix(line, "Title: "))
+		} else if strings.HasPrefix(line, "Snippet: ") {
+			snippet = strings.TrimSpace(strings.TrimPrefix(line, "Snippet: "))
+		}
+	}
+	
+	return title, snippet
+}
+
+// extractDomainFromURL extracts the domain from a URL
+func extractDomainFromURL(url string) string {
+	// Remove protocol
+	domain := strings.TrimPrefix(url, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	
+	// Extract domain part before first slash
+	if slashIndex := strings.Index(domain, "/"); slashIndex != -1 {
+		domain = domain[:slashIndex]
+	}
+	
+	// Remove www prefix
+	domain = strings.TrimPrefix(domain, "www.")
+	
+	return domain
 }

@@ -210,12 +210,18 @@ class ChatApp {
         const avatarText = message.role === 'user' ? 'SA' : 'AI';
         const timeStr = this.formatTime(new Date(message.timestamp));
 
+        const messageContentHTML = this.formatMessageContent(message.content);
+        const sourcesHTML = this.formatMessageSources(message);
+        const contextHTML = this.formatMessageContext(message);
+
         messageEl.innerHTML = `
             <div class="message-avatar">${avatarText}</div>
             <div class="message-content">
                 <div class="message-bubble">
-                    ${this.formatMessageContent(message.content)}
+                    ${messageContentHTML}
                 </div>
+                ${sourcesHTML}
+                ${contextHTML}
                 <div class="message-time">${timeStr}</div>
             </div>
         `;
@@ -234,6 +240,262 @@ class ChatApp {
         formattedContent = formattedContent.replace(/\n/g, '<br>');
 
         return formattedContent;
+    }
+
+    formatMessageSources(message) {
+        // Only show sources for assistant messages that have metadata
+        if (message.role !== 'assistant' || !message.metadata) {
+            return '';
+        }
+
+        const metadata = message.metadata;
+        const contextSources = metadata.context_sources || [];
+        const webSources = metadata.web_sources || [];
+        const processingStats = metadata.processing_stats || {};
+
+        if (contextSources.length === 0 && webSources.length === 0) {
+            return '';
+        }
+
+        const totalSources = contextSources.length + webSources.length;
+        const sourceId = `sources-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        return `
+            <div class="message-sources">
+                <div class="sources-header" onclick="chatApp.toggleSources('${sourceId}')">
+                    <span class="sources-icon">📋</span>
+                    <span class="sources-title">Context Sources Used (${totalSources} total)</span>
+                    <span class="sources-toggle">▼</span>
+                </div>
+                <div class="sources-content" id="${sourceId}" style="display: none;">
+                    ${this.formatInternalSources(contextSources)}
+                    ${this.formatWebSources(webSources)}
+                    ${this.formatLLMSynthesis(processingStats)}
+                </div>
+            </div>
+        `;
+    }
+
+    formatMessageContext(message) {
+        // Only show context for assistant messages that have pipeline decisions
+        if (message.role !== 'assistant' || !message.metadata || !message.metadata.pipeline_decision) {
+            return '';
+        }
+
+        const pipeline = message.metadata.pipeline_decision;
+        const processingStats = message.metadata.processing_stats || {};
+        const contextId = `context-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        return `
+            <div class="message-context">
+                <div class="context-header" onclick="chatApp.toggleContext('${contextId}')">
+                    <span class="context-icon">🔍</span>
+                    <span class="context-title">Pipeline Decisions & Performance</span>
+                    <span class="context-toggle">▼</span>
+                </div>
+                <div class="context-content" id="${contextId}" style="display: none;">
+                    ${this.formatPipelineDecisions(pipeline)}
+                    ${this.formatProcessingStats(processingStats)}
+                    ${this.formatTrustIndicators(message.metadata)}
+                </div>
+            </div>
+        `;
+    }
+
+    formatInternalSources(sources) {
+        if (!sources || sources.length === 0) return '';
+
+        let html = `
+            <div class="internal-sources">
+                <h5>📄 Internal Documents (${sources.length} chunks)</h5>
+                <ul class="source-list">
+        `;
+
+        sources.forEach(source => {
+            const usedIcon = source.used ? '✓' : '○';
+            const usedClass = source.used ? 'used' : 'unused';
+            const confidence = source.confidence ? `(confidence: ${source.confidence.toFixed(2)})` : '';
+            
+            html += `
+                <li class="source-item ${usedClass}">
+                    <div class="source-info">
+                        <span class="source-icon">${usedIcon}</span>
+                        <strong>${this.escapeHtml(source.title || source.source_id)}</strong>
+                        <span class="confidence">${confidence}</span>
+                    </div>
+                    <div class="source-preview">${this.escapeHtml(source.preview || '')}</div>
+                    <div class="source-meta">${source.token_count || 0} tokens • ${source.source_type || 'internal_doc'}</div>
+                </li>
+            `;
+        });
+
+        html += `
+                </ul>
+            </div>
+        `;
+
+        return html;
+    }
+
+    formatWebSources(sources) {
+        if (!sources || sources.length === 0) return '';
+
+        let html = `
+            <div class="web-sources">
+                <h5>🌐 Web Search Results (${sources.length} articles)</h5>
+                <ul class="source-list">
+        `;
+
+        sources.forEach(source => {
+            const usedIcon = source.used ? '✓' : '○';
+            const usedClass = source.used ? 'used' : 'unused';
+            const confidence = source.confidence ? `(confidence: ${source.confidence.toFixed(2)})` : '';
+            
+            html += `
+                <li class="source-item ${usedClass}">
+                    <div class="source-info">
+                        <span class="source-icon">${usedIcon}</span>
+                        <a href="${this.escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">
+                            ${this.escapeHtml(source.title || source.url)}
+                        </a>
+                        <span class="confidence">${confidence}</span>
+                    </div>
+                    <div class="source-preview">${this.escapeHtml(source.snippet || '')}</div>
+                    <div class="source-meta">${source.domain || ''} • ${source.freshness || 'recent'}</div>
+                </li>
+            `;
+        });
+
+        html += `
+                </ul>
+            </div>
+        `;
+
+        return html;
+    }
+
+    formatLLMSynthesis(stats) {
+        if (!stats || !stats.model_used) return '';
+
+        return `
+            <div class="llm-synthesis">
+                <h5>🤖 LLM Synthesis</h5>
+                <div class="synthesis-info">
+                    <div class="model-info">Model: ${this.escapeHtml(stats.model_used)}</div>
+                    <div class="token-info">Tokens: ${stats.input_tokens || 0} input / ${stats.output_tokens || 0} output</div>
+                    <div class="temp-info">Temperature: ${stats.temperature || 0}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    formatPipelineDecisions(pipeline) {
+        if (!pipeline) return '';
+
+        let html = `
+            <div class="pipeline-decisions">
+                <h5>🔍 Pipeline Decisions</h5>
+                <div class="pipeline-info">
+                    <div class="query-type">Query Type: <span class="highlight">${this.escapeHtml(pipeline.query_type || 'Unknown')}</span></div>
+        `;
+
+        if (pipeline.metadata_filters_applied && pipeline.metadata_filters_applied.length > 0) {
+            html += `<div class="filters">Metadata Filters: ${pipeline.metadata_filters_applied.join(', ')}</div>`;
+        }
+
+        if (pipeline.fallback_search_used) {
+            html += `<div class="fallback">🔄 Fallback search used due to insufficient initial results</div>`;
+        }
+
+        if (pipeline.web_search_triggered) {
+            html += `<div class="web-search">🌐 Web search triggered for fresh information</div>`;
+            if (pipeline.freshness_keywords && pipeline.freshness_keywords.length > 0) {
+                html += `<div class="freshness">Freshness keywords: ${pipeline.freshness_keywords.join(', ')}</div>`;
+            }
+        }
+
+        html += `
+                    <div class="context-stats">Context: ${pipeline.context_items_filtered || 0} items filtered → ${pipeline.context_items_used || 0} used</div>
+        `;
+
+        if (pipeline.reasoning) {
+            html += `<div class="reasoning">Reasoning: ${this.escapeHtml(pipeline.reasoning)}</div>`;
+        }
+
+        html += `
+                </div>
+            </div>
+        `;
+
+        return html;
+    }
+
+    formatProcessingStats(stats) {
+        if (!stats || !stats.total_processing_time_ms) return '';
+
+        const totalTime = this.formatDuration(stats.total_processing_time_ms);
+        const cost = stats.estimated_cost_usd ? `$${stats.estimated_cost_usd.toFixed(4)}` : '';
+
+        return `
+            <div class="processing-stats">
+                <h5>⏱️ Processing Statistics</h5>
+                <div class="stats-info">
+                    <div class="time-info">Total Time: ${totalTime}</div>
+                    <div class="token-info">Total Tokens: ${stats.total_tokens || 0}</div>
+                    ${cost ? `<div class="cost-info">Estimated Cost: ${cost}</div>` : ''}
+                    <div class="performance-bar">${this.createPerformanceBar(stats)}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    formatTrustIndicators(metadata) {
+        if (!metadata) return '';
+
+        // Calculate trust indicators on the client side
+        const contextSources = metadata.context_sources || [];
+        const webSources = metadata.web_sources || [];
+        const pipeline = metadata.pipeline_decision || {};
+
+        let sourceQuality = 0;
+        let totalSources = 0;
+
+        contextSources.forEach(source => {
+            if (source.confidence) {
+                sourceQuality += source.confidence;
+                totalSources++;
+            }
+        });
+
+        webSources.forEach(source => {
+            if (source.confidence) {
+                sourceQuality += source.confidence;
+                totalSources++;
+            }
+        });
+
+        if (totalSources === 0) return '';
+
+        const avgQuality = sourceQuality / totalSources;
+        const confidenceLevel = avgQuality >= 0.8 ? 'High' : avgQuality >= 0.6 ? 'Medium' : 'Low';
+        const freshness = pipeline.web_search_triggered ? 'Recent' : 'Standard';
+
+        const badges = [];
+        if (avgQuality >= 0.8) badges.push('High Quality Sources');
+        if (contextSources.length > 0) badges.push('Internal Documentation');
+        if (pipeline.web_search_triggered) badges.push('Fresh Information');
+
+        return `
+            <div class="trust-indicators">
+                <h5>🛡️ Trust Indicators</h5>
+                <div class="trust-info">
+                    <div class="overall-score">Overall Score: ${avgQuality.toFixed(2)}</div>
+                    <div class="confidence-level">Confidence: ${confidenceLevel}</div>
+                    <div class="freshness">Freshness: ${freshness}</div>
+                    ${badges.length > 0 ? `<div class="trust-badges">${badges.map(badge => `<span class="badge">${badge}</span>`).join('')}</div>` : ''}
+                </div>
+            </div>
+        `;
     }
 
     processCodeBlocks(content) {
@@ -786,6 +1048,50 @@ class ChatApp {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // Source and context visibility toggle functions
+    toggleSources(sourceId) {
+        const element = document.getElementById(sourceId);
+        const toggle = document.querySelector(`[onclick="chatApp.toggleSources('${sourceId}')"] .sources-toggle`);
+        
+        if (element.style.display === 'none') {
+            element.style.display = 'block';
+            toggle.textContent = '▲';
+        } else {
+            element.style.display = 'none';
+            toggle.textContent = '▼';
+        }
+    }
+
+    toggleContext(contextId) {
+        const element = document.getElementById(contextId);
+        const toggle = document.querySelector(`[onclick="chatApp.toggleContext('${contextId}')"] .context-toggle`);
+        
+        if (element.style.display === 'none') {
+            element.style.display = 'block';
+            toggle.textContent = '▲';
+        } else {
+            element.style.display = 'none';
+            toggle.textContent = '▼';
+        }
+    }
+
+    // Utility functions for formatting
+    formatDuration(milliseconds) {
+        if (milliseconds < 1000) {
+            return `${milliseconds}ms`;
+        }
+        return `${(milliseconds / 1000).toFixed(1)}s`;
+    }
+
+    createPerformanceBar(stats) {
+        const total = stats.total_processing_time_ms || 1;
+        const retrieval = ((stats.retrieval_time_ms || 0) / total * 100).toFixed(0);
+        const websearch = ((stats.web_search_time_ms || 0) / total * 100).toFixed(0);
+        const synthesis = ((stats.synthesis_time_ms || 0) / total * 100).toFixed(0);
+
+        return `Retrieval: ${retrieval}% | Web Search: ${websearch}% | Synthesis: ${synthesis}%`;
     }
 }
 
