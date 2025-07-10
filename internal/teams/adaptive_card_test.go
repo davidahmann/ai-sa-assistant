@@ -390,21 +390,52 @@ func validateCardActions(t *testing.T, card map[string]interface{}, query string
 		return
 	}
 
-	if len(actions) != 2 {
-		t.Errorf("Expected 2 actions (positive and negative feedback), got %d", len(actions))
+	if len(actions) != 3 {
+		t.Errorf("Expected 3 actions (positive feedback, negative feedback, and regenerate), got %d", len(actions))
 	}
 
-	// Validate feedback actions
+	// Validate feedback actions and regeneration action
 	expectedActions := []struct {
 		title    string
 		feedback string
+		url      string
 	}{
-		{"👍 Helpful", "positive"},
-		{"👎 Not Helpful", "negative"},
+		{"👍 Helpful", "positive", "/teams-feedback"},
+		{"👎 Not Helpful", "negative", "/teams-feedback"},
+		{"🔄 Regenerate", "", "/teams-regenerate"},
 	}
 
 	for i, action := range actions {
-		validateAction(t, action, i, expectedActions, query)
+		validateActionWithURL(t, action, i, expectedActions, query)
+	}
+}
+
+func validateActionWithURL(t *testing.T, action interface{}, index int,
+	expectedActions []struct{ title, feedback, url string }, query string) {
+	actionMap, ok := action.(map[string]interface{})
+	if !ok {
+		t.Errorf("Expected action %d to be a map", index)
+		return
+	}
+
+	if actionMap["type"] != "Action.Http" {
+		t.Errorf("Expected action %d type to be 'Action.Http', got %v", index, actionMap["type"])
+	}
+
+	if actionMap["method"] != "POST" {
+		t.Errorf("Expected action %d method to be 'POST', got %v", index, actionMap["method"])
+	}
+
+	if index < len(expectedActions) {
+		expectedURL := expectedActions[index].url
+		if actionMap["url"] != expectedURL {
+			t.Errorf("Expected action %d url to be '%s', got %v", index, expectedURL, actionMap["url"])
+		}
+
+		validateActionTitle(t, actionMap, index, expectedActions[index].title)
+		if expectedActions[index].feedback != "" {
+			validateActionBody(t, actionMap, index, expectedActions[index].feedback, query)
+		}
 	}
 }
 
