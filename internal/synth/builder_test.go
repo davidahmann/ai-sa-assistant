@@ -1907,13 +1907,13 @@ func TestBuildPromptWithWebResultSourceAttribution(t *testing.T) {
 
 func TestParseResponseWithEnhancedMetadata(t *testing.T) {
 	tests := []struct {
-		name             string
-		response         string
-		contextItems     []ContextItem
-		webResults       []string
-		expectedMain     string
-		expectedDiagram  string
-		expectedCodeCount int
+		name                   string
+		response               string
+		contextItems           []ContextItem
+		webResults             []string
+		expectedMain           string
+		expectedDiagram        string
+		expectedCodeCount      int
 		expectedContextSources int
 		expectedWebSources     int
 	}{
@@ -1929,14 +1929,14 @@ func TestParseResponseWithEnhancedMetadata(t *testing.T) {
 			webResults: []string{
 				"Title: EC2 Updates\nSnippet: Latest instance types\nURL: https://aws.amazon.com/ec2/",
 			},
-			expectedMain:     "Here's a comprehensive AWS solution:",
-			expectedDiagram:  "graph TD\n    VPC[VPC] --> EC2[EC2]\n    EC2 --> RDS[RDS]",
-			expectedCodeCount: 1,
+			expectedMain:           "Here's a comprehensive AWS solution:",
+			expectedDiagram:        "graph TD\n    VPC[VPC] --> EC2[EC2]\n    EC2 --> RDS[RDS]",
+			expectedCodeCount:      1,
 			expectedContextSources: 1,
 			expectedWebSources:     1,
 		},
 		{
-			name: "Response with processing stats",
+			name:     "Response with processing stats",
 			response: "Simple response with source [test-doc].",
 			contextItems: []ContextItem{
 				{Content: "Test content", SourceID: "test-doc", Score: 0.9, Priority: 1},
@@ -1954,9 +1954,9 @@ func TestParseResponseWithEnhancedMetadata(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			stats := ProcessingStats{
 				TotalProcessingTime: 1000,
-				RetrievalTime:      300,
-				WebSearchTime:      200,
-				SynthesisTime:      500,
+				RetrievalTime:       300,
+				WebSearchTime:       200,
+				SynthesisTime:       500,
 			}
 			pipelineInfo := PipelineDecisionInfo{
 				QueryType: "TechnicalQuery",

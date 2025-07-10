@@ -315,7 +315,7 @@ class ChatApp {
             const usedIcon = source.used ? '✓' : '○';
             const usedClass = source.used ? 'used' : 'unused';
             const confidence = source.confidence ? `(confidence: ${source.confidence.toFixed(2)})` : '';
-            
+
             html += `
                 <li class="source-item ${usedClass}">
                     <div class="source-info">
@@ -350,7 +350,7 @@ class ChatApp {
             const usedIcon = source.used ? '✓' : '○';
             const usedClass = source.used ? 'used' : 'unused';
             const confidence = source.confidence ? `(confidence: ${source.confidence.toFixed(2)})` : '';
-            
+
             html += `
                 <li class="source-item ${usedClass}">
                     <div class="source-info">
@@ -1054,7 +1054,7 @@ class ChatApp {
     toggleSources(sourceId) {
         const element = document.getElementById(sourceId);
         const toggle = document.querySelector(`[onclick="chatApp.toggleSources('${sourceId}')"] .sources-toggle`);
-        
+
         if (element.style.display === 'none') {
             element.style.display = 'block';
             toggle.textContent = '▲';
@@ -1067,7 +1067,7 @@ class ChatApp {
     toggleContext(contextId) {
         const element = document.getElementById(contextId);
         const toggle = document.querySelector(`[onclick="chatApp.toggleContext('${contextId}')"] .context-toggle`);
-        
+
         if (element.style.display === 'none') {
             element.style.display = 'block';
             toggle.textContent = '▲';

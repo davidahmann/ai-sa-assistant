@@ -106,40 +106,40 @@ type CodeSnippet struct {
 
 // ContextSourceInfo represents detailed information about a context source
 type ContextSourceInfo struct {
-	SourceID    string  `json:"source_id"`
-	Title       string  `json:"title,omitempty"`
-	Confidence  float64 `json:"confidence"`
-	Relevance   float64 `json:"relevance"`
-	ChunkIndex  int     `json:"chunk_index"`
-	Preview     string  `json:"preview"`
-	SourceType  string  `json:"source_type"` // "internal_doc", "runbook", "playbook", etc.
-	TokenCount  int     `json:"token_count"`
-	Used        bool    `json:"used"` // Whether this source was actually cited in the response
+	SourceID   string  `json:"source_id"`
+	Title      string  `json:"title,omitempty"`
+	Confidence float64 `json:"confidence"`
+	Relevance  float64 `json:"relevance"`
+	ChunkIndex int     `json:"chunk_index"`
+	Preview    string  `json:"preview"`
+	SourceType string  `json:"source_type"` // "internal_doc", "runbook", "playbook", etc.
+	TokenCount int     `json:"token_count"`
+	Used       bool    `json:"used"` // Whether this source was actually cited in the response
 }
 
 // WebSourceInfo represents detailed information about a web search source
 type WebSourceInfo struct {
-	URL         string  `json:"url"`
-	Title       string  `json:"title,omitempty"`
-	Snippet     string  `json:"snippet,omitempty"`
-	Confidence  float64 `json:"confidence"`
-	Freshness   string  `json:"freshness,omitempty"`
-	Domain      string  `json:"domain"`
-	Used        bool    `json:"used"` // Whether this source was actually cited in the response
+	URL        string  `json:"url"`
+	Title      string  `json:"title,omitempty"`
+	Snippet    string  `json:"snippet,omitempty"`
+	Confidence float64 `json:"confidence"`
+	Freshness  string  `json:"freshness,omitempty"`
+	Domain     string  `json:"domain"`
+	Used       bool    `json:"used"` // Whether this source was actually cited in the response
 }
 
 // ProcessingStats represents processing time and token usage statistics
 type ProcessingStats struct {
-	TotalProcessingTime    int `json:"total_processing_time_ms"`
-	RetrievalTime         int `json:"retrieval_time_ms"`
-	WebSearchTime         int `json:"web_search_time_ms"`
-	SynthesisTime         int `json:"synthesis_time_ms"`
-	InputTokens           int `json:"input_tokens"`
-	OutputTokens          int `json:"output_tokens"`
-	TotalTokens           int `json:"total_tokens"`
-	EstimatedCost         float64 `json:"estimated_cost_usd,omitempty"`
-	ModelUsed             string `json:"model_used"`
-	Temperature           float64 `json:"temperature"`
+	TotalProcessingTime int     `json:"total_processing_time_ms"`
+	RetrievalTime       int     `json:"retrieval_time_ms"`
+	WebSearchTime       int     `json:"web_search_time_ms"`
+	SynthesisTime       int     `json:"synthesis_time_ms"`
+	InputTokens         int     `json:"input_tokens"`
+	OutputTokens        int     `json:"output_tokens"`
+	TotalTokens         int     `json:"total_tokens"`
+	EstimatedCost       float64 `json:"estimated_cost_usd,omitempty"`
+	ModelUsed           string  `json:"model_used"`
+	Temperature         float64 `json:"temperature"`
 }
 
 // PipelineDecisionInfo represents information about pipeline decisions made during processing
@@ -2052,7 +2052,7 @@ func filterConversationForPrompt(messages []session.Message) []session.Message {
 func buildContextSourceInfo(contextItems []ContextItem, citedSources []string) []ContextSourceInfo {
 	var contextSources []ContextSourceInfo
 	citedSourceMap := make(map[string]bool)
-	
+
 	for _, source := range citedSources {
 		citedSourceMap[source] = true
 	}
@@ -2064,7 +2064,7 @@ func buildContextSourceInfo(contextItems []ContextItem, citedSources []string) [
 		}
 
 		sourceType := detectSourceType(item.SourceID)
-		
+
 		contextSource := ContextSourceInfo{
 			SourceID:   item.SourceID,
 			Title:      extractTitleFromSourceID(item.SourceID),
@@ -2076,7 +2076,7 @@ func buildContextSourceInfo(contextItems []ContextItem, citedSources []string) [
 			TokenCount: EstimateTokens(item.Content),
 			Used:       citedSourceMap[item.SourceID],
 		}
-		
+
 		contextSources = append(contextSources, contextSource)
 	}
 
@@ -2087,7 +2087,7 @@ func buildContextSourceInfo(contextItems []ContextItem, citedSources []string) [
 func buildWebSourceInfo(webResults []string, citedSources []string) []WebSourceInfo {
 	var webSources []WebSourceInfo
 	citedSourceMap := make(map[string]bool)
-	
+
 	for _, source := range citedSources {
 		citedSourceMap[source] = true
 	}
@@ -2100,7 +2100,7 @@ func buildWebSourceInfo(webResults []string, citedSources []string) []WebSourceI
 
 		title, snippet := extractTitleAndSnippetFromWebResult(result)
 		domain := extractDomainFromURL(url)
-		
+
 		webSource := WebSourceInfo{
 			URL:        url,
 			Title:      title,
@@ -2110,7 +2110,7 @@ func buildWebSourceInfo(webResults []string, citedSources []string) []WebSourceI
 			Domain:     domain,
 			Used:       citedSourceMap[url],
 		}
-		
+
 		webSources = append(webSources, webSource)
 	}
 
@@ -2120,7 +2120,7 @@ func buildWebSourceInfo(webResults []string, citedSources []string) []WebSourceI
 // detectSourceType determines the type of source based on its ID
 func detectSourceType(sourceID string) string {
 	sourceIDLower := strings.ToLower(sourceID)
-	
+
 	if strings.Contains(sourceIDLower, "runbook") {
 		return "runbook"
 	}
@@ -2136,7 +2136,7 @@ func detectSourceType(sourceID string) string {
 	if strings.Contains(sourceIDLower, "policy") {
 		return "policy"
 	}
-	
+
 	return "internal_doc"
 }
 
@@ -2146,11 +2146,11 @@ func extractTitleFromSourceID(sourceID string) string {
 	title := strings.TrimSuffix(sourceID, ".md")
 	title = strings.TrimSuffix(title, ".pdf")
 	title = strings.TrimSuffix(title, ".txt")
-	
+
 	// Replace hyphens and underscores with spaces
 	title = strings.ReplaceAll(title, "-", " ")
 	title = strings.ReplaceAll(title, "_", " ")
-	
+
 	// Capitalize first letter of each word
 	words := strings.Fields(title)
 	for i, word := range words {
@@ -2158,7 +2158,7 @@ func extractTitleFromSourceID(sourceID string) string {
 			words[i] = strings.ToUpper(string(word[0])) + strings.ToLower(word[1:])
 		}
 	}
-	
+
 	return strings.Join(words, " ")
 }
 
@@ -2166,11 +2166,11 @@ func extractTitleFromSourceID(sourceID string) string {
 func calculateRelevanceScore(item ContextItem) float64 {
 	// Base relevance is the confidence score
 	relevance := item.Score
-	
+
 	// Boost relevance based on priority
 	priorityBoost := float64(item.Priority) * 0.1
 	relevance += priorityBoost
-	
+
 	// Ensure relevance is between 0 and 1
 	if relevance > 1.0 {
 		relevance = 1.0
@@ -2178,7 +2178,7 @@ func calculateRelevanceScore(item ContextItem) float64 {
 	if relevance < 0.0 {
 		relevance = 0.0
 	}
-	
+
 	return relevance
 }
 
@@ -2187,7 +2187,7 @@ func extractTitleAndSnippetFromWebResult(result string) (string, string) {
 	lines := strings.Split(result, "\n")
 	title := ""
 	snippet := ""
-	
+
 	for _, line := range lines {
 		if strings.HasPrefix(line, "Title: ") {
 			title = strings.TrimSpace(strings.TrimPrefix(line, "Title: "))
@@ -2195,7 +2195,7 @@ func extractTitleAndSnippetFromWebResult(result string) (string, string) {
 			snippet = strings.TrimSpace(strings.TrimPrefix(line, "Snippet: "))
 		}
 	}
-	
+
 	return title, snippet
 }
 
@@ -2204,14 +2204,14 @@ func extractDomainFromURL(url string) string {
 	// Remove protocol
 	domain := strings.TrimPrefix(url, "https://")
 	domain = strings.TrimPrefix(domain, "http://")
-	
+
 	// Extract domain part before first slash
 	if slashIndex := strings.Index(domain, "/"); slashIndex != -1 {
 		domain = domain[:slashIndex]
 	}
-	
+
 	// Remove www prefix
 	domain = strings.TrimPrefix(domain, "www.")
-	
+
 	return domain
 }

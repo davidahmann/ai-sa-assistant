@@ -31,8 +31,8 @@ type ContextDisplayConfig struct {
 	ShowTokenUsage        bool
 	ShowProcessingTime    bool
 	ShowPipelineDecisions bool
-	CompactView          bool
-	MaxPreviewLength     int
+	CompactView           bool
+	MaxPreviewLength      int
 }
 
 // DefaultDisplayConfig returns default configuration for context display
@@ -42,8 +42,8 @@ func DefaultDisplayConfig() ContextDisplayConfig {
 		ShowTokenUsage:        true,
 		ShowProcessingTime:    true,
 		ShowPipelineDecisions: true,
-		CompactView:          false,
-		MaxPreviewLength:     150,
+		CompactView:           false,
+		MaxPreviewLength:      150,
 	}
 }
 
@@ -63,28 +63,28 @@ type PipelineVisibility struct {
 
 // ContextDisplayResult contains all formatted context information
 type ContextDisplayResult struct {
-	SourceSummary       SourceSummary       `json:"source_summary"`
-	PipelineVisibility  PipelineVisibility  `json:"pipeline_visibility"`
-	ProcessingStats     ProcessingStatsView `json:"processing_stats"`
-	TrustIndicators     TrustIndicators     `json:"trust_indicators"`
+	SourceSummary      SourceSummary       `json:"source_summary"`
+	PipelineVisibility PipelineVisibility  `json:"pipeline_visibility"`
+	ProcessingStats    ProcessingStatsView `json:"processing_stats"`
+	TrustIndicators    TrustIndicators     `json:"trust_indicators"`
 }
 
 // ProcessingStatsView represents formatted processing statistics
 type ProcessingStatsView struct {
-	TotalTime      string  `json:"total_time"`
-	TokenUsage     string  `json:"token_usage"`
-	EstimatedCost  string  `json:"estimated_cost"`
-	ModelInfo      string  `json:"model_info"`
-	PerformanceBar string  `json:"performance_bar"`
+	TotalTime      string `json:"total_time"`
+	TokenUsage     string `json:"token_usage"`
+	EstimatedCost  string `json:"estimated_cost"`
+	ModelInfo      string `json:"model_info"`
+	PerformanceBar string `json:"performance_bar"`
 }
 
 // TrustIndicators represents trust and quality indicators
 type TrustIndicators struct {
-	OverallScore      float64 `json:"overall_score"`
-	SourceQuality     float64 `json:"source_quality"`
-	Freshness         string  `json:"freshness"`
-	ConfidenceLevel   string  `json:"confidence_level"`
-	TrustBadges       []string `json:"trust_badges"`
+	OverallScore    float64  `json:"overall_score"`
+	SourceQuality   float64  `json:"source_quality"`
+	Freshness       string   `json:"freshness"`
+	ConfidenceLevel string   `json:"confidence_level"`
+	TrustBadges     []string `json:"trust_badges"`
 }
 
 // FormatContextDisplay creates comprehensive formatted context display
@@ -165,7 +165,7 @@ func formatSourceSummary(response synth.SynthesisResponse, config ContextDisplay
 // formatInternalSourcesHTML formats internal document sources as HTML
 func formatInternalSourcesHTML(sources []synth.ContextSourceInfo, config ContextDisplayConfig) string {
 	var builder strings.Builder
-	
+
 	builder.WriteString(`<div class="internal-sources">`)
 	builder.WriteString(fmt.Sprintf(`<h5>📄 Internal Documents (%d chunks)</h5>`, len(sources)))
 	builder.WriteString(`<ul class="source-list">`)
@@ -180,13 +180,13 @@ func formatInternalSourcesHTML(sources []synth.ContextSourceInfo, config Context
 
 		builder.WriteString(fmt.Sprintf(`<li class="source-item %s">`, usedClass))
 		builder.WriteString(fmt.Sprintf(`<div class="source-info">%s <strong>%s</strong>`, usedIcon, source.Title))
-		
+
 		if config.ShowConfidenceScores {
 			builder.WriteString(fmt.Sprintf(` (confidence: %.2f)`, source.Confidence))
 		}
-		
+
 		builder.WriteString(`</div>`)
-		
+
 		if !config.CompactView && source.Preview != "" {
 			preview := source.Preview
 			if len(preview) > config.MaxPreviewLength {
@@ -194,11 +194,11 @@ func formatInternalSourcesHTML(sources []synth.ContextSourceInfo, config Context
 			}
 			builder.WriteString(fmt.Sprintf(`<div class="source-preview">%s</div>`, preview))
 		}
-		
+
 		if config.ShowTokenUsage {
 			builder.WriteString(fmt.Sprintf(`<div class="source-meta">%d tokens • %s</div>`, source.TokenCount, source.SourceType))
 		}
-		
+
 		builder.WriteString(`</li>`)
 	}
 
@@ -209,7 +209,7 @@ func formatInternalSourcesHTML(sources []synth.ContextSourceInfo, config Context
 // formatWebSourcesHTML formats web search sources as HTML
 func formatWebSourcesHTML(sources []synth.WebSourceInfo, config ContextDisplayConfig) string {
 	var builder strings.Builder
-	
+
 	builder.WriteString(`<div class="web-sources">`)
 	builder.WriteString(fmt.Sprintf(`<h5>🌐 Web Search Results (%d articles)</h5>`, len(sources)))
 	builder.WriteString(`<ul class="source-list">`)
@@ -224,13 +224,13 @@ func formatWebSourcesHTML(sources []synth.WebSourceInfo, config ContextDisplayCo
 
 		builder.WriteString(fmt.Sprintf(`<li class="source-item %s">`, usedClass))
 		builder.WriteString(fmt.Sprintf(`<div class="source-info">%s <a href="%s" target="_blank">%s</a>`, usedIcon, source.URL, source.Title))
-		
+
 		if config.ShowConfidenceScores {
 			builder.WriteString(fmt.Sprintf(` (confidence: %.2f)`, source.Confidence))
 		}
-		
+
 		builder.WriteString(`</div>`)
-		
+
 		if !config.CompactView && source.Snippet != "" {
 			snippet := source.Snippet
 			if len(snippet) > config.MaxPreviewLength {
@@ -238,7 +238,7 @@ func formatWebSourcesHTML(sources []synth.WebSourceInfo, config ContextDisplayCo
 			}
 			builder.WriteString(fmt.Sprintf(`<div class="source-preview">%s</div>`, snippet))
 		}
-		
+
 		builder.WriteString(fmt.Sprintf(`<div class="source-meta">%s • %s</div>`, source.Domain, source.Freshness))
 		builder.WriteString(`</li>`)
 	}
@@ -264,42 +264,42 @@ func formatLLMSynthesisHTML(stats synth.ProcessingStats) string {
 // formatInternalSourcesText formats internal document sources as plain text
 func formatInternalSourcesText(sources []synth.ContextSourceInfo, config ContextDisplayConfig) string {
 	var builder strings.Builder
-	
+
 	builder.WriteString(fmt.Sprintf("┌─ Internal Documents (%d chunks)\n", len(sources)))
-	
+
 	for i, source := range sources {
 		usedIcon := "├─"
 		if i == len(sources)-1 {
 			usedIcon = "└─"
 		}
-		
+
 		builder.WriteString(fmt.Sprintf("%s %s", usedIcon, source.Title))
-		
+
 		if config.ShowConfidenceScores {
 			builder.WriteString(fmt.Sprintf(" (confidence: %.2f)", source.Confidence))
 		}
-		
+
 		builder.WriteString("\n")
 	}
-	
+
 	return builder.String()
 }
 
 // formatWebSourcesText formats web search sources as plain text
 func formatWebSourcesText(sources []synth.WebSourceInfo, config ContextDisplayConfig) string {
 	var builder strings.Builder
-	
+
 	builder.WriteString(fmt.Sprintf("├─ Web Search Results (%d articles)\n", len(sources)))
-	
+
 	for i, source := range sources {
 		usedIcon := "│  ├─"
 		if i == len(sources)-1 {
 			usedIcon = "│  └─"
 		}
-		
+
 		builder.WriteString(fmt.Sprintf("%s %s (%s)\n", usedIcon, source.Title, source.URL))
 	}
-	
+
 	return builder.String()
 }
 
@@ -312,24 +312,24 @@ func formatLLMSynthesisText(stats synth.ProcessingStats) string {
 // formatInternalSourcesMarkdown formats internal document sources as Markdown
 func formatInternalSourcesMarkdown(sources []synth.ContextSourceInfo, config ContextDisplayConfig) string {
 	var builder strings.Builder
-	
+
 	builder.WriteString(fmt.Sprintf("### 📄 Internal Documents (%d chunks)\n\n", len(sources)))
-	
+
 	for _, source := range sources {
 		usedIcon := "✅"
 		if !source.Used {
 			usedIcon = "⭕"
 		}
-		
+
 		builder.WriteString(fmt.Sprintf("- %s **%s**", usedIcon, source.Title))
-		
+
 		if config.ShowConfidenceScores {
 			builder.WriteString(fmt.Sprintf(" (confidence: %.2f)", source.Confidence))
 		}
-		
+
 		builder.WriteString("\n")
 	}
-	
+
 	builder.WriteString("\n")
 	return builder.String()
 }
@@ -337,24 +337,24 @@ func formatInternalSourcesMarkdown(sources []synth.ContextSourceInfo, config Con
 // formatWebSourcesMarkdown formats web search sources as Markdown
 func formatWebSourcesMarkdown(sources []synth.WebSourceInfo, config ContextDisplayConfig) string {
 	var builder strings.Builder
-	
+
 	builder.WriteString(fmt.Sprintf("### 🌐 Web Search Results (%d articles)\n\n", len(sources)))
-	
+
 	for _, source := range sources {
 		usedIcon := "✅"
 		if !source.Used {
 			usedIcon = "⭕"
 		}
-		
+
 		builder.WriteString(fmt.Sprintf("- %s [%s](%s)", usedIcon, source.Title, source.URL))
-		
+
 		if config.ShowConfidenceScores {
 			builder.WriteString(fmt.Sprintf(" (confidence: %.2f)", source.Confidence))
 		}
-		
+
 		builder.WriteString("\n")
 	}
-	
+
 	builder.WriteString("\n")
 	return builder.String()
 }
@@ -372,76 +372,76 @@ func formatPipelineVisibility(response synth.SynthesisResponse, config ContextDi
 	}
 
 	pipeline := response.PipelineDecision
-	
+
 	var htmlBuilder, textBuilder, markdownBuilder strings.Builder
 
 	// HTML version
 	htmlBuilder.WriteString(`<div class="pipeline-visibility">`)
 	htmlBuilder.WriteString(`<h4>🔍 Pipeline Decisions</h4>`)
 	htmlBuilder.WriteString(`<div class="pipeline-info">`)
-	
+
 	htmlBuilder.WriteString(fmt.Sprintf(`<div class="query-analysis">Query Type: <span class="query-type">%s</span></div>`, pipeline.QueryType))
-	
+
 	if len(pipeline.MetadataFiltersApplied) > 0 {
 		htmlBuilder.WriteString(fmt.Sprintf(`<div class="filters">Metadata Filters: %s</div>`, strings.Join(pipeline.MetadataFiltersApplied, ", ")))
 	}
-	
+
 	if pipeline.FallbackSearchUsed {
 		htmlBuilder.WriteString(`<div class="fallback">🔄 Fallback search used due to insufficient initial results</div>`)
 	}
-	
+
 	if pipeline.WebSearchTriggered {
 		htmlBuilder.WriteString(`<div class="web-search">🌐 Web search triggered for fresh information</div>`)
 		if len(pipeline.FreshnessKeywords) > 0 {
 			htmlBuilder.WriteString(fmt.Sprintf(`<div class="freshness">Freshness keywords: %s</div>`, strings.Join(pipeline.FreshnessKeywords, ", ")))
 		}
 	}
-	
+
 	htmlBuilder.WriteString(fmt.Sprintf(`<div class="context-stats">Context: %d items filtered → %d used</div>`, pipeline.ContextItemsFiltered, pipeline.ContextItemsUsed))
-	
+
 	if pipeline.Reasoning != "" {
 		htmlBuilder.WriteString(fmt.Sprintf(`<div class="reasoning">Reasoning: %s</div>`, pipeline.Reasoning))
 	}
-	
+
 	htmlBuilder.WriteString(`</div></div>`)
 
 	// Text version
 	textBuilder.WriteString("🔍 Pipeline Decisions:\n")
 	textBuilder.WriteString(fmt.Sprintf("- Query Type: %s\n", pipeline.QueryType))
-	
+
 	if len(pipeline.MetadataFiltersApplied) > 0 {
 		textBuilder.WriteString(fmt.Sprintf("- Metadata Filters: %s\n", strings.Join(pipeline.MetadataFiltersApplied, ", ")))
 	}
-	
+
 	if pipeline.FallbackSearchUsed {
 		textBuilder.WriteString("- Fallback search used\n")
 	}
-	
+
 	if pipeline.WebSearchTriggered {
 		textBuilder.WriteString("- Web search triggered\n")
 	}
-	
+
 	textBuilder.WriteString(fmt.Sprintf("- Context: %d filtered → %d used\n", pipeline.ContextItemsFiltered, pipeline.ContextItemsUsed))
 
 	// Markdown version
 	markdownBuilder.WriteString("## 🔍 Pipeline Decisions\n\n")
 	markdownBuilder.WriteString(fmt.Sprintf("- **Query Type**: %s\n", pipeline.QueryType))
-	
+
 	if len(pipeline.MetadataFiltersApplied) > 0 {
 		markdownBuilder.WriteString(fmt.Sprintf("- **Metadata Filters**: %s\n", strings.Join(pipeline.MetadataFiltersApplied, ", ")))
 	}
-	
+
 	if pipeline.FallbackSearchUsed {
 		markdownBuilder.WriteString("- **Fallback Search**: Used due to insufficient initial results\n")
 	}
-	
+
 	if pipeline.WebSearchTriggered {
 		markdownBuilder.WriteString("- **Web Search**: Triggered for fresh information\n")
 		if len(pipeline.FreshnessKeywords) > 0 {
 			markdownBuilder.WriteString(fmt.Sprintf("- **Freshness Keywords**: %s\n", strings.Join(pipeline.FreshnessKeywords, ", ")))
 		}
 	}
-	
+
 	markdownBuilder.WriteString(fmt.Sprintf("- **Context Usage**: %d items filtered → %d used\n\n", pipeline.ContextItemsFiltered, pipeline.ContextItemsUsed))
 
 	return PipelineVisibility{
@@ -466,9 +466,9 @@ func formatProcessingStats(stats synth.ProcessingStats, config ContextDisplayCon
 	}
 
 	if config.ShowTokenUsage {
-		result.TokenUsage = fmt.Sprintf("%d input + %d output = %d total tokens", 
+		result.TokenUsage = fmt.Sprintf("%d input + %d output = %d total tokens",
 			stats.InputTokens, stats.OutputTokens, stats.TotalTokens)
-		
+
 		if stats.EstimatedCost > 0 {
 			result.EstimatedCost = fmt.Sprintf("$%.4f", stats.EstimatedCost)
 		}
@@ -557,6 +557,6 @@ func createPerformanceBar(stats synth.ProcessingStats) string {
 	websearch := float64(stats.WebSearchTime) / float64(total) * 100
 	synthesis := float64(stats.SynthesisTime) / float64(total) * 100
 
-	return fmt.Sprintf("Retrieval: %.0f%% | Web Search: %.0f%% | Synthesis: %.0f%%", 
+	return fmt.Sprintf("Retrieval: %.0f%% | Web Search: %.0f%% | Synthesis: %.0f%%",
 		retrieval, websearch, synthesis)
 }
