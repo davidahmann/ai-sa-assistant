@@ -56,15 +56,16 @@ type PromptConfig struct {
 
 // Configuration constants
 const (
-	DefaultMaxTokens       = 6000
-	DefaultMaxContextItems = 10
-	DefaultMaxWebResults   = 5
-	MinimalPromptLength    = 100
-	TokenEstimateRatio     = 4
-	TruncationSafetyRatio  = 0.9
-	MinCodeMatchGroups     = 3
-	MinSourceMatchGroups   = 2
-	MinURLLength           = 10
+	DefaultMaxTokens        = 6000
+	DefaultMaxContextItems  = 10
+	DefaultMaxWebResults    = 5
+	DefaultMaxHistoryTokens = 1500 // Reserve 1500 tokens for conversation history
+	MinimalPromptLength     = 100
+	TokenEstimateRatio      = 4
+	TruncationSafetyRatio   = 0.9
+	MinCodeMatchGroups      = 3
+	MinSourceMatchGroups    = 2
+	MinURLLength            = 10
 )
 
 // DefaultPromptConfig returns default configuration
@@ -171,7 +172,7 @@ func BuildPromptWithConfig(query string, contextItems []ContextItem, webResults 
 }
 
 // BuildPromptWithConversationAndConfig combines context and conversation history
-// into a comprehensive prompt with configuration
+// into a comprehensive prompt with intelligent token allocation
 func BuildPromptWithConversationAndConfig(
 	query string,
 	contextItems []ContextItem,
@@ -186,45 +187,58 @@ func BuildPromptWithConversationAndConfig(
 		validatedContext = contextItems
 	}
 
-	// Prioritize and limit context based on token constraints
-	optimizedContext := PrioritizeContext(validatedContext, config.MaxContextItems)
-	limitedWebResults := LimitWebResults(webResults, config.MaxWebResults)
+	// Calculate token allocation intelligently
+	allocation := calculateTokenAllocation(config.MaxTokens, len(conversationHistory) > 0)
+
+	// Build system prompt first to get baseline token usage
+	systemPrompt := buildSystemPrompt(config.QueryType)
+	baseTokens := EstimateTokens(systemPrompt + fmt.Sprintf("Current User Query: %s\n\n", query) + "Please provide your comprehensive response now:")
+
+	// Allocate remaining tokens
+	remainingTokens := config.MaxTokens - baseTokens
+	if remainingTokens <= 0 {
+		// If base prompt is too large, return minimal version
+		return systemPrompt + fmt.Sprintf("User Query: %s\n\nPlease provide your response:", query)
+	}
 
 	var prompt strings.Builder
-
-	// System instructions based on query type
-	systemPrompt := buildSystemPrompt(config.QueryType)
 	prompt.WriteString(systemPrompt)
 
-	// Conversation history (if available)
-	if len(conversationHistory) > 0 {
+	// Add conversation history with allocated tokens
+	conversationTokens := 0
+	if len(conversationHistory) > 0 && allocation.ConversationTokens > 0 {
 		prompt.WriteString("--- Previous Conversation Context ---\n")
-		conversationContext := formatConversationHistory(conversationHistory)
+		conversationContext := formatConversationHistoryWithTokenLimit(conversationHistory, allocation.ConversationTokens)
 		prompt.WriteString(conversationContext)
 		prompt.WriteString("\n")
+		conversationTokens = EstimateTokens(conversationContext)
+	}
+
+	// Adjust context allocation based on actual conversation usage
+	actualContextTokens := allocation.ContextTokens + (allocation.ConversationTokens - conversationTokens)
+	if actualContextTokens < 0 {
+		actualContextTokens = allocation.ContextTokens
 	}
 
 	// User query
 	prompt.WriteString(fmt.Sprintf("Current User Query: %s\n\n", query))
 
-	// Internal document context
-	if len(optimizedContext) > 0 {
-		prompt.WriteString("--- Internal Document Context ---\n")
-		for i, item := range optimizedContext {
-			prompt.WriteString(fmt.Sprintf("Context %d [%s]: %s\n\n", i+1, item.SourceID, item.Content))
+	// Add context items within token limit
+	if len(validatedContext) > 0 && actualContextTokens > 0 {
+		contextSection := buildContextSectionWithTokenLimit(validatedContext, actualContextTokens)
+		prompt.WriteString(contextSection)
+	}
+
+	// Add web results within remaining token budget
+	if len(webResults) > 0 {
+		remainingBudget := remainingTokens - EstimateTokens(prompt.String()) - 100 // Reserve some buffer
+		if remainingBudget > 200 {                                                 // Only add web results if we have reasonable space
+			webSection := buildWebResultsSectionWithTokenLimit(webResults, remainingBudget, config.MaxWebResults)
+			prompt.WriteString(webSection)
 		}
 	}
 
-	// Web search results with enhanced URL tracking
-	if len(limitedWebResults) > 0 {
-		prompt.WriteString("--- Live Web Search Results ---\n")
-		for i, result := range limitedWebResults {
-			formattedResult := formatWebResultWithURL(i+1, result)
-			prompt.WriteString(formattedResult)
-		}
-	}
-
-	// Add instruction about conversation continuity
+	// Add conversation continuity instructions
 	if len(conversationHistory) > 0 {
 		prompt.WriteString("\nIMPORTANT: This is a continuation of an ongoing conversation. Please:\n")
 		prompt.WriteString("- Reference previous context when relevant\n")
@@ -235,13 +249,121 @@ func BuildPromptWithConversationAndConfig(
 
 	prompt.WriteString("Please provide your comprehensive response now:")
 
-	// Ensure token limits are respected
+	// Final safety check and truncation if needed
 	finalPrompt := prompt.String()
 	if EstimateTokens(finalPrompt) > config.MaxTokens {
 		finalPrompt = TruncateToTokenLimit(finalPrompt, config.MaxTokens)
 	}
 
 	return finalPrompt
+}
+
+// TokenAllocation represents how tokens should be allocated across prompt sections
+type TokenAllocation struct {
+	ConversationTokens int
+	ContextTokens      int
+	WebResultsTokens   int
+	SystemTokens       int
+	BufferTokens       int
+}
+
+// calculateTokenAllocation calculates optimal token allocation based on prompt requirements
+func calculateTokenAllocation(maxTokens int, hasConversationHistory bool) TokenAllocation {
+	// Reserve tokens for system prompt and buffer
+	systemTokens := maxTokens / 4  // ~25% for system instructions
+	bufferTokens := maxTokens / 10 // ~10% buffer for final response instruction
+	availableTokens := maxTokens - systemTokens - bufferTokens
+
+	if !hasConversationHistory {
+		// No conversation history - allocate more to context
+		return TokenAllocation{
+			ConversationTokens: 0,
+			ContextTokens:      int(float64(availableTokens) * 0.8), // 80% to context
+			WebResultsTokens:   int(float64(availableTokens) * 0.2), // 20% to web results
+			SystemTokens:       systemTokens,
+			BufferTokens:       bufferTokens,
+		}
+	}
+
+	// With conversation history - balanced allocation
+	return TokenAllocation{
+		ConversationTokens: DefaultMaxHistoryTokens,
+		ContextTokens:      int(float64(availableTokens-DefaultMaxHistoryTokens) * 0.7), // 70% of remaining to context
+		WebResultsTokens:   int(float64(availableTokens-DefaultMaxHistoryTokens) * 0.3), // 30% of remaining to web
+		SystemTokens:       systemTokens,
+		BufferTokens:       bufferTokens,
+	}
+}
+
+// buildContextSectionWithTokenLimit builds context section within token limit
+func buildContextSectionWithTokenLimit(contextItems []ContextItem, maxTokens int) string {
+	if len(contextItems) == 0 || maxTokens <= 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+	builder.WriteString("--- Internal Document Context ---\n")
+	currentTokens := EstimateTokens(builder.String())
+
+	includedItems := 0
+	for i, item := range contextItems {
+		contextEntry := fmt.Sprintf("Context %d [%s]: %s\n\n", i+1, item.SourceID, item.Content)
+		entryTokens := EstimateTokens(contextEntry)
+
+		if currentTokens+entryTokens > maxTokens {
+			// Try to include a truncated version if it's the first item and we have reasonable space
+			if includedItems == 0 && maxTokens-currentTokens > 200 {
+				availableTokens := maxTokens - currentTokens - EstimateTokens(fmt.Sprintf("Context %d [%s]: \n\n", i+1, item.SourceID))
+				truncatedContent := truncateMessageContentToTokens(item.Content, availableTokens)
+				builder.WriteString(fmt.Sprintf("Context %d [%s]: %s\n\n", i+1, item.SourceID, truncatedContent))
+				includedItems++
+			}
+			break
+		}
+
+		builder.WriteString(contextEntry)
+		currentTokens += entryTokens
+		includedItems++
+	}
+
+	if includedItems == 0 {
+		return ""
+	}
+
+	return builder.String()
+}
+
+// buildWebResultsSectionWithTokenLimit builds web results section within token limit
+func buildWebResultsSectionWithTokenLimit(webResults []string, maxTokens int, maxResults int) string {
+	if len(webResults) == 0 || maxTokens <= 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+	builder.WriteString("--- Live Web Search Results ---\n")
+	currentTokens := EstimateTokens(builder.String())
+
+	limitedResults := LimitWebResults(webResults, maxResults)
+	includedResults := 0
+
+	for i, result := range limitedResults {
+		formattedResult := formatWebResultWithURL(i+1, result)
+		resultTokens := EstimateTokens(formattedResult)
+
+		if currentTokens+resultTokens > maxTokens {
+			break
+		}
+
+		builder.WriteString(formattedResult)
+		currentTokens += resultTokens
+		includedResults++
+	}
+
+	if includedResults == 0 {
+		return ""
+	}
+
+	return builder.String()
 }
 
 // ParseResponse parses the LLM response into structured components
@@ -1713,48 +1835,111 @@ func buildCodeSecurityRequirements() string {
 `
 }
 
-// formatConversationHistory formats conversation history for inclusion in prompts
+// formatConversationHistory formats conversation history for inclusion in prompts with token-aware truncation
 func formatConversationHistory(conversationHistory []session.Message) string {
 	if len(conversationHistory) == 0 {
 		return ""
 	}
 
-	var builder strings.Builder
+	// Use token-aware conversation history management
+	return formatConversationHistoryWithTokenLimit(conversationHistory, DefaultMaxHistoryTokens)
+}
 
-	// Filter and limit conversation history to prevent prompt overflow
-	filteredMessages := filterConversationForPrompt(conversationHistory)
-	const maxHistoryMessages = 10
-
-	startIndex := 0
-	if len(filteredMessages) > maxHistoryMessages {
-		startIndex = len(filteredMessages) - maxHistoryMessages
-		builder.WriteString("...(earlier messages truncated for brevity)...\n\n")
+// formatConversationHistoryWithTokenLimit formats conversation history with a specific token limit
+func formatConversationHistoryWithTokenLimit(conversationHistory []session.Message, maxTokens int) string {
+	if len(conversationHistory) == 0 || maxTokens <= 0 {
+		return ""
 	}
 
-	for i := startIndex; i < len(filteredMessages); i++ {
+	var builder strings.Builder
+	currentTokens := 0
+
+	// Filter and reverse to process most recent messages first
+	filteredMessages := filterConversationForPrompt(conversationHistory)
+	if len(filteredMessages) == 0 {
+		return ""
+	}
+
+	// Process messages in reverse order (most recent first) to fit within token limit
+	var includedMessages []session.Message
+	truncationNotice := ""
+
+	for i := len(filteredMessages) - 1; i >= 0; i-- {
 		message := filteredMessages[i]
 
-		// Format role name
-		var roleDisplay string
-		switch message.Role {
-		case session.UserRole:
-			roleDisplay = "User"
-		case session.AssistantRole:
-			roleDisplay = "Assistant"
-		case session.SystemRole:
-			roleDisplay = "System"
-		default:
-			roleDisplay = string(message.Role)
+		// Format the message to estimate tokens
+		roleDisplay := formatMessageRole(message.Role)
+		timestamp := message.Timestamp.Format("15:04")
+		formattedMessage := fmt.Sprintf("%s [%s]: %s\n\n", roleDisplay, timestamp, message.Content)
+
+		messageTokens := EstimateTokens(formattedMessage)
+
+		// Check if adding this message would exceed the limit
+		if currentTokens+messageTokens > maxTokens {
+			// Try to truncate the message content to fit
+			remainingTokens := maxTokens - currentTokens - EstimateTokens(fmt.Sprintf("%s [%s]: \n\n", roleDisplay, timestamp))
+
+			if remainingTokens > 100 { // Only include if we have reasonable space
+				truncatedContent := truncateMessageContentToTokens(message.Content, remainingTokens)
+				formattedMessage = fmt.Sprintf("%s [%s]: %s\n\n", roleDisplay, timestamp, truncatedContent)
+				includedMessages = append([]session.Message{message}, includedMessages...)
+				currentTokens += EstimateTokens(formattedMessage)
+			}
+
+			// Set truncation notice if we're excluding messages
+			if i > 0 {
+				truncationNotice = "...(earlier messages truncated to fit context window)...\n\n"
+			}
+			break
 		}
 
-		// Format timestamp for context
-		timestamp := message.Timestamp.Format("15:04")
+		includedMessages = append([]session.Message{message}, includedMessages...)
+		currentTokens += messageTokens
+	}
 
-		// Add the message
+	// Build the final conversation history
+	if truncationNotice != "" {
+		builder.WriteString(truncationNotice)
+	}
+
+	for _, message := range includedMessages {
+		roleDisplay := formatMessageRole(message.Role)
+		timestamp := message.Timestamp.Format("15:04")
 		builder.WriteString(fmt.Sprintf("%s [%s]: %s\n\n", roleDisplay, timestamp, message.Content))
 	}
 
 	return builder.String()
+}
+
+// formatMessageRole formats a message role for display
+func formatMessageRole(role session.MessageRole) string {
+	switch role {
+	case session.UserRole:
+		return "User"
+	case session.AssistantRole:
+		return "Assistant"
+	case session.SystemRole:
+		return "System"
+	default:
+		return string(role)
+	}
+}
+
+// truncateMessageContentToTokens truncates message content to fit within a token limit
+func truncateMessageContentToTokens(content string, maxTokens int) string {
+	if EstimateTokens(content) <= maxTokens {
+		return content
+	}
+
+	// Calculate target character count
+	targetChars := int(float64(maxTokens) * TokenEstimateRatio * TruncationSafetyRatio)
+	runes := []rune(content)
+
+	if len(runes) > targetChars {
+		return string(runes[:targetChars]) + "...[truncated]"
+	}
+
+	return content
 }
 
 // filterConversationForPrompt filters conversation messages for prompt inclusion

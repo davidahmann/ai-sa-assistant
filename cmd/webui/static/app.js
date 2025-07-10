@@ -104,11 +104,17 @@ class ChatApp {
             const timeAgo = this.formatTimeAgo(new Date(conv.updated_at));
 
             item.innerHTML = `
-                <div class="conversation-title">${this.escapeHtml(conv.title)}</div>
+                <div class="conversation-title" data-id="${conv.id}">
+                    <span class="title-text">${this.escapeHtml(conv.title)}</span>
+                    <input class="title-input" type="text" value="${this.escapeHtml(conv.title)}" style="display: none;">
+                </div>
                 <div class="conversation-meta">
                     <span>${conv.message_count} messages</span>
                     <span>${timeAgo}</span>
                     <div class="conversation-actions">
+                        <button class="action-btn edit-btn" data-id="${conv.id}" title="Edit Title">
+                            ✏️
+                        </button>
                         <button class="action-btn delete-btn" data-id="${conv.id}" title="Delete">
                             🗑️
                         </button>
@@ -118,10 +124,17 @@ class ChatApp {
 
             // Click to load conversation
             item.addEventListener('click', (e) => {
-                if (!e.target.classList.contains('action-btn')) {
+                if (!e.target.classList.contains('action-btn') && !e.target.classList.contains('title-input')) {
                     this.loadConversation(conv.id);
                     this.closeSidebar();
                 }
+            });
+
+            // Edit conversation title
+            const editBtn = item.querySelector('.edit-btn');
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.startEditingTitle(conv.id);
             });
 
             // Delete conversation
@@ -351,6 +364,117 @@ class ChatApp {
         if (activeItem) {
             activeItem.classList.add('active');
         }
+    }
+
+    startEditingTitle(conversationId) {
+        const titleContainer = document.querySelector(`.conversation-title[data-id="${conversationId}"]`);
+        if (!titleContainer) return;
+
+        const titleText = titleContainer.querySelector('.title-text');
+        const titleInput = titleContainer.querySelector('.title-input');
+
+        if (!titleText || !titleInput) return;
+
+        // Hide text, show input
+        titleText.style.display = 'none';
+        titleInput.style.display = 'block';
+        titleInput.focus();
+        titleInput.select();
+
+        // Handle input events
+        const finishEditing = () => this.finishEditingTitle(conversationId);
+        const cancelEditing = () => this.cancelEditingTitle(conversationId);
+
+        titleInput.addEventListener('blur', finishEditing, { once: true });
+        titleInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                finishEditing();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelEditing();
+            }
+        }, { once: true });
+    }
+
+    async finishEditingTitle(conversationId) {
+        const titleContainer = document.querySelector(`.conversation-title[data-id="${conversationId}"]`);
+        if (!titleContainer) return;
+
+        const titleText = titleContainer.querySelector('.title-text');
+        const titleInput = titleContainer.querySelector('.title-input');
+
+        if (!titleText || !titleInput) return;
+
+        const newTitle = titleInput.value.trim();
+        const conversation = this.conversations.get(conversationId);
+
+        if (!newTitle || !conversation) {
+            this.cancelEditingTitle(conversationId);
+            return;
+        }
+
+        // Don't update if title hasn't changed
+        if (newTitle === conversation.title) {
+            this.cancelEditingTitle(conversationId);
+            return;
+        }
+
+        try {
+            const response = await fetch(`/conversations/${conversationId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    title: newTitle
+                })
+            });
+
+            if (response.ok) {
+                // Update local data
+                conversation.title = newTitle;
+                this.conversations.set(conversationId, conversation);
+
+                // Update UI
+                titleText.textContent = newTitle;
+                titleText.style.display = 'block';
+                titleInput.style.display = 'none';
+
+                // Update main conversation title if this is the current conversation
+                if (this.currentConversationId === conversationId) {
+                    this.conversationTitle.textContent = newTitle;
+                }
+
+                this.showToast('Conversation title updated', 'success');
+            } else {
+                this.showToast('Failed to update conversation title', 'error');
+                this.cancelEditingTitle(conversationId);
+            }
+        } catch (error) {
+            console.error('Failed to update conversation title:', error);
+            this.showToast('Failed to update conversation title', 'error');
+            this.cancelEditingTitle(conversationId);
+        }
+    }
+
+    cancelEditingTitle(conversationId) {
+        const titleContainer = document.querySelector(`.conversation-title[data-id="${conversationId}"]`);
+        if (!titleContainer) return;
+
+        const titleText = titleContainer.querySelector('.title-text');
+        const titleInput = titleContainer.querySelector('.title-input');
+
+        if (!titleText || !titleInput) return;
+
+        const conversation = this.conversations.get(conversationId);
+        if (conversation) {
+            titleInput.value = conversation.title;
+        }
+
+        // Show text, hide input
+        titleText.style.display = 'block';
+        titleInput.style.display = 'none';
     }
 
     updateSendButton() {

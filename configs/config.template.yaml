@@ -194,6 +194,40 @@ feedback:
   # SQLite database path for sqlite-based feedback storage
   db_path: "./feedback.db"
 
+# Session Management Configuration
+# Environment variables: SA_ASSISTANT_SESSION_*
+session:
+  # Storage type: memory, redis
+  # memory: In-memory storage (lost on restart)
+  # redis: Redis-based persistent storage
+  # Environment variable: SA_ASSISTANT_SESSION_STORAGE_TYPE
+  storage_type: "memory"
+
+  # Redis URL for redis storage type
+  # Environment variable: SA_ASSISTANT_SESSION_REDIS_URL
+  redis_url: "redis://localhost:6379"
+
+  # Default session TTL in minutes
+  # How long sessions persist without activity
+  # Environment variable: SA_ASSISTANT_SESSION_DEFAULT_TTL_MINUTES
+  default_ttl_minutes: 1440  # 24 hours
+
+  # Maximum number of sessions to maintain
+  # Environment variable: SA_ASSISTANT_SESSION_MAX_SESSIONS
+  max_sessions: 10000
+
+  # Cleanup interval for expired sessions in minutes
+  # Environment variable: SA_ASSISTANT_SESSION_CLEANUP_INTERVAL_MINUTES
+  cleanup_interval_minutes: 60  # 1 hour
+
+  # Maximum conversation history length to include in prompts
+  # Environment variable: SA_ASSISTANT_SESSION_MAX_HISTORY_LENGTH
+  max_history_length: 20
+
+  # Enable conversation management API endpoints
+  # Environment variable: SA_ASSISTANT_SESSION_ENABLE_CONVERSATION_API
+  enable_conversation_api: true
+
 # Development & Production Profiles
 # The configuration system automatically detects environment via:
 # ENVIRONMENT or ENV environment variables
@@ -219,6 +253,11 @@ production:
   synthesis:
     temperature: 0.3  # Balanced for production use
 
+  session:
+    storage_type: "redis"  # Use Redis for persistence in production
+    default_ttl_minutes: 2880  # 48 hours for production
+    cleanup_interval_minutes: 30  # More frequent cleanup
+
 # Environment Variable Quick Reference:
 # ====================================
 # Required:
@@ -243,6 +282,15 @@ production:
 #   SA_ASSISTANT_SERVICES_RETRIEVE_URL - Retrieval service URL
 #   SA_ASSISTANT_SERVICES_WEBSEARCH_URL - Web search service URL
 #   SA_ASSISTANT_SERVICES_SYNTHESIZE_URL - Synthesis service URL
+#
+# Session Management:
+#   SA_ASSISTANT_SESSION_STORAGE_TYPE - Session storage backend (memory, redis)
+#   SA_ASSISTANT_SESSION_REDIS_URL - Redis connection URL for persistent sessions
+#   SA_ASSISTANT_SESSION_DEFAULT_TTL_MINUTES - Session timeout in minutes
+#   SA_ASSISTANT_SESSION_MAX_SESSIONS - Maximum number of concurrent sessions
+#   SA_ASSISTANT_SESSION_CLEANUP_INTERVAL_MINUTES - Cleanup frequency
+#   SA_ASSISTANT_SESSION_MAX_HISTORY_LENGTH - Max conversation history length
+#   SA_ASSISTANT_SESSION_ENABLE_CONVERSATION_API - Enable conversation endpoints
 #
 # Diagram Rendering:
 #   SA_ASSISTANT_DIAGRAM_MERMAID_INK_URL - Mermaid.ink API endpoint

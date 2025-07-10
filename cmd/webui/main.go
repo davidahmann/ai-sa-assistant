@@ -17,13 +17,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/ai-sa-assistant/internal/config"
+	"github.com/your-org/ai-sa-assistant/internal/conversation"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/health"
 	"github.com/your-org/ai-sa-assistant/internal/session"
@@ -73,11 +76,12 @@ type ChatResponse struct {
 
 // WebUIServer represents the web UI server
 type WebUIServer struct {
-	config        *config.Config
-	logger        *zap.Logger
-	orchestrator  *teams.Orchestrator
-	conversations map[string]*Conversation
-	healthManager *health.Manager
+	config              *config.Config
+	logger              *zap.Logger
+	orchestrator        *teams.Orchestrator
+	sessionManager      *session.Manager
+	conversationManager *conversation.Manager
+	healthManager       *health.Manager
 }
 
 func main() {
@@ -131,16 +135,20 @@ func main() {
 		logger.Fatal("Failed to initialize session manager", zap.Error(err))
 	}
 
+	// Initialize conversation manager
+	conversationManager := conversation.NewManager(sessionManager, logger)
+
 	// Initialize orchestrator (reuse Teams Bot orchestration logic)
 	orchestrator := teams.NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	// Create web UI server
 	server := &WebUIServer{
-		config:        cfg,
-		logger:        logger,
-		orchestrator:  orchestrator,
-		conversations: make(map[string]*Conversation),
-		healthManager: healthManager,
+		config:              cfg,
+		logger:              logger,
+		orchestrator:        orchestrator,
+		sessionManager:      sessionManager,
+		conversationManager: conversationManager,
+		healthManager:       healthManager,
 	}
 
 	// Set up Gin router
@@ -159,7 +167,10 @@ func main() {
 	router.GET("/conversations", server.handleGetConversations)
 	router.POST("/conversations", server.handleCreateConversation)
 	router.GET("/conversations/:id", server.handleGetConversation)
+	router.PUT("/conversations/:id", server.handleUpdateConversation)
 	router.DELETE("/conversations/:id", server.handleDeleteConversation)
+	router.GET("/conversations/:id/export", server.handleExportConversation)
+	router.POST("/conversations/import", server.handleImportConversation)
 
 	// Determine port
 	port := os.Getenv("PORT")
@@ -192,6 +203,7 @@ func (s *WebUIServer) handleHealth(c *gin.Context) {
 
 // handleChat processes a chat message
 func (s *WebUIServer) handleChat(c *gin.Context) {
+	ctx := c.Request.Context()
 	var req ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ChatResponse{
@@ -200,119 +212,294 @@ func (s *WebUIServer) handleChat(c *gin.Context) {
 		return
 	}
 
-	// Get or create conversation
-	conversation := s.getOrCreateConversation(req.ConversationID)
-
-	// Add user message
-	userMessage := ChatMessage{
-		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
-		Role:      "user",
-		Content:   req.Message,
-		Timestamp: time.Now(),
-	}
-	conversation.Messages = append(conversation.Messages, userMessage)
-	conversation.MessageCount++
-	conversation.UpdatedAt = time.Now()
-
-	// Generate title if this is the first message
-	if conversation.Title == "" {
-		conversation.Title = s.generateConversationTitle(req.Message)
+	// Get or create session
+	sess, err := s.getOrCreateSession(ctx, req.ConversationID)
+	if err != nil {
+		s.logger.Error("Failed to get or create session", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, ChatResponse{
+			Error: "Failed to create conversation session",
+		})
+		return
 	}
 
-	// For now, return a simple response until orchestrator integration is complete
-	// TODO: Process message through orchestrator when full integration is implemented
-	// TODO: Integrate with actual orchestrator logic
+	// Add user message to session
+	if err := s.sessionManager.AddMessage(ctx, sess.ID, session.UserRole, req.Message, nil); err != nil {
+		s.logger.Error("Failed to add user message", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, ChatResponse{
+			Error: "Failed to save message",
+		})
+		return
+	}
+
+	// Process message through orchestrator (which handles session management internally)
+	result := s.orchestrator.ProcessQuery(ctx, req.Message, sess.UserID)
+	if result.Error != nil {
+		s.logger.Error("Failed to process query through orchestrator", zap.Error(result.Error))
+		c.JSON(http.StatusInternalServerError, ChatResponse{
+			Error: "Failed to generate response",
+		})
+		return
+	}
+
+	if result.Response == nil {
+		s.logger.Error("Orchestrator returned nil response")
+		c.JSON(http.StatusInternalServerError, ChatResponse{
+			Error: "Failed to generate response",
+		})
+		return
+	}
+
+	// Convert response to chat message format
 	assistantMessage := ChatMessage{
-		ID:   fmt.Sprintf("%d", time.Now().UnixNano()),
-		Role: "assistant",
-		Content: fmt.Sprintf("I received your message: %s. Full orchestration will be implemented in subsequent issues.",
-			req.Message),
+		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
+		Role:      "assistant",
+		Content:   result.Response.MainText,
 		Timestamp: time.Now(),
 	}
-
-	conversation.Messages = append(conversation.Messages, assistantMessage)
-	conversation.MessageCount++
-	conversation.UpdatedAt = time.Now()
-
-	s.conversations[conversation.ID] = conversation
 
 	c.JSON(http.StatusOK, ChatResponse{
 		Message:        assistantMessage,
-		ConversationID: conversation.ID,
+		ConversationID: sess.ID,
 	})
 }
 
-// handleGetConversations returns all conversations
+// handleGetConversations returns all conversations for the current user
 func (s *WebUIServer) handleGetConversations(c *gin.Context) {
-	conversations := make([]*Conversation, 0, len(s.conversations))
-	for _, conv := range s.conversations {
-		conversations = append(conversations, conv)
+	ctx := c.Request.Context()
+	userID := s.getUserID(c) // Default user for demo
+
+	// Get conversation list from conversation manager
+	conversationList, err := s.conversationManager.ListConversations(ctx, userID, 1, 50)
+	if err != nil {
+		s.logger.Error("Failed to list conversations", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load conversations"})
+		return
 	}
-	c.JSON(http.StatusOK, conversations)
+
+	// Convert to webui format
+	webConversations := make([]Conversation, len(conversationList.Conversations))
+	for i, convSummary := range conversationList.Conversations {
+		webConversations[i] = Conversation{
+			ID:           convSummary.Metadata.ID,
+			Title:        convSummary.Metadata.Title,
+			Messages:     []ChatMessage{}, // Don't load full messages in list view
+			CreatedAt:    convSummary.Metadata.CreatedAt,
+			UpdatedAt:    convSummary.Metadata.UpdatedAt,
+			MessageCount: convSummary.Metadata.MessageCount,
+		}
+	}
+
+	c.JSON(http.StatusOK, webConversations)
 }
 
 // handleCreateConversation creates a new conversation
 func (s *WebUIServer) handleCreateConversation(c *gin.Context) {
-	conversation := s.createNewConversation()
+	ctx := c.Request.Context()
+	userID := s.getUserID(c)
+
+	// Create new session
+	sess, err := s.sessionManager.CreateSession(ctx, userID)
+	if err != nil {
+		s.logger.Error("Failed to create session", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create conversation"})
+		return
+	}
+
+	// Convert to webui format
+	conversation := Conversation{
+		ID:           sess.ID,
+		Title:        sess.Title,
+		Messages:     []ChatMessage{},
+		CreatedAt:    sess.CreatedAt,
+		UpdatedAt:    sess.UpdatedAt,
+		MessageCount: 0,
+	}
+
 	c.JSON(http.StatusCreated, conversation)
 }
 
-// handleGetConversation returns a specific conversation
+// handleGetConversation returns a specific conversation with full message history
 func (s *WebUIServer) handleGetConversation(c *gin.Context) {
+	ctx := c.Request.Context()
 	id := c.Param("id")
-	conversation, exists := s.conversations[id]
-	if !exists {
+
+	// Get session
+	sess, err := s.sessionManager.GetSession(ctx, id)
+	if err != nil {
+		s.logger.Error("Failed to get session", zap.String("id", id), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Conversation not found"})
 		return
 	}
+
+	// Convert messages to webui format
+	messages := make([]ChatMessage, len(sess.Messages))
+	for i, msg := range sess.Messages {
+		messages[i] = ChatMessage{
+			ID:        msg.ID,
+			Role:      string(msg.Role),
+			Content:   msg.Content,
+			Timestamp: msg.Timestamp,
+		}
+	}
+
+	conversation := Conversation{
+		ID:           sess.ID,
+		Title:        sess.Title,
+		Messages:     messages,
+		CreatedAt:    sess.CreatedAt,
+		UpdatedAt:    sess.UpdatedAt,
+		MessageCount: len(sess.Messages),
+	}
+
 	c.JSON(http.StatusOK, conversation)
+}
+
+// handleUpdateConversation updates conversation metadata (e.g., title)
+func (s *WebUIServer) handleUpdateConversation(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	var updateReq struct {
+		Title string `json:"title"`
+	}
+	if err := c.ShouldBindJSON(&updateReq); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		return
+	}
+
+	if err := s.conversationManager.UpdateConversationTitle(ctx, id, updateReq.Title); err != nil {
+		s.logger.Error("Failed to update conversation title", zap.String("id", id), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update conversation"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Conversation updated"})
 }
 
 // handleDeleteConversation deletes a conversation
 func (s *WebUIServer) handleDeleteConversation(c *gin.Context) {
+	ctx := c.Request.Context()
 	id := c.Param("id")
-	if _, exists := s.conversations[id]; !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Conversation not found"})
+
+	if err := s.conversationManager.DeleteConversation(ctx, id); err != nil {
+		s.logger.Error("Failed to delete conversation", zap.String("id", id), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete conversation"})
 		return
 	}
-	delete(s.conversations, id)
+
 	c.JSON(http.StatusOK, gin.H{"message": "Conversation deleted"})
 }
 
-// getOrCreateConversation gets an existing conversation or creates a new one
-func (s *WebUIServer) getOrCreateConversation(id string) *Conversation {
-	if id != "" {
-		if conv, exists := s.conversations[id]; exists {
-			return conv
+// handleExportConversation exports a conversation to JSON format
+func (s *WebUIServer) handleExportConversation(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	// Get session with full history
+	sess, err := s.sessionManager.GetSession(ctx, id)
+	if err != nil {
+		s.logger.Error("Failed to get session for export", zap.String("id", id), zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "Conversation not found"})
+		return
+	}
+
+	// Create export format
+	exportData := map[string]interface{}{
+		"id":            sess.ID,
+		"title":         sess.Title,
+		"created_at":    sess.CreatedAt,
+		"updated_at":    sess.UpdatedAt,
+		"message_count": len(sess.Messages),
+		"messages":      sess.Messages,
+		"metadata":      sess.Metadata,
+		"exported_at":   time.Now(),
+		"version":       "1.0",
+	}
+
+	// Set filename header
+	filename := fmt.Sprintf("conversation_%s_%s.json",
+		strings.ReplaceAll(sess.Title, " ", "_"),
+		sess.CreatedAt.Format("2006-01-02"))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Header("Content-Type", "application/json")
+
+	c.JSON(http.StatusOK, exportData)
+}
+
+// handleImportConversation imports a conversation from JSON format
+func (s *WebUIServer) handleImportConversation(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := s.getUserID(c)
+
+	var importData map[string]interface{}
+	if err := c.ShouldBindJSON(&importData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid import format"})
+		return
+	}
+
+	// Validate import data
+	title, ok := importData["title"].(string)
+	if !ok {
+		title = "Imported Conversation"
+	}
+
+	// Create new session for imported conversation
+	sess, err := s.sessionManager.CreateSession(ctx, userID)
+	if err != nil {
+		s.logger.Error("Failed to create session for import", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to import conversation"})
+		return
+	}
+
+	// Update session title
+	if err := s.conversationManager.UpdateConversationTitle(ctx, sess.ID, title); err != nil {
+		s.logger.Warn("Failed to update imported conversation title", zap.Error(err))
+	}
+
+	// Import messages if available
+	if messages, ok := importData["messages"].([]interface{}); ok {
+		for _, msgInterface := range messages {
+			if msgMap, ok := msgInterface.(map[string]interface{}); ok {
+				if role, ok := msgMap["role"].(string); ok {
+					if content, ok := msgMap["content"].(string); ok {
+						// Add message to session
+						var msgRole session.MessageRole
+						switch role {
+						case "user":
+							msgRole = session.UserRole
+						case "assistant":
+							msgRole = session.AssistantRole
+						default:
+							msgRole = session.UserRole
+						}
+						if err := s.sessionManager.AddMessage(ctx, sess.ID, msgRole, content, nil); err != nil {
+							s.logger.Warn("Failed to import message", zap.Error(err))
+						}
+					}
+				}
+			}
 		}
 	}
-	return s.createNewConversation()
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":         "Conversation imported successfully",
+		"conversation_id": sess.ID,
+	})
 }
 
-// createNewConversation creates a new conversation
-func (s *WebUIServer) createNewConversation() *Conversation {
-	now := time.Now()
-	id := fmt.Sprintf("conv_%d", now.UnixNano())
-
-	conversation := &Conversation{
-		ID:           id,
-		Title:        "New Conversation",
-		Messages:     make([]ChatMessage, 0),
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		MessageCount: 0,
+// getOrCreateSession gets an existing session or creates a new one
+func (s *WebUIServer) getOrCreateSession(ctx context.Context, id string) (*session.Session, error) {
+	if id != "" {
+		if sess, err := s.sessionManager.GetSession(ctx, id); err == nil {
+			return sess, nil
+		}
 	}
-
-	s.conversations[id] = conversation
-	return conversation
+	return s.sessionManager.CreateSession(ctx, s.getUserID(nil))
 }
 
-const maxTitleLength = 50
-
-// generateConversationTitle generates a title from the first message
-func (s *WebUIServer) generateConversationTitle(message string) string {
-	if len(message) > maxTitleLength {
-		return message[:47] + "..."
-	}
-	return message
+// getUserID returns a user ID for session management (simplified for demo)
+func (s *WebUIServer) getUserID(c *gin.Context) string {
+	// In a real application, this would extract user ID from authentication
+	// For demo purposes, use a default user
+	return "demo-user"
 }
