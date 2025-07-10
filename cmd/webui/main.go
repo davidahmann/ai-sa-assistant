@@ -30,6 +30,8 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/health"
 	"github.com/your-org/ai-sa-assistant/internal/session"
+	"github.com/your-org/ai-sa-assistant/internal/streaming"
+	"github.com/your-org/ai-sa-assistant/internal/synth"
 	"github.com/your-org/ai-sa-assistant/internal/teams"
 	"go.uber.org/zap"
 )
@@ -74,6 +76,19 @@ type ChatResponse struct {
 	Error          string      `json:"error,omitempty"`
 }
 
+// StreamingChatRequest represents a streaming chat request
+type StreamingChatRequest struct {
+	Message        string `json:"message" binding:"required"`
+	ConversationID string `json:"conversation_id"`
+}
+
+// StreamingChatResponse represents a streaming chat response
+type StreamingChatResponse struct {
+	StreamID       string `json:"stream_id"`
+	ConversationID string `json:"conversation_id"`
+	Error          string `json:"error,omitempty"`
+}
+
 // WebUIServer represents the web UI server
 type WebUIServer struct {
 	config              *config.Config
@@ -82,6 +97,7 @@ type WebUIServer struct {
 	sessionManager      *session.Manager
 	conversationManager *conversation.Manager
 	healthManager       *health.Manager
+	streamManager       *streaming.StreamManager
 }
 
 func main() {
@@ -141,6 +157,9 @@ func main() {
 	// Initialize orchestrator (reuse Teams Bot orchestration logic)
 	orchestrator := teams.NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
+	// Initialize stream manager for SSE
+	streamManager := streaming.NewStreamManager()
+
 	// Create web UI server
 	server := &WebUIServer{
 		config:              cfg,
@@ -149,6 +168,7 @@ func main() {
 		sessionManager:      sessionManager,
 		conversationManager: conversationManager,
 		healthManager:       healthManager,
+		streamManager:       streamManager,
 	}
 
 	// Set up Gin router
@@ -164,6 +184,8 @@ func main() {
 	router.GET("/", server.handleHomePage)
 	router.GET("/health", server.handleHealth)
 	router.POST("/chat", server.handleChat)
+	router.POST("/chat/stream", server.handleStreamingChat)
+	router.GET("/stream/:streamId", server.handleSSE)
 	router.GET("/conversations", server.handleGetConversations)
 	router.POST("/conversations", server.handleCreateConversation)
 	router.GET("/conversations/:id", server.handleGetConversation)
@@ -502,4 +524,233 @@ func (s *WebUIServer) getUserID(c *gin.Context) string {
 	// In a real application, this would extract user ID from authentication
 	// For demo purposes, use a default user
 	return "demo-user"
+}
+
+// handleStreamingChat initiates a streaming chat session
+func (s *WebUIServer) handleStreamingChat(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req StreamingChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, StreamingChatResponse{
+			Error: "Invalid request format",
+		})
+		return
+	}
+
+	// Generate unique stream ID
+	streamID := fmt.Sprintf("stream_%d_%d", time.Now().UnixNano(), s.generateRandomID())
+
+	// Get or create session
+	sess, err := s.getOrCreateSession(ctx, req.ConversationID)
+	if err != nil {
+		s.logger.Error("Failed to get or create session", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, StreamingChatResponse{
+			Error: "Failed to create conversation session",
+		})
+		return
+	}
+
+	// Add user message to session
+	if err := s.sessionManager.AddMessage(ctx, sess.ID, session.UserRole, req.Message, nil); err != nil {
+		s.logger.Error("Failed to add user message", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, StreamingChatResponse{
+			Error: "Failed to save message",
+		})
+		return
+	}
+
+	// Create event stream
+	eventStream := s.streamManager.CreateStream(streamID)
+
+	// Start processing in a goroutine
+	go s.processStreamingQuery(ctx, req.Message, sess.UserID, sess.ID, eventStream)
+
+	// Return stream ID immediately
+	c.JSON(http.StatusOK, StreamingChatResponse{
+		StreamID:       streamID,
+		ConversationID: sess.ID,
+	})
+}
+
+// handleSSE handles Server-Sent Events for streaming progress
+func (s *WebUIServer) handleSSE(c *gin.Context) {
+	streamID := c.Param("streamId")
+
+	// Get the event stream
+	eventStream, exists := s.streamManager.GetStream(streamID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Stream not found"})
+		return
+	}
+
+	// Set SSE headers
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Headers", "Cache-Control")
+
+	// Create a channel to receive events
+	eventChan := make(chan streaming.Event, 100)
+
+	// Add callback to stream
+	callback := func(event streaming.Event) {
+		select {
+		case eventChan <- event:
+		default:
+			// Channel is full, skip this event
+		}
+	}
+	eventStream.AddCallback(callback)
+
+	// Set up client disconnect detection
+	clientDisconnected := make(chan bool)
+	go func() {
+		<-c.Request.Context().Done()
+		clientDisconnected <- true
+	}()
+
+	// Send existing events first
+	existingEvents := eventStream.GetEvents()
+	for _, event := range existingEvents {
+		if _, err := c.Writer.WriteString(event.ToSSEMessage()); err != nil {
+			s.logger.Error("Failed to write SSE event", zap.Error(err))
+			return
+		}
+		c.Writer.Flush()
+	}
+
+	// Stream new events
+	for {
+		select {
+		case event := <-eventChan:
+			if _, err := c.Writer.WriteString(event.ToSSEMessage()); err != nil {
+				s.logger.Error("Failed to write SSE event", zap.Error(err))
+				return
+			}
+			c.Writer.Flush()
+
+			// If this is a completion event, close the stream
+			if event.Type == streaming.EventTypeComplete || event.Type == streaming.EventTypeError {
+				// Send a final event to indicate stream closure
+				finalEvent := streaming.Event{
+					ID:        "stream_end",
+					Type:      streaming.EventTypeComplete,
+					Stage:     streaming.StageComplete,
+					Message:   "Stream completed",
+					Progress:  100,
+					Timestamp: time.Now(),
+				}
+				if _, err := c.Writer.WriteString(finalEvent.ToSSEMessage()); err == nil {
+					c.Writer.Flush()
+				}
+
+				// Schedule cleanup after a delay to allow client to receive final events
+				go func() {
+					time.Sleep(5 * time.Second)
+					s.streamManager.CloseStream(streamID)
+				}()
+				return
+			}
+
+		case <-clientDisconnected:
+			s.logger.Info("SSE client disconnected", zap.String("stream_id", streamID))
+			s.streamManager.CloseStream(streamID)
+			return
+
+		case <-time.After(30 * time.Second):
+			// Timeout after 30 seconds of no events
+			s.logger.Info("SSE stream timeout", zap.String("stream_id", streamID))
+			s.streamManager.CloseStream(streamID)
+			return
+		}
+	}
+}
+
+// processStreamingQuery processes a query with streaming progress updates
+func (s *WebUIServer) processStreamingQuery(ctx context.Context, query, userID, sessionID string, eventStream *streaming.EventStream) {
+	startTime := time.Now()
+
+	// Emit initial progress
+	eventStream.EmitProgress(streaming.StageQueryAnalysis, "🔍 Analyzing query for metadata filters...", 5, map[string]interface{}{
+		"query":   query,
+		"user_id": userID,
+	})
+
+	// Create a streaming-aware orchestrator that will emit progress events
+	result := s.processQueryWithProgress(ctx, query, userID, eventStream)
+
+	if result.Error != nil {
+		eventStream.EmitError(streaming.StageSynthesis, "❌ Processing failed", result.Error, map[string]interface{}{
+			"execution_time_ms": time.Since(startTime).Milliseconds(),
+		})
+		return
+	}
+
+	if result.Response == nil {
+		eventStream.EmitError(streaming.StageSynthesis, "❌ No response generated", fmt.Errorf("orchestrator returned nil response"), nil)
+		return
+	}
+
+	// Store response in session
+	if err := s.storeAssistantResponse(ctx, sessionID, result.Response); err != nil {
+		s.logger.Warn("Failed to store assistant response", zap.Error(err))
+	}
+
+	// Emit completion with final response
+	executionTime := time.Since(startTime).Milliseconds()
+	eventStream.EmitComplete("✅ Response complete!", map[string]interface{}{
+		"response": map[string]interface{}{
+			"main_text":     result.Response.MainText,
+			"diagram_code":  result.Response.DiagramCode,
+			"diagram_url":   result.Response.DiagramURL,
+			"code_snippets": result.Response.CodeSnippets,
+			"sources":       result.Response.Sources,
+		},
+		"execution_time_ms": executionTime,
+		"services_used":     result.ServicesUsed,
+		"fallback_used":     result.FallbackUsed,
+	})
+}
+
+// processQueryWithProgress processes a query while emitting progress events
+func (s *WebUIServer) processQueryWithProgress(ctx context.Context, query, userID string, eventStream *streaming.EventStream) *teams.OrchestrationResult {
+	// Use the streaming-aware orchestrator method
+	return s.orchestrator.ProcessQueryWithStreaming(ctx, query, userID, eventStream)
+}
+
+// storeAssistantResponse stores the assistant response in the session
+func (s *WebUIServer) storeAssistantResponse(ctx context.Context, sessionID string, response *synth.SynthesisResponse) error {
+	// Format the response content for storage
+	responseContent := response.MainText
+
+	// Include diagram information if present
+	if response.DiagramURL != "" {
+		responseContent += fmt.Sprintf("\n\n[Diagram: %s]", response.DiagramURL)
+	}
+
+	// Include code snippets if present
+	if len(response.CodeSnippets) > 0 {
+		responseContent += "\n\nCode snippets included:"
+		for _, snippet := range response.CodeSnippets {
+			responseContent += fmt.Sprintf("\n- %s code snippet", snippet.Language)
+		}
+	}
+
+	// Add metadata about the response
+	metadata := map[string]interface{}{
+		"has_diagram":   response.DiagramCode != "",
+		"has_code":      len(response.CodeSnippets) > 0,
+		"source_count":  len(response.Sources),
+		"timestamp":     time.Now(),
+		"response_type": "synthesis",
+	}
+
+	// Store the assistant response
+	return s.sessionManager.AddMessage(ctx, sessionID, session.AssistantRole, responseContent, metadata)
+}
+
+// generateRandomID generates a random ID for streams
+func (s *WebUIServer) generateRandomID() int64 {
+	return time.Now().UnixNano() % 1000000
 }

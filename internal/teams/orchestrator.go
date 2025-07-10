@@ -31,6 +31,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/health"
 	"github.com/your-org/ai-sa-assistant/internal/session"
+	"github.com/your-org/ai-sa-assistant/internal/streaming"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
 	"go.uber.org/zap"
 )
@@ -95,6 +96,11 @@ func NewOrchestrator(
 
 // ProcessQuery orchestrates the full service pipeline for a user query with session management
 func (o *Orchestrator) ProcessQuery(ctx context.Context, query string, userID string) *OrchestrationResult {
+	return o.ProcessQueryWithStreaming(ctx, query, userID, nil)
+}
+
+// ProcessQueryWithStreaming orchestrates the full service pipeline with optional streaming progress
+func (o *Orchestrator) ProcessQueryWithStreaming(ctx context.Context, query string, userID string, eventStream *streaming.EventStream) *OrchestrationResult {
 	startTime := time.Now()
 	result := &OrchestrationResult{
 		ServicesTested: []string{},
@@ -108,6 +114,14 @@ func (o *Orchestrator) ProcessQuery(ctx context.Context, query string, userID st
 		zap.String("user_id", userID),
 		zap.String("orchestration_id", orchestrationID))
 
+	// Emit initial progress if streaming is enabled
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageQueryAnalysis, "🔍 Analyzing query for metadata filters...", 5, map[string]interface{}{
+			"orchestration_id": orchestrationID,
+			"query":            query,
+		})
+	}
+
 	// Step 0: Handle session management
 	sessionID, conversationHistory, err := o.handleSessionManagement(ctx, userID, query)
 	if err != nil {
@@ -117,39 +131,76 @@ func (o *Orchestrator) ProcessQuery(ctx context.Context, query string, userID st
 	}
 
 	// Step 1: Validate service health
-	if !o.validateServiceHealth(ctx, result) {
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageQueryAnalysis, "⚡ Validating service health...", 10, nil)
+	}
+
+	if !o.validateServiceHealthWithStreaming(ctx, result, eventStream) {
 		result.Error = fmt.Errorf("service health validation failed")
 		result.ExecutionTimeMs = time.Since(startTime).Milliseconds()
+		if eventStream != nil {
+			eventStream.EmitError(streaming.StageQueryAnalysis, "❌ Service health check failed", result.Error, nil)
+		}
 		return result
 	}
 
 	// Step 2: Call retrieve service with fallback
-	retrieveResponse, err := o.callRetrieveServiceWithFallback(ctx, query, result)
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageMetadataFilter, "📊 Searching metadata database...", 15, nil)
+	}
+
+	retrieveResponse, err := o.callRetrieveServiceWithFallbackStreaming(ctx, query, result, eventStream)
 	if err != nil {
 		result.Error = fmt.Errorf("retrieve service failed: %w", err)
 		result.ExecutionTimeMs = time.Since(startTime).Milliseconds()
+		if eventStream != nil {
+			eventStream.EmitError(streaming.StageVectorSearch, "❌ Retrieval failed", err, nil)
+		}
 		return result
 	}
 
 	// Step 3: Conditionally call web search service
 	var webResults []string
-	if o.needsFreshness(query) {
-		webResults = o.callWebSearchServiceWithFallback(ctx, query, result)
+	needsWeb := o.needsFreshness(query)
+	if needsWeb {
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageFreshnessDetection, "🌐 Freshness keywords detected, triggering web search...", 60, map[string]interface{}{
+				"freshness_detected": true,
+			})
+		}
+		webResults = o.callWebSearchServiceWithFallbackStreaming(ctx, query, result, eventStream)
+	} else if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageFreshnessDetection, "✓ No freshness keywords detected", 60, map[string]interface{}{
+			"freshness_detected": false,
+		})
 	}
 
 	// Step 4: Call synthesize service with fallback (including conversation context)
-	synthesizeResponse, err := o.callSynthesizeServiceWithFallback(
-		ctx, query, retrieveResponse, webResults, conversationHistory, result,
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageSynthesis, "🤖 Synthesizing response with GPT-4o...", 75, map[string]interface{}{
+			"context_items": len(retrieveResponse.Chunks),
+			"web_results":   len(webResults),
+		})
+	}
+
+	synthesizeResponse, err := o.callSynthesizeServiceWithFallbackStreaming(
+		ctx, query, retrieveResponse, webResults, conversationHistory, result, eventStream,
 	)
 	if err != nil {
 		result.Error = fmt.Errorf("synthesize service failed: %w", err)
 		result.ExecutionTimeMs = time.Since(startTime).Milliseconds()
+		if eventStream != nil {
+			eventStream.EmitError(streaming.StageSynthesis, "❌ Synthesis failed", err, nil)
+		}
 		return result
 	}
 
 	// Step 5: Render diagram if present
 	if synthesizeResponse.DiagramCode != "" {
-		o.renderDiagramWithFallback(ctx, synthesizeResponse, result)
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageDiagramRendering, "📊 Rendering architecture diagram...", 90, nil)
+		}
+		o.renderDiagramWithFallbackStreaming(ctx, synthesizeResponse, result, eventStream)
 	}
 
 	result.Response = synthesizeResponse
@@ -161,6 +212,14 @@ func (o *Orchestrator) ProcessQuery(ctx context.Context, query string, userID st
 			o.logger.Warn("Failed to store response in session",
 				zap.String("session_id", sessionID), zap.Error(err))
 		}
+	}
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageComplete, "✅ Processing complete", 100, map[string]interface{}{
+			"execution_time_ms": result.ExecutionTimeMs,
+			"services_used":     result.ServicesUsed,
+			"fallback_used":     result.FallbackUsed,
+		})
 	}
 
 	o.logger.Info("Query orchestration completed",
@@ -232,6 +291,45 @@ func (o *Orchestrator) isServiceHealthy(ctx context.Context, serviceName string)
 	return resp.StatusCode == http.StatusOK
 }
 
+// validateServiceHealthWithStreaming checks the health of required services with streaming progress
+func (o *Orchestrator) validateServiceHealthWithStreaming(ctx context.Context, result *OrchestrationResult, eventStream *streaming.EventStream) bool {
+	requiredServices := []string{"retrieve", "synthesize"}
+	healthyServices := 0
+
+	for i, serviceName := range requiredServices {
+		result.ServicesTested = append(result.ServicesTested, serviceName)
+
+		if eventStream != nil {
+			progress := 10 + (i * 2) // 10, 12% progress
+			eventStream.EmitProgress(streaming.StageQueryAnalysis, fmt.Sprintf("⚡ Checking %s service...", serviceName), progress, nil)
+		}
+
+		if o.isServiceHealthy(ctx, serviceName) {
+			healthyServices++
+			o.logger.Debug("Service health check passed",
+				zap.String("service", serviceName))
+		} else {
+			o.logger.Warn("Service health check failed",
+				zap.String("service", serviceName))
+		}
+	}
+
+	// Check websearch service health (optional)
+	result.ServicesTested = append(result.ServicesTested, "websearch")
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageQueryAnalysis, "⚡ Checking websearch service...", 14, nil)
+	}
+
+	if o.isServiceHealthy(ctx, "websearch") {
+		o.logger.Debug("Web search service health check passed")
+	} else {
+		o.logger.Warn("Web search service health check failed")
+	}
+
+	result.HealthChecksPassed = healthyServices == len(requiredServices)
+	return result.HealthChecksPassed
+}
+
 // callRetrieveServiceWithFallback calls the retrieve service with fallback logic
 func (o *Orchestrator) callRetrieveServiceWithFallback(
 	ctx context.Context,
@@ -274,6 +372,87 @@ func (o *Orchestrator) callRetrieveServiceWithFallback(
 	}
 
 	result.ServicesUsed = append(result.ServicesUsed, "retrieve")
+	o.logger.Info("Retrieve service call successful",
+		zap.String("query", query),
+		zap.Int("chunks_returned", len(retrieveResponse.Chunks)))
+
+	return &retrieveResponse, nil
+}
+
+// callRetrieveServiceWithFallbackStreaming calls the retrieve service with fallback logic and streaming progress
+func (o *Orchestrator) callRetrieveServiceWithFallbackStreaming(
+	ctx context.Context,
+	query string,
+	result *OrchestrationResult,
+	eventStream *streaming.EventStream,
+) (*RetrieveResponse, error) {
+	o.logger.Info("Calling retrieve service", zap.String("query", query))
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageEmbeddings, "🧠 Generating embeddings for query...", 25, nil)
+	}
+
+	reqBody := map[string]string{"query": query}
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageVectorSearch, "🔎 Vector search in ChromaDB...", 40, nil)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", o.config.Services.RetrieveURL+"/search", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		o.logger.Error("Retrieve service request failed", zap.Error(err))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageVectorSearch, "⚠️ Retrieve service failed, using fallback...", 45, map[string]interface{}{
+				"fallback_triggered": true,
+			})
+		}
+		return o.fallbackRetrieveResponse(query, result), nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		o.logger.Error("Retrieve service returned error",
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("response_body", string(body)))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageVectorSearch, "⚠️ Retrieve service error, using fallback...", 45, map[string]interface{}{
+				"fallback_triggered": true,
+				"status_code":        resp.StatusCode,
+			})
+		}
+		return o.fallbackRetrieveResponse(query, result), nil
+	}
+
+	var retrieveResponse RetrieveResponse
+	if err := json.NewDecoder(resp.Body).Decode(&retrieveResponse); err != nil {
+		o.logger.Error("Failed to decode retrieve response", zap.Error(err))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageVectorSearch, "⚠️ Failed to parse response, using fallback...", 45, map[string]interface{}{
+				"fallback_triggered": true,
+			})
+		}
+		return o.fallbackRetrieveResponse(query, result), nil
+	}
+
+	result.ServicesUsed = append(result.ServicesUsed, "retrieve")
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageVectorSearch, "✓ Retrieved relevant documents", 55, map[string]interface{}{
+			"chunks_found": len(retrieveResponse.Chunks),
+		})
+	}
+
 	o.logger.Info("Retrieve service call successful",
 		zap.String("query", query),
 		zap.Int("chunks_returned", len(retrieveResponse.Chunks)))
@@ -365,6 +544,101 @@ func (o *Orchestrator) callWebSearchServiceWithFallback(
 	return webResponse.Results
 }
 
+// callWebSearchServiceWithFallbackStreaming calls the web search service with fallback logic and streaming progress
+func (o *Orchestrator) callWebSearchServiceWithFallbackStreaming(
+	ctx context.Context,
+	query string,
+	result *OrchestrationResult,
+	eventStream *streaming.EventStream,
+) []string {
+	o.logger.Info("Calling web search service", zap.String("query", query))
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageWebSearch, "🔍 Searching web for latest updates...", 62, nil)
+	}
+
+	reqBody := map[string]string{"query": query}
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		o.logger.Error("Failed to marshal web search request", zap.Error(err))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageWebSearch, "⚠️ Web search request failed", 65, map[string]interface{}{
+				"error": "failed to marshal request",
+			})
+		}
+		return []string{}
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"POST",
+		o.config.Services.WebSearchURL+"/search",
+		bytes.NewBuffer(jsonBody),
+	)
+	if err != nil {
+		o.logger.Error("Failed to create web search request", zap.Error(err))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageWebSearch, "⚠️ Web search request failed", 65, map[string]interface{}{
+				"error": "failed to create request",
+			})
+		}
+		return []string{}
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		o.logger.Warn("Web search service request failed, continuing without web results", zap.Error(err))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageWebSearch, "⚠️ Web search unavailable, continuing...", 65, map[string]interface{}{
+				"error": "service request failed",
+			})
+		}
+		return []string{}
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		o.logger.Warn("Web search service returned error, continuing without web results",
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("response_body", string(body)))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageWebSearch, "⚠️ Web search error, continuing...", 65, map[string]interface{}{
+				"status_code": resp.StatusCode,
+			})
+		}
+		return []string{}
+	}
+
+	var webResponse struct {
+		Results []string `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&webResponse); err != nil {
+		o.logger.Warn("Failed to decode web search response, continuing without web results", zap.Error(err))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageWebSearch, "⚠️ Failed to parse web results", 65, map[string]interface{}{
+				"error": "decode failed",
+			})
+		}
+		return []string{}
+	}
+
+	result.ServicesUsed = append(result.ServicesUsed, "websearch")
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageWebSearch, "✓ Web search complete", 70, map[string]interface{}{
+			"results_found": len(webResponse.Results),
+		})
+	}
+
+	o.logger.Info("Web search service call successful",
+		zap.String("query", query),
+		zap.Int("results_returned", len(webResponse.Results)))
+
+	return webResponse.Results
+}
+
 // callSynthesizeServiceWithFallback calls the synthesize service with fallback logic
 func (o *Orchestrator) callSynthesizeServiceWithFallback(
 	ctx context.Context,
@@ -418,6 +692,102 @@ func (o *Orchestrator) callSynthesizeServiceWithFallback(
 	}
 
 	result.ServicesUsed = append(result.ServicesUsed, "synthesize")
+	o.logger.Info("Synthesize service call successful",
+		zap.String("query", query),
+		zap.Int("main_text_length", len(synthesizeResponse.MainText)))
+
+	return &synthesizeResponse, nil
+}
+
+// callSynthesizeServiceWithFallbackStreaming calls the synthesize service with fallback logic and streaming progress
+func (o *Orchestrator) callSynthesizeServiceWithFallbackStreaming(
+	ctx context.Context,
+	query string,
+	retrieveResponse *RetrieveResponse,
+	webResults []string,
+	conversationHistory []session.Message,
+	result *OrchestrationResult,
+	eventStream *streaming.EventStream,
+) (*synth.SynthesisResponse, error) {
+	o.logger.Info("Calling synthesize service", zap.String("query", query))
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageSynthesis, "🔧 Preparing synthesis request...", 78, nil)
+	}
+
+	// Convert retrieve chunks to synthesis format
+	contextItems := o.convertRetrieveChunksToContextItems(retrieveResponse.Chunks)
+	synthesizeRequest := o.createSynthesizeRequest(query, contextItems, webResults, conversationHistory)
+
+	jsonBody, err := json.Marshal(synthesizeRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal synthesize request: %w", err)
+	}
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageSynthesis, "🤖 Generating response with GPT-4o...", 82, map[string]interface{}{
+			"model": "gpt-4o",
+		})
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"POST",
+		o.config.Services.SynthesizeURL+"/synthesize",
+		bytes.NewBuffer(jsonBody),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create synthesize request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		o.logger.Error("Synthesize service request failed", zap.Error(err))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageSynthesis, "⚠️ Synthesis service failed, using fallback...", 85, map[string]interface{}{
+				"fallback_triggered": true,
+			})
+		}
+		return o.fallbackSynthesizeResponse(query, retrieveResponse, conversationHistory, result), nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		o.logger.Error("Synthesize service returned error",
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("response_body", string(body)))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageSynthesis, "⚠️ Synthesis service error, using fallback...", 85, map[string]interface{}{
+				"fallback_triggered": true,
+				"status_code":        resp.StatusCode,
+			})
+		}
+		return o.fallbackSynthesizeResponse(query, retrieveResponse, conversationHistory, result), nil
+	}
+
+	var synthesizeResponse synth.SynthesisResponse
+	if err := json.NewDecoder(resp.Body).Decode(&synthesizeResponse); err != nil {
+		o.logger.Error("Failed to decode synthesize response", zap.Error(err))
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageSynthesis, "⚠️ Failed to parse synthesis response, using fallback...", 85, map[string]interface{}{
+				"fallback_triggered": true,
+			})
+		}
+		return o.fallbackSynthesizeResponse(query, retrieveResponse, conversationHistory, result), nil
+	}
+
+	result.ServicesUsed = append(result.ServicesUsed, "synthesize")
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageSynthesis, "✓ Response synthesis complete", 88, map[string]interface{}{
+			"response_length": len(synthesizeResponse.MainText),
+			"has_diagram":     synthesizeResponse.DiagramCode != "",
+			"code_snippets":   len(synthesizeResponse.CodeSnippets),
+		})
+	}
+
 	o.logger.Info("Synthesize service call successful",
 		zap.String("query", query),
 		zap.Int("main_text_length", len(synthesizeResponse.MainText)))
@@ -489,6 +859,52 @@ func (o *Orchestrator) renderDiagramWithFallback(
 		response.MainText += "\n\n" + fallbackText
 		response.DiagramCode = ""
 		result.FallbackUsed = true
+	}
+
+	response.DiagramURL = diagramURL
+	o.logger.Info("Diagram rendering completed",
+		zap.String("diagram_url", diagramURL),
+		zap.Bool("fallback_used", fallbackText != ""))
+}
+
+// renderDiagramWithFallbackStreaming renders diagrams with fallback logic and streaming progress
+func (o *Orchestrator) renderDiagramWithFallbackStreaming(
+	ctx context.Context,
+	response *synth.SynthesisResponse,
+	result *OrchestrationResult,
+	eventStream *streaming.EventStream,
+) {
+	o.logger.Info("Rendering diagram", zap.String("diagram_code_length", fmt.Sprintf("%d", len(response.DiagramCode))))
+
+	if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageDiagramRendering, "🎨 Converting diagram to image...", 92, nil)
+	}
+
+	diagramURL, fallbackText, err := o.diagramRenderer.RenderDiagramWithFallback(ctx, response.DiagramCode)
+	if err != nil {
+		o.logger.Warn("Failed to render diagram", zap.Error(err))
+		result.FallbackUsed = true
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageDiagramRendering, "⚠️ Diagram rendering failed, using text fallback", 95, map[string]interface{}{
+				"fallback_triggered": true,
+				"error":              err.Error(),
+			})
+		}
+	}
+
+	if fallbackText != "" {
+		response.MainText += "\n\n" + fallbackText
+		response.DiagramCode = ""
+		result.FallbackUsed = true
+		if eventStream != nil {
+			eventStream.EmitProgress(streaming.StageDiagramRendering, "✓ Diagram rendered as text", 95, map[string]interface{}{
+				"fallback_used": true,
+			})
+		}
+	} else if eventStream != nil {
+		eventStream.EmitProgress(streaming.StageDiagramRendering, "✓ Diagram rendered successfully", 95, map[string]interface{}{
+			"diagram_url": diagramURL,
+		})
 	}
 
 	response.DiagramURL = diagramURL

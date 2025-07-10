@@ -6,6 +6,12 @@ class ChatApp {
         this.currentConversationId = null;
         this.isLoading = false;
 
+        // Streaming support
+        this.isStreaming = false;
+        this.currentEventSource = null;
+        this.streamingProgressElement = null;
+        this.streamingResponseElement = null;
+
         this.initializeElements();
         this.bindEvents();
         this.loadConversations();
@@ -707,8 +713,19 @@ class ChatApp {
 
     async sendMessage() {
         const message = this.messageInput.value.trim();
-        if (!message || this.isLoading) return;
+        if (!message || this.isLoading || this.isStreaming) return;
 
+        // Check if streaming mode is enabled (we'll assume streaming by default for demo)
+        const useStreaming = true; // This could be controlled by a UI toggle
+
+        if (useStreaming) {
+            return this.sendMessageStreaming(message);
+        } else {
+            return this.sendMessageTraditional(message);
+        }
+    }
+
+    async sendMessageTraditional(message) {
         this.isLoading = true;
         this.showLoading(true);
         this.messageInput.value = '';
@@ -767,6 +784,71 @@ class ChatApp {
         } finally {
             this.isLoading = false;
             this.showLoading(false);
+        }
+    }
+
+    async sendMessageStreaming(message) {
+        if (this.isStreaming) return; // Prevent multiple concurrent streams
+
+        this.isStreaming = true;
+        this.messageInput.value = '';
+        this.updateSendButton();
+        this.updateCharacterCount();
+
+        // Hide welcome message if present
+        const welcomeMsg = this.messagesContainer.querySelector('.welcome-message');
+        if (welcomeMsg) {
+            welcomeMsg.remove();
+        }
+
+        // Add user message to UI immediately
+        const userMessage = {
+            id: Date.now().toString(),
+            role: 'user',
+            content: message,
+            timestamp: new Date().toISOString()
+        };
+        this.addMessageToUI(userMessage);
+        this.scrollToBottom();
+
+        // Add streaming progress placeholder
+        this.addStreamingProgressPlaceholder();
+
+        try {
+            // Initiate streaming request
+            const response = await fetch('/chat/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: message,
+                    conversation_id: this.currentConversationId
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.error) {
+                    this.showToast(data.error, 'error');
+                    this.removeStreamingProgress();
+                } else {
+                    // Update current conversation ID
+                    this.currentConversationId = data.conversation_id;
+
+                    // Start SSE stream
+                    this.startEventStream(data.stream_id);
+                }
+            } else {
+                this.showToast('Failed to send message', 'error');
+                this.removeStreamingProgress();
+            }
+        } catch (error) {
+            console.error('Failed to send message:', error);
+            this.showToast('Failed to send message', 'error');
+            this.removeStreamingProgress();
+        } finally {
+            // Don't reset isStreaming here - it will be reset when stream completes
         }
     }
 
@@ -956,7 +1038,16 @@ class ChatApp {
 
     updateSendButton() {
         const hasText = this.messageInput.value.trim().length > 0;
-        this.sendBtn.disabled = !hasText || this.isLoading;
+        this.sendBtn.disabled = !hasText || this.isLoading || this.isStreaming;
+
+        // Update button text based on state
+        if (this.isStreaming) {
+            this.sendBtn.textContent = 'Processing...';
+        } else if (this.isLoading) {
+            this.sendBtn.textContent = 'Sending...';
+        } else {
+            this.sendBtn.textContent = 'Send';
+        }
     }
 
     updateCharacterCount() {
@@ -1092,6 +1183,280 @@ class ChatApp {
         const synthesis = ((stats.synthesis_time_ms || 0) / total * 100).toFixed(0);
 
         return `Retrieval: ${retrieval}% | Web Search: ${websearch}% | Synthesis: ${synthesis}%`;
+    }
+
+    // Streaming Methods
+
+    addStreamingProgressPlaceholder() {
+        const progressElement = document.createElement('div');
+        progressElement.className = 'message assistant streaming';
+        progressElement.id = 'streaming-progress';
+
+        progressElement.innerHTML = `
+            <div class="message-avatar">AI</div>
+            <div class="message-content">
+                <div class="message-bubble">
+                    <div class="streaming-progress">
+                        <div class="progress-header">
+                            <span class="progress-icon">⚡</span>
+                            <span class="progress-title">Processing your request...</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="streaming-progress-bar">
+                                <div class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            <span class="progress-percentage">0%</span>
+                        </div>
+                        <div class="progress-details">
+                            <div class="current-stage" id="current-stage">🔍 Initializing...</div>
+                            <div class="stage-list" id="stage-list">
+                                <div class="stage-item" data-stage="query_analysis">Query Analysis</div>
+                                <div class="stage-item" data-stage="metadata_filter">Metadata Search</div>
+                                <div class="stage-item" data-stage="embeddings">Embeddings</div>
+                                <div class="stage-item" data-stage="vector_search">Vector Search</div>
+                                <div class="stage-item" data-stage="freshness_detection">Freshness Check</div>
+                                <div class="stage-item" data-stage="web_search">Web Search</div>
+                                <div class="stage-item" data-stage="synthesis">LLM Synthesis</div>
+                                <div class="stage-item" data-stage="diagram_rendering">Diagram Rendering</div>
+                            </div>
+                        </div>
+                        <div class="stream-stats" id="stream-stats">
+                            <span class="stat-item">⏱️ <span id="elapsed-time">0.0s</span></span>
+                            <span class="stat-item">📊 <span id="processed-items">0</span> items</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="message-time">${this.formatTime(new Date())}</div>
+            </div>
+        `;
+
+        this.messagesContainer.appendChild(progressElement);
+        this.streamingProgressElement = progressElement;
+        this.scrollToBottom();
+
+        // Start timer
+        this.streamStartTime = Date.now();
+        this.updateStreamTimer();
+    }
+
+    removeStreamingProgress() {
+        if (this.streamingProgressElement) {
+            this.streamingProgressElement.remove();
+            this.streamingProgressElement = null;
+        }
+
+        if (this.streamTimerInterval) {
+            clearInterval(this.streamTimerInterval);
+            this.streamTimerInterval = null;
+        }
+
+        this.isStreaming = false;
+        this.updateSendButton();
+    }
+
+    updateStreamTimer() {
+        this.streamTimerInterval = setInterval(() => {
+            if (this.streamStartTime) {
+                const elapsed = (Date.now() - this.streamStartTime) / 1000;
+                const elapsedTimeElement = document.getElementById('elapsed-time');
+                if (elapsedTimeElement) {
+                    elapsedTimeElement.textContent = elapsed.toFixed(1) + 's';
+                }
+            }
+        }, 100);
+    }
+
+    updateStreamingProgress(progress, stage, message, data = {}) {
+        if (!this.streamingProgressElement) return;
+
+        // Update progress bar
+        const progressFill = this.streamingProgressElement.querySelector('.progress-fill');
+        const progressPercentage = this.streamingProgressElement.querySelector('.progress-percentage');
+        if (progressFill && progressPercentage) {
+            progressFill.style.width = progress + '%';
+            progressPercentage.textContent = progress + '%';
+        }
+
+        // Update current stage
+        const currentStageElement = document.getElementById('current-stage');
+        if (currentStageElement) {
+            currentStageElement.textContent = message;
+        }
+
+        // Highlight current stage in list
+        const stageItems = this.streamingProgressElement.querySelectorAll('.stage-item');
+        stageItems.forEach(item => {
+            item.classList.remove('active', 'completed');
+            const itemStage = item.getAttribute('data-stage');
+            if (itemStage === stage) {
+                item.classList.add('active');
+            } else if (this.isStageCompleted(itemStage, stage)) {
+                item.classList.add('completed');
+            }
+        });
+
+        // Update stats if provided
+        if (data.chunks_found !== undefined || data.results_found !== undefined) {
+            const processedItemsElement = document.getElementById('processed-items');
+            if (processedItemsElement) {
+                const items = data.chunks_found || data.results_found || 0;
+                processedItemsElement.textContent = items;
+            }
+        }
+
+        this.scrollToBottom();
+    }
+
+    isStageCompleted(checkStage, currentStage) {
+        const stageOrder = [
+            'query_analysis',
+            'metadata_filter',
+            'embeddings',
+            'vector_search',
+            'freshness_detection',
+            'web_search',
+            'synthesis',
+            'diagram_rendering'
+        ];
+
+        const checkIndex = stageOrder.indexOf(checkStage);
+        const currentIndex = stageOrder.indexOf(currentStage);
+
+        return checkIndex !== -1 && currentIndex !== -1 && checkIndex < currentIndex;
+    }
+
+    startEventStream(streamId) {
+        if (this.currentEventSource) {
+            this.currentEventSource.close();
+        }
+
+        const eventSourceUrl = `/stream/${streamId}`;
+        this.currentEventSource = new EventSource(eventSourceUrl);
+
+        this.currentEventSource.onopen = () => {
+            console.log('SSE connection opened');
+        };
+
+        this.currentEventSource.onmessage = (event) => {
+            try {
+                const eventData = JSON.parse(event.data);
+                this.handleStreamEvent(eventData);
+            } catch (error) {
+                console.error('Failed to parse stream event:', error);
+            }
+        };
+
+        this.currentEventSource.onerror = (error) => {
+            console.error('SSE connection error:', error);
+
+            if (this.currentEventSource.readyState === EventSource.CLOSED) {
+                console.log('SSE connection closed');
+                this.handleStreamComplete();
+            } else {
+                // Connection failed
+                this.handleStreamError('Connection to server lost');
+            }
+        };
+
+        // Fallback timeout
+        setTimeout(() => {
+            if (this.isStreaming && this.currentEventSource) {
+                this.handleStreamError('Stream timeout after 60 seconds');
+            }
+        }, 60000);
+    }
+
+    handleStreamEvent(eventData) {
+        const { type, stage, message, progress, data } = eventData;
+
+        console.log('Stream event:', eventData);
+
+        switch (type) {
+            case 'progress':
+                this.updateStreamingProgress(progress, stage, message, data || {});
+                break;
+
+            case 'error':
+                this.handleStreamError(message);
+                break;
+
+            case 'complete':
+                this.handleStreamComplete(data);
+                break;
+
+            case 'metrics':
+                // Handle performance metrics if needed
+                break;
+
+            default:
+                console.warn('Unknown stream event type:', type);
+        }
+    }
+
+    handleStreamComplete(data = {}) {
+        if (this.currentEventSource) {
+            this.currentEventSource.close();
+            this.currentEventSource = null;
+        }
+
+        // Remove progress indicator
+        this.removeStreamingProgress();
+
+        // Add final response if provided
+        if (data && data.response) {
+            const assistantMessage = {
+                id: Date.now().toString(),
+                role: 'assistant',
+                content: data.response.main_text,
+                timestamp: new Date().toISOString(),
+                metadata: {
+                    has_diagram: !!data.response.diagram_code,
+                    has_code: data.response.code_snippets && data.response.code_snippets.length > 0,
+                    execution_time_ms: data.execution_time_ms,
+                    services_used: data.services_used,
+                    fallback_used: data.fallback_used,
+                    diagram_url: data.response.diagram_url
+                }
+            };
+
+            this.addMessageToUI(assistantMessage);
+            this.scrollToBottom();
+
+            // Reload conversations to update sidebar
+            this.loadConversations();
+        }
+
+        this.isStreaming = false;
+        this.updateSendButton();
+    }
+
+    handleStreamError(errorMessage) {
+        console.error('Stream error:', errorMessage);
+
+        if (this.currentEventSource) {
+            this.currentEventSource.close();
+            this.currentEventSource = null;
+        }
+
+        // Remove progress indicator
+        this.removeStreamingProgress();
+
+        // Show error message
+        this.showToast(`Stream error: ${errorMessage}`, 'error');
+
+        // Add error message to chat
+        const errorMessageObj = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `❌ Sorry, I encountered an error while processing your request: ${errorMessage}`,
+            timestamp: new Date().toISOString()
+        };
+
+        this.addMessageToUI(errorMessageObj);
+        this.scrollToBottom();
+
+        this.isStreaming = false;
+        this.updateSendButton();
     }
 }
 

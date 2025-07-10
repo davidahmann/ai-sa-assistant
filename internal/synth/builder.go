@@ -1968,6 +1968,7 @@ func formatConversationHistoryWithTokenLimit(conversationHistory []session.Messa
 				formattedMessage = fmt.Sprintf("%s [%s]: %s\n\n", roleDisplay, timestamp, truncatedContent)
 				includedMessages = append([]session.Message{message}, includedMessages...)
 				currentTokens += EstimateTokens(formattedMessage)
+				remainingTokens -= EstimateTokens(formattedMessage)
 			}
 
 			// Set truncation notice if we're excluding messages
