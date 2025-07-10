@@ -17,4 +17,6 @@ WORKDIR /app
 COPY --from=builder --chown=nonroot:nonroot /app/ingest ./
 COPY --from=builder --chown=nonroot:nonroot /app/configs/ ./configs/
 
+USER nonroot
+
 CMD ["./ingest"]

@@ -11,20 +11,20 @@ import (
 
 // QueryAnalysis represents the analysis of a user query
 type QueryAnalysis struct {
-	Query                 string              `json:"query"`
-	IsAmbiguous           bool                `json:"is_ambiguous"`
-	IsIncomplete          bool                `json:"is_incomplete"`
-	CompletenessScore     float64             `json:"completeness_score"`
-	AmbiguityScore        float64             `json:"ambiguity_score"`
-	RequiresClarification bool                `json:"requires_clarification"`
-	DetectedIntents       []string            `json:"detected_intents"`
-	MissingContext        []string            `json:"missing_context"`
-	ClarificationNeeded   []ClarificationArea `json:"clarification_needed"`
-	FollowupContext       *FollowupContext    `json:"followup_context,omitempty"`
+	Query                 string           `json:"query"`
+	IsAmbiguous           bool             `json:"is_ambiguous"`
+	IsIncomplete          bool             `json:"is_incomplete"`
+	CompletenessScore     float64          `json:"completeness_score"`
+	AmbiguityScore        float64          `json:"ambiguity_score"`
+	RequiresClarification bool             `json:"requires_clarification"`
+	DetectedIntents       []string         `json:"detected_intents"`
+	MissingContext        []string         `json:"missing_context"`
+	ClarificationNeeded   []Area           `json:"clarification_needed"`
+	FollowupContext       *FollowupContext `json:"followup_context,omitempty"`
 }
 
-// ClarificationArea represents a specific area that needs clarification
-type ClarificationArea struct {
+// Area represents a specific area that needs clarification
+type Area struct {
 	Area        string   `json:"area"`
 	Questions   []string `json:"questions"`
 	Suggestions []string `json:"suggestions"`
@@ -39,18 +39,18 @@ type FollowupContext struct {
 	ResolutionStrategy string   `json:"resolution_strategy"`
 }
 
-// ClarificationRequest represents a request for clarification
-type ClarificationRequest struct {
-	OriginalQuery   string              `json:"original_query"`
-	Analysis        QueryAnalysis       `json:"analysis"`
-	Questions       []ClarificationItem `json:"questions"`
-	Suggestions     []string            `json:"suggestions"`
-	QuickOptions    []QuickOption       `json:"quick_options"`
-	GuidedTemplates []GuidedTemplate    `json:"guided_templates"`
+// Request represents a request for clarification
+type Request struct {
+	OriginalQuery   string           `json:"original_query"`
+	Analysis        QueryAnalysis    `json:"analysis"`
+	Questions       []Item           `json:"questions"`
+	Suggestions     []string         `json:"suggestions"`
+	QuickOptions    []QuickOption    `json:"quick_options"`
+	GuidedTemplates []GuidedTemplate `json:"guided_templates"`
 }
 
-// ClarificationItem represents a single clarification question
-type ClarificationItem struct {
+// Item represents a single clarification question
+type Item struct {
 	ID       string   `json:"id"`
 	Question string   `json:"question"`
 	Type     string   `json:"type"` // "choice", "text", "guided"
@@ -107,7 +107,7 @@ type intentClassifier struct {
 // clarificationRule defines a rule for generating clarifications
 type clarificationRule struct {
 	Trigger     func(QueryAnalysis) bool
-	Generator   func(QueryAnalysis) []ClarificationArea
+	Generator   func(QueryAnalysis) []Area
 	Priority    string
 	Description string
 }
@@ -138,7 +138,7 @@ func (a *Analyzer) AnalyzeQuery(ctx context.Context, query string, conversationH
 		Query:               query,
 		DetectedIntents:     []string{},
 		MissingContext:      []string{},
-		ClarificationNeeded: []ClarificationArea{},
+		ClarificationNeeded: []Area{},
 	}
 
 	// Check for follow-up context
@@ -161,7 +161,7 @@ func (a *Analyzer) AnalyzeQuery(ctx context.Context, query string, conversationH
 	analysis.MissingContext = a.identifyMissingContext(query, analysis.DetectedIntents)
 
 	// Generate clarification areas
-	analysis.ClarificationNeeded = a.generateClarificationAreas(analysis)
+	analysis.ClarificationNeeded = a.generateAreas(analysis)
 
 	// Determine if clarification is required
 	analysis.RequiresClarification = analysis.IsAmbiguous || analysis.IsIncomplete || len(analysis.ClarificationNeeded) > 0
@@ -170,11 +170,11 @@ func (a *Analyzer) AnalyzeQuery(ctx context.Context, query string, conversationH
 }
 
 // GenerateClarificationRequest generates a clarification request
-func (a *Analyzer) GenerateClarificationRequest(ctx context.Context, analysis *QueryAnalysis) (*ClarificationRequest, error) {
-	request := &ClarificationRequest{
+func (a *Analyzer) GenerateClarificationRequest(ctx context.Context, analysis *QueryAnalysis) (*Request, error) {
+	request := &Request{
 		OriginalQuery:   analysis.Query,
 		Analysis:        *analysis,
-		Questions:       []ClarificationItem{},
+		Questions:       []Item{},
 		Suggestions:     []string{},
 		QuickOptions:    []QuickOption{},
 		GuidedTemplates: []GuidedTemplate{},
@@ -381,9 +381,9 @@ func (a *Analyzer) hasSpecificContext(queryLower string) bool {
 	return false
 }
 
-// generateClarificationAreas generates clarification areas based on analysis
-func (a *Analyzer) generateClarificationAreas(analysis *QueryAnalysis) []ClarificationArea {
-	var areas []ClarificationArea
+// generateAreas generates clarification areas based on analysis
+func (a *Analyzer) generateAreas(analysis *QueryAnalysis) []Area {
+	var areas []Area
 
 	// Apply clarification rules
 	for _, rule := range a.clarificationRules {
@@ -407,13 +407,13 @@ func (a *Analyzer) detectFollowupContext(query string, conversationHistory []ses
 }
 
 // generateClarificationQuestions generates clarification questions
-func (a *Analyzer) generateClarificationQuestions(analysis *QueryAnalysis) []ClarificationItem {
-	var questions []ClarificationItem
+func (a *Analyzer) generateClarificationQuestions(analysis *QueryAnalysis) []Item {
+	var questions []Item
 	id := 1
 
 	for _, area := range analysis.ClarificationNeeded {
 		for _, question := range area.Questions {
-			item := ClarificationItem{
+			item := Item{
 				ID:       fmt.Sprintf("clarify_%d", id),
 				Question: question,
 				Type:     "choice",

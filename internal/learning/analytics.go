@@ -164,7 +164,12 @@ func (a *Analytics) getRecentFeedback(days int) ([]DetailedFeedback, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query recent feedback: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			// Log error but don't return it as this is in a defer
+			fmt.Printf("failed to close rows: %v\n", closeErr)
+		}
+	}()
 
 	var feedback []DetailedFeedback
 	for rows.Next() {

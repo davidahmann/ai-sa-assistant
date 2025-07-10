@@ -10,12 +10,20 @@ COPY . .
 WORKDIR /app/cmd/retrieve
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o /app/retrieve .
 
-FROM gcr.io/distroless/base-debian12:nonroot
+# Verify the binary was created
+RUN ls -la /app/retrieve
+
+FROM alpine:3.18
+
+RUN apk --no-cache add ca-certificates sqlite
+RUN adduser -D -s /bin/sh appuser
 
 WORKDIR /app
 
-COPY --from=builder --chown=nonroot:nonroot /app/retrieve ./
-COPY --from=builder --chown=nonroot:nonroot /app/configs/ ./configs/
+COPY --from=builder --chown=appuser:appuser /app/retrieve ./retrieve
+COPY --from=builder --chown=appuser:appuser /app/configs/ ./configs/
 
-EXPOSE 8080
+USER appuser
+
+EXPOSE 8081
 CMD ["./retrieve"]

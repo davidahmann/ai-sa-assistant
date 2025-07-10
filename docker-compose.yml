@@ -13,12 +13,14 @@ services:
       context: .
       dockerfile: cmd/retrieve/Dockerfile
     ports:
-      - "8081:8080"
+      - "8081:8081"
     volumes:
       - ./configs:/app/configs
       - ./metadata.db:/app/metadata.db
     depends_on:
       - chromadb
+    env_file:
+      - .env
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
 
@@ -27,9 +29,11 @@ services:
       context: .
       dockerfile: cmd/websearch/Dockerfile
     ports:
-      - "8083:8080"
+      - "8083:8083"
     volumes:
       - ./configs:/app/configs
+    env_file:
+      - .env
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
 
@@ -38,9 +42,11 @@ services:
       context: .
       dockerfile: cmd/synthesize/Dockerfile
     ports:
-      - "8082:8080"
+      - "8082:8082"
     volumes:
       - ./configs:/app/configs
+    env_file:
+      - .env
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
 
@@ -57,6 +63,8 @@ services:
       - retrieve
       - websearch
       - synthesize
+    env_file:
+      - .env
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
 
@@ -72,6 +80,8 @@ services:
       - retrieve
       - websearch
       - synthesize
+    env_file:
+      - .env
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
 

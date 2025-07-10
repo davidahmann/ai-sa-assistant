@@ -337,3 +337,98 @@ func TestCircuitBreakerStateChange(t *testing.T) {
 		t.Errorf("Expected 'closed -> open', got %s", stateChanges[0])
 	}
 }
+
+// TestCircuitBreakerConcurrentRequests tests concurrent request handling during open state
+func TestCircuitBreakerConcurrentRequests(t *testing.T) {
+	config := DefaultCircuitBreakerConfig("test")
+	config.MaxFailures = 1
+	logger := zap.NewNop()
+
+	cb := NewCircuitBreaker(config, logger)
+
+	// Trigger failure to open circuit
+	err := cb.Execute(context.Background(), func(_ context.Context) error {
+		return errors.New("failure")
+	})
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+
+	// Verify circuit is open
+	if cb.GetState() != CircuitOpen {
+		t.Errorf("Expected circuit to be open, got %v", cb.GetState())
+	}
+
+	// Test concurrent requests fail fast
+	const numGoroutines = 10
+	errors := make([]error, numGoroutines)
+	done := make(chan bool, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(index int) {
+			errors[index] = cb.Execute(context.Background(), func(_ context.Context) error {
+				return nil // Should not be called
+			})
+			done <- true
+		}(i)
+	}
+
+	// Wait for all goroutines to complete
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// All requests should have failed with circuit breaker open error
+	for i, err := range errors {
+		if err != ErrCircuitBreakerOpen {
+			t.Errorf("Request %d: Expected ErrCircuitBreakerOpen, got %v", i, err)
+		}
+	}
+
+	// Circuit should still be open
+	if cb.GetState() != CircuitOpen {
+		t.Errorf("Expected circuit to remain open, got %v", cb.GetState())
+	}
+}
+
+// TestCircuitBreakerSpecificFailureThreshold tests exact failure threshold behavior
+func TestCircuitBreakerSpecificFailureThreshold(t *testing.T) {
+	config := DefaultCircuitBreakerConfig("test")
+	config.MaxFailures = 3 // Test with 3 failures as specified in CLAUDE.md
+	logger := zap.NewNop()
+
+	cb := NewCircuitBreaker(config, logger)
+
+	// First two failures should keep circuit closed
+	for i := 0; i < 2; i++ {
+		err := cb.Execute(context.Background(), func(_ context.Context) error {
+			return errors.New("failure")
+		})
+		if err == nil {
+			t.Errorf("Expected error on attempt %d, got nil", i+1)
+		}
+		if cb.GetState() != CircuitClosed {
+			t.Errorf("Expected circuit to be closed after %d failures, got %v", i+1, cb.GetState())
+		}
+	}
+
+	// Third failure should open the circuit
+	err := cb.Execute(context.Background(), func(_ context.Context) error {
+		return errors.New("failure")
+	})
+	if err == nil {
+		t.Error("Expected error on third failure, got nil")
+	}
+	if cb.GetState() != CircuitOpen {
+		t.Errorf("Expected circuit to be open after 3 failures, got %v", cb.GetState())
+	}
+
+	// Verify stats
+	stats := cb.GetStats()
+	if stats.Failures != 3 {
+		t.Errorf("Expected 3 failures in stats, got %d", stats.Failures)
+	}
+	if stats.FailedReqs != 3 {
+		t.Errorf("Expected 3 failed requests in stats, got %d", stats.FailedReqs)
+	}
+}

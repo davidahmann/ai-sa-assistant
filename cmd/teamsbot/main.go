@@ -772,7 +772,11 @@ func sendCardToTeams(cfg *config.Config, cardJSON string, logger *zap.Logger) er
 	if err != nil {
 		return fmt.Errorf("failed to send to Teams: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			logger.Error("failed to close response body", zap.Error(closeErr))
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -784,7 +788,7 @@ func sendCardToTeams(cfg *config.Config, cardJSON string, logger *zap.Logger) er
 }
 
 // sendErrorCardToTeams sends a simple error card to Teams
-func sendErrorCardToTeams(cfg *config.Config, query, errorMessage string, logger *zap.Logger) {
+func sendErrorCardToTeams(cfg *config.Config, _, errorMessage string, logger *zap.Logger) {
 	errorCard, err := teams.GenerateSimpleCard("❌ Error", errorMessage)
 	if err != nil {
 		logger.Error("Failed to generate error card", zap.Error(err))
@@ -1035,7 +1039,7 @@ func sendResponseCard(cfg *config.Config, result *teams.OrchestrationResult, que
 	return sendCardToTeams(cfg, cardJSON, logger)
 }
 
-func sendErrorCard(cfg *config.Config, query, errorMessage string, logger *zap.Logger) {
+func sendErrorCard(cfg *config.Config, _, errorMessage string, logger *zap.Logger) {
 	errorCard, err := teams.GenerateSimpleCard("❌ Error", errorMessage)
 	if err != nil {
 		logger.Error("Failed to generate error card", zap.Error(err))
@@ -1047,7 +1051,7 @@ func sendErrorCard(cfg *config.Config, query, errorMessage string, logger *zap.L
 	}
 }
 
-func generateDiagramURL(diagramCode string) string {
+func generateDiagramURL(_ string) string {
 	// Simple placeholder - in real implementation this would call diagram service
 	return ""
 }

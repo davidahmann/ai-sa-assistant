@@ -40,7 +40,9 @@ func setupTestDB(t TestingT) *sql.DB {
 		t.Errorf("Failed to create temp file: %v", err)
 		t.FailNow()
 	}
-	tempFile.Close()
+	if err := tempFile.Close(); err != nil {
+		t.Errorf("Failed to close temp file: %v", err)
+	}
 
 	db, err := sql.Open("sqlite3", tempFile.Name())
 	if err != nil {
@@ -66,8 +68,12 @@ func setupTestDB(t TestingT) *sql.DB {
 
 	// Clean up function
 	t.Cleanup(func() {
-		db.Close()
-		os.Remove(tempFile.Name())
+		if err := db.Close(); err != nil {
+			t.Errorf("Failed to close database: %v", err)
+		}
+		if err := os.Remove(tempFile.Name()); err != nil {
+			t.Errorf("Failed to remove temp file: %v", err)
+		}
 	})
 
 	return db

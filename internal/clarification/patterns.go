@@ -56,14 +56,14 @@ func buildIncompletenessRules() []incompletenessRule {
 			Category:    "requirements",
 		},
 		{
-			Pattern:     regexp.MustCompile(`(?i)^(migrate|move|transfer)(\s+to|\s+from)?$`),
-			Weight:      0.7,
-			Description: "Migration query without source/target specification",
+			Pattern:     regexp.MustCompile(`(?i)\b(migrate|move|transfer)\b.*\b(cloud|aws|azure|gcp)\b`),
+			Weight:      0.3,
+			Description: "Migration query lacks specific source environment details",
 			Category:    "migration",
 		},
 		{
-			Pattern:     regexp.MustCompile(`(?i)^(security|compliance)(\s+plan)?$`),
-			Weight:      0.6,
+			Pattern:     regexp.MustCompile(`(?i)\b(security|compliance)(\s+plan|\s+assessment)?\b`),
+			Weight:      0.5,
 			Description: "Security query without compliance or threat context",
 			Category:    "security",
 		},
@@ -84,6 +84,12 @@ func buildIncompletenessRules() []incompletenessRule {
 			Weight:      0.3,
 			Description: "Query uses subjective terms without criteria",
 			Category:    "subjective",
+		},
+		{
+			Pattern:     regexp.MustCompile(`(?i)^.{1,15}\b(help|assist|support)\b.{0,15}$`),
+			Weight:      0.6,
+			Description: "Very short help request without context",
+			Category:    "general",
 		},
 	}
 
@@ -188,8 +194,8 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "migration") && contains(analysis.MissingContext, "source_environment")
 			},
-			Generator: func(analysis QueryAnalysis) []ClarificationArea {
-				return []ClarificationArea{
+			Generator: func(analysis QueryAnalysis) []Area {
+				return []Area{
 					{
 						Area: "source_environment",
 						Questions: []string{
@@ -211,8 +217,8 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "migration") && contains(analysis.MissingContext, "target_cloud")
 			},
-			Generator: func(analysis QueryAnalysis) []ClarificationArea {
-				return []ClarificationArea{
+			Generator: func(analysis QueryAnalysis) []Area {
+				return []Area{
 					{
 						Area: "target_cloud",
 						Questions: []string{
@@ -234,8 +240,8 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "security") && contains(analysis.MissingContext, "compliance_standards")
 			},
-			Generator: func(analysis QueryAnalysis) []ClarificationArea {
-				return []ClarificationArea{
+			Generator: func(analysis QueryAnalysis) []Area {
+				return []Area{
 					{
 						Area: "compliance",
 						Questions: []string{
@@ -257,8 +263,8 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "architecture") && contains(analysis.MissingContext, "scale")
 			},
-			Generator: func(analysis QueryAnalysis) []ClarificationArea {
-				return []ClarificationArea{
+			Generator: func(analysis QueryAnalysis) []Area {
+				return []Area{
 					{
 						Area: "scale",
 						Questions: []string{
@@ -280,8 +286,8 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "disaster_recovery") && contains(analysis.MissingContext, "rto")
 			},
-			Generator: func(analysis QueryAnalysis) []ClarificationArea {
-				return []ClarificationArea{
+			Generator: func(analysis QueryAnalysis) []Area {
+				return []Area{
 					{
 						Area: "recovery_objectives",
 						Questions: []string{
@@ -303,8 +309,8 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "cost_optimization") && contains(analysis.MissingContext, "current_spend")
 			},
-			Generator: func(analysis QueryAnalysis) []ClarificationArea {
-				return []ClarificationArea{
+			Generator: func(analysis QueryAnalysis) []Area {
+				return []Area{
 					{
 						Area: "current_costs",
 						Questions: []string{
@@ -326,8 +332,8 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return analysis.IsAmbiguous && len(analysis.DetectedIntents) == 0
 			},
-			Generator: func(analysis QueryAnalysis) []ClarificationArea {
-				return []ClarificationArea{
+			Generator: func(analysis QueryAnalysis) []Area {
+				return []Area{
 					{
 						Area: "intent",
 						Questions: []string{
@@ -344,6 +350,35 @@ func buildClarificationRules() []clarificationRule {
 			},
 			Priority:    "high",
 			Description: "Ambiguous queries need intent clarification",
+		},
+		{
+			Trigger: func(analysis QueryAnalysis) bool {
+				wordCount := len(strings.Fields(analysis.Query))
+				queryLower := strings.ToLower(analysis.Query)
+				isGeneralHelp := strings.Contains(queryLower, "can you help") ||
+					strings.Contains(queryLower, "help me") ||
+					strings.Contains(queryLower, "assist me")
+				return (wordCount <= 3 && len(analysis.DetectedIntents) == 0) ||
+					(isGeneralHelp && len(analysis.DetectedIntents) == 0)
+			},
+			Generator: func(analysis QueryAnalysis) []Area {
+				return []Area{
+					{
+						Area: "context",
+						Questions: []string{
+							"What specific topic do you need help with?",
+							"Can you provide more context about your situation?",
+						},
+						Suggestions: []string{
+							"Describe your current environment or challenge",
+							"Specify the type of solution you're looking for",
+						},
+						Priority: "high",
+					},
+				}
+			},
+			Priority:    "high",
+			Description: "Very short queries need more context",
 		},
 	}
 
@@ -414,7 +449,7 @@ func buildFollowupDetectors() []followupDetector {
 			},
 		},
 		{
-			Pattern:     regexp.MustCompile(`(?i)\b(diagram|chart|visual|architecture|design)\b`),
+			Pattern:     regexp.MustCompile(`(?i)\b(that|this|the)\s+(diagram|chart|visual|architecture|design)\b`),
 			Type:        "diagram_inquiry",
 			Description: "Detects diagram-related follow-up questions",
 			Resolver: func(query string, history []session.Message) *FollowupContext {

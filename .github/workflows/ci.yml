@@ -295,19 +295,24 @@ jobs:
             sleep 3
           done
 
-          # Run performance tests with proper environment
+          # Run basic performance benchmarks for PR validation
           export OPENAI_API_KEY="${OPENAI_API_KEY}"
-          go test -bench=. -benchmem -timeout=15m ./tests/performance/... > benchmark_results.txt 2>&1 || true
+          go test -bench=. -benchmem -timeout=15m ./tests/performance/ > benchmark_results.txt 2>&1 || true
+
+          # Run quick memory and concurrent tests for PR validation
+          go test -v -run="TestVectorSearchMemoryUsage|TestConcurrentTeamsWebhookProcessing" -timeout=10m ./tests/performance/... >> benchmark_results.txt 2>&1 || true
 
           # Display results
           cat benchmark_results.txt
 
           # Check if benchmarks actually ran (not just skipped)
-          if grep -q "PASS" benchmark_results.txt && grep -q "Benchmark" benchmark_results.txt; then
+          if grep -q "PASS" benchmark_results.txt && grep -q "Benchmark\|success rate\|response time" benchmark_results.txt; then
             echo "Performance benchmarks completed successfully"
+            echo "✅ Performance validation passed for PR"
           else
             echo "Performance benchmarks were skipped or failed"
-            echo "This is expected if services are not fully ready"
+            echo "This is expected if services are not fully ready or API keys are not available"
+            echo "⚠️ Performance validation skipped - comprehensive tests will run on schedule"
           fi
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

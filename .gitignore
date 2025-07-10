@@ -54,3 +54,6 @@ Thumbs.db
 
 # Generated files
 benchmark-results.txt
+bin/
+logs/
+*.log

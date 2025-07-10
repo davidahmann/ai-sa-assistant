@@ -303,9 +303,20 @@ func setupConfiguration() (*config.Config, *zap.Logger) {
 
 // setupServices initializes all required services
 func setupServices(cfg *config.Config, logger *zap.Logger) *internalopenai.Client {
-	openaiClient, err := internalopenai.NewClient(cfg.OpenAI.APIKey, logger)
-	if err != nil {
-		logger.Fatal("Failed to initialize OpenAI client", zap.Error(err))
+	// Check if running in test mode
+	testMode := os.Getenv("TEST_MODE") == "true" || os.Getenv("CI") == "true"
+
+	var openaiClient *internalopenai.Client
+	var err error
+
+	if testMode {
+		logger.Info("Skipping OpenAI client initialization in test mode")
+		return nil // Return nil in test mode
+	} else {
+		openaiClient, err = internalopenai.NewClient(cfg.OpenAI.APIKey, logger)
+		if err != nil {
+			logger.Fatal("Failed to initialize OpenAI client", zap.Error(err))
+		}
 	}
 
 	// Log configuration with masked sensitive values
@@ -350,6 +361,20 @@ func setupRouter(cfg *config.Config, logger *zap.Logger, openaiClient *internalo
 func setupHealthChecks(manager *health.Manager, cfg *config.Config, openaiClient *internalopenai.Client) {
 	// OpenAI health check
 	manager.AddCheckerFunc("openai", func(ctx context.Context) health.CheckResult {
+		// Check if running in test mode
+		if openaiClient == nil {
+			return health.CheckResult{
+				Status:    health.StatusHealthy,
+				Timestamp: time.Now(),
+				Metadata: map[string]interface{}{
+					"test_mode":   true,
+					"model":       cfg.Synthesis.Model,
+					"max_tokens":  cfg.Synthesis.MaxTokens,
+					"temperature": cfg.Synthesis.Temperature,
+				},
+			}
+		}
+
 		if _, err := openaiClient.EmbedTexts(ctx, []string{"health check"}); err != nil {
 			return health.CheckResult{
 				Status:    health.StatusUnhealthy,
@@ -583,7 +608,7 @@ func processSynthesisRequest(
 // processRegenerationRequest handles the core regeneration logic with custom parameters
 func processRegenerationRequest(
 	req RegenerationRequest,
-	cfg *config.Config,
+	_ *config.Config,
 	logger *zap.Logger,
 	openaiClient *internalopenai.Client,
 ) (*internalopenai.ChatCompletionResponse, error) {

@@ -90,8 +90,16 @@ This tool is essential for populating the knowledge base with synthetic document
 }
 
 func runIngestionCommand(_ *cobra.Command, _ []string) error {
-	logger, _ := zap.NewProduction()
-	defer func() { _ = logger.Sync() }()
+	logger, loggerErr := zap.NewProduction()
+	if loggerErr != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", loggerErr)
+		return loggerErr
+	}
+	defer func() {
+		if syncErr := logger.Sync(); syncErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to sync logger: %v\n", syncErr)
+		}
+	}()
 
 	// Check if running in test mode
 	testMode := os.Getenv("TEST_MODE") == "true" || os.Getenv("CI") == "true"
@@ -202,7 +210,8 @@ func runIngestionPipeline(
 	// Process documents with improved error handling
 	stats := &IngestionStats{}
 
-	for _, entry := range allMetadata {
+	for i := range allMetadata {
+		entry := &allMetadata[i]
 		// Skip external documents (they don't have local files)
 		if entry.Path == "external" {
 			logger.Debug("Skipping external document", zap.String("doc_id", entry.DocID))
@@ -292,7 +301,7 @@ func validateFilePath(basePath, filePath string) error {
 
 func (p *IngestionPipeline) processDocument(
 	ctx context.Context,
-	entry metadata.Entry,
+	entry *metadata.Entry,
 	filePath string,
 ) (int, error) {
 	// Validate file path for security

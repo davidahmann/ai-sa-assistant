@@ -15,5 +15,7 @@ WORKDIR /app
 COPY --from=builder --chown=nonroot:nonroot /app/websearch ./
 COPY --from=builder --chown=nonroot:nonroot /app/configs/ ./configs/
 
-EXPOSE 8080
+USER nonroot
+
+EXPOSE 8083
 CMD ["./websearch"]

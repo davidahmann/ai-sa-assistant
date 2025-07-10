@@ -520,7 +520,7 @@ func (s *WebUIServer) getOrCreateSession(ctx context.Context, id string) (*sessi
 }
 
 // getUserID returns a user ID for session management (simplified for demo)
-func (s *WebUIServer) getUserID(c *gin.Context) string {
+func (s *WebUIServer) getUserID(_ *gin.Context) string {
 	// In a real application, this would extract user ID from authentication
 	// For demo purposes, use a default user
 	return "demo-user"

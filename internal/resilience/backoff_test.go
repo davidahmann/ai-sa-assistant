@@ -17,6 +17,7 @@ package resilience
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -293,5 +294,208 @@ func TestDefaultRetryOnFunc(t *testing.T) {
 				t.Errorf("Expected %v, got %v", tt.expected, result)
 			}
 		})
+	}
+}
+
+// TestRetryOnSpecificErrors tests retry behavior with specific error types
+func TestRetryOnSpecificErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		errorMsg       string
+		shouldRetry    bool
+		expectedTiming time.Duration
+	}{
+		{
+			name:           "rate limit error",
+			errorMsg:       "rate limit exceeded",
+			shouldRetry:    true,
+			expectedTiming: 10 * time.Millisecond, // Base delay for test
+		},
+		{
+			name:           "timeout error",
+			errorMsg:       "request timeout",
+			shouldRetry:    true,
+			expectedTiming: 10 * time.Millisecond,
+		},
+		{
+			name:           "server error",
+			errorMsg:       "internal server error",
+			shouldRetry:    true,
+			expectedTiming: 10 * time.Millisecond,
+		},
+		{
+			name:           "connection error",
+			errorMsg:       "connection refused",
+			shouldRetry:    true,
+			expectedTiming: 10 * time.Millisecond,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := zap.NewNop()
+			config := DefaultBackoffConfig()
+			config.BaseDelay = tt.expectedTiming
+			config.MaxRetries = 1
+
+			attempts := 0
+			fn := func(_ context.Context) error {
+				attempts++
+				if attempts == 1 {
+					return errors.New(tt.errorMsg)
+				}
+				return nil
+			}
+
+			start := time.Now()
+			err := WithExponentialBackoff(context.Background(), logger, config, fn)
+			duration := time.Since(start)
+
+			if err != nil {
+				t.Errorf("Expected no error after retry, got %v", err)
+			}
+
+			if attempts != 2 {
+				t.Errorf("Expected 2 attempts, got %d", attempts)
+			}
+
+			// Should have at least the base delay minus jitter tolerance (10% of base delay)
+			jitterTolerance := time.Duration(float64(tt.expectedTiming) * 0.1)
+			minExpectedDelay := tt.expectedTiming - jitterTolerance
+			if duration < minExpectedDelay {
+				t.Errorf("Expected at least %v delay (with jitter tolerance), got %v", minExpectedDelay, duration)
+			}
+		})
+	}
+}
+
+// TestNonRetryableErrors tests that certain errors are not retried
+func TestNonRetryableErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		errorMsg   string
+		statusCode int
+	}{
+		{
+			name:       "unauthorized (401)",
+			errorMsg:   "unauthorized access",
+			statusCode: 401,
+		},
+		{
+			name:       "forbidden (403)",
+			errorMsg:   "forbidden operation",
+			statusCode: 403,
+		},
+		{
+			name:       "not found (404)",
+			errorMsg:   "resource not found",
+			statusCode: 404,
+		},
+		{
+			name:       "bad request (400)",
+			errorMsg:   "bad request format",
+			statusCode: 400,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := zap.NewNop()
+			config := DefaultBackoffConfig()
+			config.BaseDelay = 1 * time.Millisecond
+			config.MaxRetries = 3
+			config.RetryOnFunc = func(err error) bool {
+				// Don't retry on 4xx errors (client errors)
+				if err != nil {
+					errStr := err.Error()
+					if strings.Contains(errStr, "unauthorized") ||
+						strings.Contains(errStr, "forbidden") ||
+						strings.Contains(errStr, "not found") ||
+						strings.Contains(errStr, "bad request") {
+						return false
+					}
+				}
+				return DefaultRetryOnFunc(err)
+			}
+
+			attempts := 0
+			fn := func(_ context.Context) error {
+				attempts++
+				return errors.New(tt.errorMsg)
+			}
+
+			err := WithExponentialBackoff(context.Background(), logger, config, fn)
+
+			if err == nil {
+				t.Error("Expected error for non-retryable error")
+			}
+
+			if attempts != 1 {
+				t.Errorf("Expected 1 attempt for non-retryable error, got %d", attempts)
+			}
+
+			if !strings.Contains(err.Error(), tt.errorMsg) {
+				t.Errorf("Expected error to contain %s, got %v", tt.errorMsg, err)
+			}
+		})
+	}
+}
+
+// TestExponentialBackoffTiming tests the 1s, 2s, 4s progression
+func TestExponentialBackoffTiming(t *testing.T) {
+	logger := zap.NewNop()
+	config := DefaultBackoffConfig()
+	config.BaseDelay = 50 * time.Millisecond // Speed up test
+	config.MaxRetries = 3
+	config.Jitter = false // Disable jitter for predictable timing
+
+	var delays []time.Duration
+	start := time.Now()
+	lastTime := start
+
+	attempts := 0
+	fn := func(_ context.Context) error {
+		attempts++
+		if attempts > 1 {
+			now := time.Now()
+			delay := now.Sub(lastTime)
+			delays = append(delays, delay)
+			lastTime = now
+		}
+		if attempts <= 3 {
+			return errors.New("retry error")
+		}
+		return nil
+	}
+
+	err := WithExponentialBackoff(context.Background(), logger, config, fn)
+
+	if err != nil {
+		t.Errorf("Expected no error after successful retry, got %v", err)
+	}
+
+	if attempts != 4 {
+		t.Errorf("Expected 4 attempts, got %d", attempts)
+	}
+
+	if len(delays) != 3 {
+		t.Errorf("Expected 3 delays, got %d", len(delays))
+	}
+
+	// Check exponential progression: 50ms, 100ms, 200ms
+	expectedDelays := []time.Duration{
+		50 * time.Millisecond,
+		100 * time.Millisecond,
+		200 * time.Millisecond,
+	}
+
+	for i, expectedDelay := range expectedDelays {
+		if i < len(delays) {
+			// Allow 20% tolerance for timing variations
+			tolerance := expectedDelay / 5
+			if delays[i] < expectedDelay-tolerance || delays[i] > expectedDelay+tolerance {
+				t.Errorf("Delay %d: expected ~%v, got %v", i+1, expectedDelay, delays[i])
+			}
+		}
 	}
 }

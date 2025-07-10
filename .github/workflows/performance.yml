@@ -1,0 +1,512 @@
+name: Performance Testing
+
+# Restrict permissions to minimum required
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  actions: read
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run performance tests daily at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of performance test to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - ingestion
+        - concurrent
+        - memory
+        - rate_limit
+        - e2e
+
+env:
+  GO_VERSION: '1.23.5'
+  PERFORMANCE_TIMEOUT: '30m'
+  MEMORY_LIMIT: '2GB'
+
+jobs:
+  # Basic Performance Tests (run on all PR/push)
+  basic-performance:
+    name: Basic Performance Tests
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+
+    services:
+      chromadb:
+        image: chromadb/chroma:0.5.0
+        ports:
+          - 8000:8000
+        env:
+          CHROMA_HOST: 0.0.0.0
+          CHROMA_PORT: 8000
+          CHROMA_LOG_LEVEL: INFO
+        options: --health-cmd="curl -f http://localhost:8000/api/v1/heartbeat || exit 1" --health-interval=15s --health-timeout=10s --health-retries=10 --health-start-period=30s
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies
+      run: |
+        go mod download
+        sudo apt-get update
+        sudo apt-get install -y gcc sqlite3 libsqlite3-dev
+
+    - name: Build services
+      run: |
+        mkdir -p bin
+        CGO_ENABLED=1 go build -o bin/retrieve ./cmd/retrieve
+        CGO_ENABLED=0 go build -o bin/websearch ./cmd/websearch
+        CGO_ENABLED=0 go build -o bin/synthesize ./cmd/synthesize
+        CGO_ENABLED=0 go build -o bin/teamsbot ./cmd/teamsbot
+        chmod +x bin/*
+
+    - name: Create test configuration
+      run: |
+        mkdir -p configs data
+        touch data/metadata.db
+
+        cat > configs/config.yaml << EOF
+        openai:
+          api_key: "test-key-for-ci"
+          model: "gpt-4"
+          embedding_model: "text-embedding-3-small"
+        chromadb:
+          url: "http://localhost:8000"
+          collection_name: "perf_test_collection"
+        metadata:
+          db_path: "./data/metadata.db"
+        services:
+          retrieve:
+            port: 8081
+          websearch:
+            port: 8083
+          synthesize:
+            port: 8082
+          teamsbot:
+            port: 8080
+        teams:
+          webhook_url: "https://webhook.example.com/test"
+        logging:
+          level: "info"
+          format: "json"
+        EOF
+
+    - name: Start services
+      run: |
+        mkdir -p logs
+        ./bin/retrieve --config=configs/config.yaml > logs/retrieve.log 2>&1 &
+        ./bin/websearch --config=configs/config.yaml > logs/websearch.log 2>&1 &
+        ./bin/synthesize --config=configs/config.yaml > logs/synthesize.log 2>&1 &
+        ./bin/teamsbot --config=configs/config.yaml > logs/teamsbot.log 2>&1 &
+        sleep 20
+      env:
+        TEST_MODE: "true"
+
+    - name: Wait for services to be ready
+      run: |
+        timeout 120 bash -c 'until curl -f http://localhost:8000/api/v1/heartbeat; do echo "ChromaDB not ready..."; sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:8081/health; do echo "Retrieve not ready..."; sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:8082/health; do echo "Synthesize not ready..."; sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:8083/health; do echo "WebSearch not ready..."; sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:8080/health; do echo "TeamsBot not ready..."; sleep 2; done'
+
+    - name: Run basic performance benchmarks
+      run: |
+        go test -bench=. -benchmem -timeout=10m ./tests/performance/ > basic_benchmark_results.txt 2>&1 || true
+        cat basic_benchmark_results.txt
+      env:
+        TEST_MODE: "true"
+
+    - name: Run memory usage tests
+      run: |
+        go test -v -run="TestVectorSearchMemoryUsage|TestGarbageCollectionBehavior" -timeout=10m ./tests/performance/resource_usage_test.go > memory_test_results.txt 2>&1 || true
+        cat memory_test_results.txt
+      env:
+        TEST_MODE: "true"
+
+    - name: Upload basic performance results
+      uses: actions/upload-artifact@v4
+      with:
+        name: basic-performance-results
+        path: |
+          basic_benchmark_results.txt
+          memory_test_results.txt
+          logs/
+
+    - name: Stop services
+      if: always()
+      run: |
+        pkill -f "./bin/retrieve" || true
+        pkill -f "./bin/websearch" || true
+        pkill -f "./bin/synthesize" || true
+        pkill -f "./bin/teamsbot" || true
+
+  # Comprehensive Performance Tests (scheduled runs and workflow_dispatch)
+  comprehensive-performance:
+    name: Comprehensive Performance Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    strategy:
+      matrix:
+        test_suite:
+          - name: "ingestion"
+            pattern: "TestLargeDocumentProcessing|TestBatchEmbeddingGeneration|TestGracefulLargeDocumentHandling"
+            timeout: "25m"
+          - name: "concurrent"
+            pattern: "TestConcurrentTeamsWebhookProcessing|TestConcurrentRetrievalRequests|TestDatabaseConnectionPooling"
+            timeout: "20m"
+          - name: "memory"
+            pattern: "TestVectorSearchMemoryUsage|TestGarbageCollectionBehavior|TestResourceCleanupAfterRequests|TestMemoryLeakDetection"
+            timeout: "25m"
+          - name: "rate_limit"
+            pattern: "TestOpenAIRateLimitHandling|TestBackoffBehavior|TestBatchRequestOptimization"
+            timeout: "20m"
+          - name: "e2e"
+            pattern: "TestCompleteDemoScenariosUnderLoad|TestThirtySecondTargetComplexQueries|TestMultipleConcurrentDemos"
+            timeout: "30m"
+
+    services:
+      chromadb:
+        image: chromadb/chroma:0.5.0
+        ports:
+          - 8000:8000
+        env:
+          CHROMA_HOST: 0.0.0.0
+          CHROMA_PORT: 8000
+          CHROMA_LOG_LEVEL: INFO
+        options: --health-cmd="curl -f http://localhost:8000/api/v1/heartbeat || exit 1" --health-interval=15s --health-timeout=10s --health-retries=10 --health-start-period=30s
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies
+      run: |
+        go mod download
+        sudo apt-get update
+        sudo apt-get install -y gcc sqlite3 libsqlite3-dev
+
+    - name: Build services
+      run: |
+        mkdir -p bin
+        CGO_ENABLED=1 go build -o bin/retrieve ./cmd/retrieve
+        CGO_ENABLED=0 go build -o bin/websearch ./cmd/websearch
+        CGO_ENABLED=0 go build -o bin/synthesize ./cmd/synthesize
+        CGO_ENABLED=0 go build -o bin/teamsbot ./cmd/teamsbot
+        chmod +x bin/*
+
+    - name: Create comprehensive test configuration
+      run: |
+        mkdir -p configs data
+        touch data/metadata.db
+
+        # Use real API key if available for comprehensive tests
+        OPENAI_KEY="${{ secrets.OPENAI_API_KEY }}"
+        if [ -z "$OPENAI_KEY" ]; then
+          OPENAI_KEY="test-key-for-ci"
+        fi
+
+        cat > configs/config.yaml << EOF
+        openai:
+          api_key: "$OPENAI_KEY"
+          model: "gpt-4"
+          embedding_model: "text-embedding-3-small"
+        chromadb:
+          url: "http://localhost:8000"
+          collection_name: "comprehensive_perf_test"
+        metadata:
+          db_path: "./data/metadata.db"
+        services:
+          retrieve:
+            port: 8081
+          websearch:
+            port: 8083
+          synthesize:
+            port: 8082
+          teamsbot:
+            port: 8080
+        teams:
+          webhook_url: "https://webhook.example.com/test"
+        logging:
+          level: "info"
+          format: "json"
+        EOF
+
+    - name: Start services for comprehensive tests
+      run: |
+        mkdir -p logs
+        ./bin/retrieve --config=configs/config.yaml > logs/retrieve.log 2>&1 &
+        ./bin/websearch --config=configs/config.yaml > logs/websearch.log 2>&1 &
+        ./bin/synthesize --config=configs/config.yaml > logs/synthesize.log 2>&1 &
+        ./bin/teamsbot --config=configs/config.yaml > logs/teamsbot.log 2>&1 &
+        sleep 30
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        TEST_MODE: "true"
+
+    - name: Wait for comprehensive test services
+      run: |
+        echo "Waiting for ChromaDB..."
+        timeout 180 bash -c 'until curl -f http://localhost:8000/api/v1/heartbeat; do echo "ChromaDB not ready..."; sleep 3; done'
+
+        echo "Waiting for services..."
+        timeout 120 bash -c 'until curl -f http://localhost:8081/health; do echo "Retrieve not ready..."; sleep 2; done'
+        timeout 120 bash -c 'until curl -f http://localhost:8082/health; do echo "Synthesize not ready..."; sleep 2; done'
+        timeout 120 bash -c 'until curl -f http://localhost:8083/health; do echo "WebSearch not ready..."; sleep 2; done'
+        timeout 120 bash -c 'until curl -f http://localhost:8080/health; do echo "TeamsBot not ready..."; sleep 2; done'
+
+        echo "All services are ready!"
+
+    - name: Run ${{ matrix.test_suite.name }} performance tests
+      run: |
+        echo "Running ${{ matrix.test_suite.name }} performance tests..."
+        go test -v -run="${{ matrix.test_suite.pattern }}" -timeout=${{ matrix.test_suite.timeout }} ./tests/performance/... > ${{ matrix.test_suite.name }}_performance_results.txt 2>&1 || true
+
+        echo "=== ${{ matrix.test_suite.name }} Performance Test Results ==="
+        cat ${{ matrix.test_suite.name }}_performance_results.txt
+
+        # Check if tests actually ran (not just skipped)
+        if grep -q "PASS\|FAIL" ${{ matrix.test_suite.name }}_performance_results.txt; then
+          echo "✅ ${{ matrix.test_suite.name }} performance tests completed"
+        else
+          echo "⚠️ ${{ matrix.test_suite.name }} performance tests were skipped"
+        fi
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        TEST_MODE: "true"
+
+    - name: Generate performance report
+      run: |
+        echo "# ${{ matrix.test_suite.name }} Performance Test Report" > ${{ matrix.test_suite.name }}_report.md
+        echo "Generated on: $(date)" >> ${{ matrix.test_suite.name }}_report.md
+        echo "" >> ${{ matrix.test_suite.name }}_report.md
+        echo "## Test Results" >> ${{ matrix.test_suite.name }}_report.md
+        echo "\`\`\`" >> ${{ matrix.test_suite.name }}_report.md
+        cat ${{ matrix.test_suite.name }}_performance_results.txt >> ${{ matrix.test_suite.name }}_report.md
+        echo "\`\`\`" >> ${{ matrix.test_suite.name }}_report.md
+
+        # Extract key metrics if available
+        if grep -q "success rate\|response time\|requests per second" ${{ matrix.test_suite.name }}_performance_results.txt; then
+          echo "" >> ${{ matrix.test_suite.name }}_report.md
+          echo "## Key Metrics" >> ${{ matrix.test_suite.name }}_report.md
+          grep -i "success rate\|response time\|requests per second\|memory\|throughput" ${{ matrix.test_suite.name }}_performance_results.txt >> ${{ matrix.test_suite.name }}_report.md || true
+        fi
+
+    - name: Upload comprehensive performance results
+      uses: actions/upload-artifact@v4
+      with:
+        name: comprehensive-performance-${{ matrix.test_suite.name }}
+        path: |
+          ${{ matrix.test_suite.name }}_performance_results.txt
+          ${{ matrix.test_suite.name }}_report.md
+          logs/
+
+    - name: Stop comprehensive test services
+      if: always()
+      run: |
+        pkill -f "./bin/retrieve" || true
+        pkill -f "./bin/websearch" || true
+        pkill -f "./bin/synthesize" || true
+        pkill -f "./bin/teamsbot" || true
+
+  # Performance Regression Detection
+  performance-regression:
+    name: Performance Regression Detection
+    runs-on: ubuntu-latest
+    needs: [basic-performance]
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download performance results
+      uses: actions/download-artifact@v4
+      with:
+        name: basic-performance-results
+
+    - name: Analyze performance regression
+      run: |
+        echo "# Performance Analysis Report" > performance_analysis.md
+        echo "Generated for PR #${{ github.event.number }}" >> performance_analysis.md
+        echo "" >> performance_analysis.md
+
+        # Check for performance regressions
+        if [ -f basic_benchmark_results.txt ]; then
+          echo "## Benchmark Results" >> performance_analysis.md
+          echo "\`\`\`" >> performance_analysis.md
+          cat basic_benchmark_results.txt >> performance_analysis.md
+          echo "\`\`\`" >> performance_analysis.md
+
+          # Extract benchmark metrics
+          if grep -q "Benchmark" basic_benchmark_results.txt; then
+            echo "" >> performance_analysis.md
+            echo "## Performance Summary" >> performance_analysis.md
+            grep "Benchmark" basic_benchmark_results.txt | while read line; do
+              echo "- $line" >> performance_analysis.md
+            done
+          fi
+        fi
+
+        if [ -f memory_test_results.txt ]; then
+          echo "" >> performance_analysis.md
+          echo "## Memory Usage Analysis" >> performance_analysis.md
+          echo "\`\`\`" >> performance_analysis.md
+          cat memory_test_results.txt >> performance_analysis.md
+          echo "\`\`\`" >> performance_analysis.md
+        fi
+
+        # Performance alerts
+        echo "" >> performance_analysis.md
+        echo "## Performance Alerts" >> performance_analysis.md
+
+        if grep -q "FAIL\|timeout\|panic" basic_benchmark_results.txt memory_test_results.txt 2>/dev/null; then
+          echo "⚠️ **Performance issues detected!**" >> performance_analysis.md
+          echo "- Some performance tests failed or timed out" >> performance_analysis.md
+        else
+          echo "✅ No critical performance issues detected" >> performance_analysis.md
+        fi
+
+    - name: Comment performance analysis on PR
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          if (fs.existsSync('performance_analysis.md')) {
+            const analysisContent = fs.readFileSync('performance_analysis.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: analysisContent
+            });
+          }
+
+  # Performance Monitoring and Alerting
+  performance-monitoring:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+    needs: [comprehensive-performance]
+    if: github.event_name == 'schedule'
+
+    steps:
+    - name: Download all performance results
+      uses: actions/download-artifact@v4
+      with:
+        pattern: comprehensive-performance-*
+        merge-multiple: true
+
+    - name: Generate comprehensive performance dashboard
+      run: |
+        echo "# Daily Performance Dashboard" > performance_dashboard.md
+        echo "Generated on: $(date)" >> performance_dashboard.md
+        echo "" >> performance_dashboard.md
+
+        # Process each test suite
+        for suite in ingestion concurrent memory rate_limit e2e; do
+          if [ -f "${suite}_performance_results.txt" ]; then
+            echo "## ${suite^} Performance Tests" >> performance_dashboard.md
+            echo "" >> performance_dashboard.md
+
+            # Extract key metrics
+            if grep -q "success rate\|response time\|throughput" "${suite}_performance_results.txt"; then
+              echo "### Key Metrics" >> performance_dashboard.md
+              grep -i "success rate\|average response time\|throughput\|requests per second" "${suite}_performance_results.txt" | head -10 >> performance_dashboard.md
+              echo "" >> performance_dashboard.md
+            fi
+
+            # Check for failures
+            if grep -q "FAIL" "${suite}_performance_results.txt"; then
+              echo "⚠️ **Failures detected in ${suite} tests**" >> performance_dashboard.md
+              echo "" >> performance_dashboard.md
+            fi
+          fi
+        done
+
+        echo "## Overall System Health" >> performance_dashboard.md
+
+        # Generate overall health assessment
+        failed_suites=0
+        total_suites=0
+
+        for suite in ingestion concurrent memory rate_limit e2e; do
+          if [ -f "${suite}_performance_results.txt" ]; then
+            total_suites=$((total_suites + 1))
+            if grep -q "FAIL" "${suite}_performance_results.txt"; then
+              failed_suites=$((failed_suites + 1))
+            fi
+          fi
+        done
+
+        if [ $failed_suites -eq 0 ]; then
+          echo "✅ **All performance test suites passed**" >> performance_dashboard.md
+        elif [ $failed_suites -le 1 ]; then
+          echo "⚠️ **Minor performance issues detected** ($failed_suites/$total_suites suites failed)" >> performance_dashboard.md
+        else
+          echo "🚨 **Significant performance issues detected** ($failed_suites/$total_suites suites failed)" >> performance_dashboard.md
+        fi
+
+    - name: Upload performance dashboard
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-dashboard
+        path: performance_dashboard.md
+
+    - name: Create performance issue if needed
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          if (fs.existsSync('performance_dashboard.md')) {
+            const dashboard = fs.readFileSync('performance_dashboard.md', 'utf8');
+
+            // Check if there are significant issues
+            if (dashboard.includes('🚨 **Significant performance issues')) {
+              github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Performance Alert - ${new Date().toISOString().split('T')[0]}`,
+                body: `## Performance Issues Detected\n\n${dashboard}`,
+                labels: ['performance', 'alert', 'needs-investigation']
+              });
+            }
+          }

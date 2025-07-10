@@ -778,7 +778,9 @@ func TestPhase1Pipeline_CI(t *testing.T) {
 	}
 
 	// Clean up
-	_ = os.Remove("/tmp/test-ingest")
+	if err := os.Remove("/tmp/test-ingest"); err != nil && !os.IsNotExist(err) {
+		t.Errorf("Failed to remove temp file: %v", err)
+	}
 
 	t.Logf("✅ Phase 1 CI test passed")
 }

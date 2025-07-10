@@ -141,7 +141,12 @@ func (dfc *DetailedFeedbackCollector) GetDetailedFeedback(limit int) ([]*learnin
 	if err != nil {
 		return nil, fmt.Errorf("failed to query detailed feedback: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			// Log error but don't return it as this is in a defer
+			fmt.Printf("failed to close rows: %v\n", closeErr)
+		}
+	}()
 
 	var feedbacks []*learning.DetailedFeedback
 	for rows.Next() {
@@ -296,7 +301,12 @@ func (dfc *DetailedFeedbackCollector) getDetailedStats() (map[string]interface{}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query detailed stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			// Log error but don't return it as this is in a defer
+			fmt.Printf("failed to close rows: %v\n", closeErr)
+		}
+	}()
 
 	stats := make(map[string]interface{})
 	queryTypeStats := make(map[string]map[string]interface{})

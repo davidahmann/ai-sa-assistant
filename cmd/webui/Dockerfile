@@ -17,5 +17,7 @@ COPY --from=builder --chown=nonroot:nonroot /app/configs/ ./configs/
 COPY --from=builder --chown=nonroot:nonroot /app/cmd/webui/static/ ./static/
 COPY --from=builder --chown=nonroot:nonroot /app/cmd/webui/templates/ ./templates/
 
+USER nonroot
+
 EXPOSE 8080
 CMD ["./webui"]

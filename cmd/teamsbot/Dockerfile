@@ -15,5 +15,7 @@ WORKDIR /app
 COPY --from=builder --chown=nonroot:nonroot /app/teamsbot ./
 COPY --from=builder --chown=nonroot:nonroot /app/configs/ ./configs/
 
+USER nonroot
+
 EXPOSE 8080
 CMD ["./teamsbot"]
