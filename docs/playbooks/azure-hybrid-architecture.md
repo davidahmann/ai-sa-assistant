@@ -24,7 +24,7 @@ This guide provides a comprehensive approach to designing hybrid cloud architect
 
 ### Network Architecture Design
 
-```
+```text
 On-Premises DC                     Azure Region
 ├── Management Network: 10.0.0.0/24    ├── Hub VNet: 10.1.0.0/16
 ├── Production Network: 10.0.1.0/24    │   ├── Gateway Subnet: 10.1.0.0/27

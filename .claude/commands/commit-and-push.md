@@ -1,46 +1,58 @@
-# Quick checks before staging
+# Commit and Push Workflow
 
+## Quick checks before staging
+
+```bash
 git status
 git diff --cached --check
 git log --oneline -3
+```
 
-# Stage everything in current directory
+## Stage everything in current directory
 
+```bash
 git add .
+```
 
-# Commit using Conventional Commits format
+## Commit using Conventional Commits format
 
+```bash
 git commit -m "fix(api): handle null user ID on login
 
 - add fallback for missing user context
 - log failed auth attempts
 - update response error codes"
+```
 
-# Push to upstream branch
+## Push to upstream branch
 
+```bash
 git log --oneline -1
 git push --set-upstream origin your-branch-name
+```
 
-# Confirm clean working state
+## Confirm clean working state
 
+```bash
 git status  # should report: 'working tree clean'
+```
 
 ---
 
-**Avoid Commit Loss**
+## Avoid Commit Loss
 
-**SAFE:**
+### SAFE
 
-```
+```bash
 git status
 git log --oneline -5
 git stash        # temporary save
 git revert       # undo safely
 ```
 
-**DANGEROUS (avoid unless absolutely necessary):**
+### DANGEROUS (avoid unless absolutely necessary)
 
-```
+```bash
 git reset --hard
 git reset HEAD~1
 git add .        # stages unintended files
@@ -48,7 +60,7 @@ git add .        # stages unintended files
 
 ---
 
-**Success Criteria**
+## Success Criteria
 
 - Only intended files are staged
 - Commit message follows **Conventional Commits** format

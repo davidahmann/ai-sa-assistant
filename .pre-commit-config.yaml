@@ -119,6 +119,7 @@ repos:
         name: Lint Markdown files
         args: [--fix, --config, .markdownlint.yml]
         files: '\.md$'
+        exclude: '(templates/.*\.md$|docs/sows/.*\.md$|docs/playbooks/azure-hybrid-architecture-guide\.md$)'
         stages: [pre-commit]
 
   - repo: https://github.com/adrienverge/yamllint

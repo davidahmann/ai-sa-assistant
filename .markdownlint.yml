@@ -18,3 +18,14 @@ MD034: false
 
 # Allow duplicate headers (common in technical docs with repeated sections)
 MD024: false
+
+# Allow multiple top-level headings in template/reference files
+MD025:
+  # Allow multiple H1s in template files, scripts, and reference docs
+  siblings_only: true
+
+# Require language specifiers for fenced code blocks (improve readability)
+MD040: true
+
+# Allow emphasis as headers in command files and templates
+MD036: false

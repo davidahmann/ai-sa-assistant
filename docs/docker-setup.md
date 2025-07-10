@@ -26,7 +26,7 @@ docker ps --filter "name=chromadb"
 
 Expected output:
 
-```
+```text
 CONTAINER ID   IMAGE                    STATUS                    PORTS                    NAMES
 xxxxxx         chromadb/chroma:latest   Up X seconds (healthy)    0.0.0.0:8000->8000/tcp   ai-sa-assistant-chromadb-1
 ```

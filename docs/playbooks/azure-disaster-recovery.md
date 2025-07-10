@@ -105,7 +105,7 @@ Set-AzRecoveryServicesVaultBackupProperty -Vault $vault -BackupStorageRedundancy
 
 #### Primary to Secondary Region Mapping
 
-```
+```text
 Primary Region (East US 2)          Secondary Region (West US 2)
 ├── Production VNet: 10.0.0.0/16    ├── DR VNet: 10.1.0.0/16
 ├── Database Tier: 10.0.1.0/24      ├── Database Tier: 10.1.1.0/24

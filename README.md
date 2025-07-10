@@ -79,7 +79,7 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 
 ### 1. AWS Lift-and-Shift Migration
 
-```
+```text
 @SA-Assistant Generate a high-level lift-and-shift plan for migrating 120 on-prem Windows and Linux VMs to AWS, including EC2 instance recommendations, VPC/subnet topology, and the latest AWS MGN best practices from Q2 2025.
 ```
 
@@ -89,7 +89,7 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 
 ### 2. Azure Hybrid Architecture Extension
 
-```
+```text
 @SA-Assistant Outline a hybrid reference architecture connecting our on-prem VMware environment to Azure, covering ExpressRoute configuration, VMware HCX migration, active-active failover, and June 2025 Azure Hybrid announcements.
 ```
 
@@ -99,7 +99,7 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 
 ### 3. Azure Disaster Recovery as a Service
 
-```
+```text
 @SA-Assistant Design a DR solution in Azure for critical workloads with RTO = 2 hours and RPO = 15 minutes, including geo-replication options, failover orchestration, and cost-optimized standby.
 ```
 
@@ -109,7 +109,7 @@ A demo-level AI assistant designed to accelerate pre-sales research for Solution
 
 ### 4. Security Compliance Assessment
 
-```
+```text
 @SA-Assistant Summarize HIPAA and GDPR encryption, logging, and policy enforcement requirements for our AWS landing zone, and include any recent AWS compliance feature updates.
 ```
 

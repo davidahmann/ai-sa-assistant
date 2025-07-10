@@ -1,8 +1,6 @@
-**Quick SA AI Assitant Orientation**
+# Quick SA AI Assistant Orientation
 
----
-
-**Orientation Checklist**
+## Orientation Checklist
 
 - Review all CLAUDE*.md documents in the repo
 - Scan the high-level structure of the existing codebase in the repo

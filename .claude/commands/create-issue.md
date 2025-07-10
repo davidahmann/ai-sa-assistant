@@ -1,14 +1,10 @@
-**Create GitHub Issues for SA AI Assitant (via gh CLI)**
+# Create GitHub Issues for SA AI Assistant (via gh CLI)
 
----
-
-**🔹 Purpose**
+## 🔹 Purpose
 
 Create a GitHub issue for task **#$ARGUMENTS** aligned with our platform architecture.
 
----
-
-**🧩 Issue Types & Templates**
+## 🧩 Issue Types & Templates
 
 Use the following structure and safe label combinations:
 
@@ -38,7 +34,7 @@ bug, enhancement, documentation, standards, technical-debt, security, critical, 
 
 ---
 
-**📋 Issue Structure**
+## 📋 Issue Structure
 
 1. **Title**
 
@@ -62,11 +58,11 @@ bug, enhancement, documentation, standards, technical-debt, security, critical, 
 
 ---
 
-**⚙️ Quick Issue Creation Command**
+## ⚙️ Quick Issue Creation Command
 
 Once title and labels are finalized, run:
 
-```
+```bash
 gh issue create --title "$TITLE" --label "$LABELS" --assignee @me
 ```
 
