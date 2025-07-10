@@ -26,11 +26,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/health"
+	"github.com/your-org/ai-sa-assistant/internal/session"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
@@ -112,7 +114,19 @@ func setupIntegrationTestContext(_ *testing.T, logger *zap.Logger) *integrationT
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
-	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	// Create session manager
+	sessionConfig := session.Config{
+		StorageType:     session.MemoryStorageType,
+		DefaultTTL:      30 * time.Minute,
+		MaxSessions:     1000,
+		CleanupInterval: 0,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		panic(err) // Should not happen in test
+	}
+
+	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	return &integrationTestContext{
 		retrieveServer:   retrieveServer,
@@ -333,7 +347,7 @@ func readAndValidateRequestBody(t *testing.T, c *gin.Context) []byte {
 func validateOrchestrationResult(t *testing.T, testContext *integrationTestContext, query string) {
 	// Test orchestration
 	ctx := context.Background()
-	result := testContext.orchestrator.ProcessQuery(ctx, query)
+	result := testContext.orchestrator.ProcessQuery(ctx, query, "test_user")
 
 	if result.Error != nil {
 		t.Logf("Orchestration completed with error (may be expected): %v", result.Error)

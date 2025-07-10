@@ -30,6 +30,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/health"
+	"github.com/your-org/ai-sa-assistant/internal/session"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
 	"go.uber.org/zap"
 )
@@ -67,6 +68,7 @@ type Orchestrator struct {
 	config          *config.Config
 	healthManager   *health.Manager
 	diagramRenderer *diagram.Renderer
+	sessionManager  *session.Manager
 	logger          *zap.Logger
 	httpClient      *http.Client
 }
@@ -76,12 +78,14 @@ func NewOrchestrator(
 	cfg *config.Config,
 	healthManager *health.Manager,
 	diagramRenderer *diagram.Renderer,
+	sessionManager *session.Manager,
 	logger *zap.Logger,
 ) *Orchestrator {
 	return &Orchestrator{
 		config:          cfg,
 		healthManager:   healthManager,
 		diagramRenderer: diagramRenderer,
+		sessionManager:  sessionManager,
 		logger:          logger,
 		httpClient: &http.Client{
 			Timeout: DefaultHTTPTimeout,
@@ -89,8 +93,8 @@ func NewOrchestrator(
 	}
 }
 
-// ProcessQuery orchestrates the full service pipeline for a user query
-func (o *Orchestrator) ProcessQuery(ctx context.Context, query string) *OrchestrationResult {
+// ProcessQuery orchestrates the full service pipeline for a user query with session management
+func (o *Orchestrator) ProcessQuery(ctx context.Context, query string, userID string) *OrchestrationResult {
 	startTime := time.Now()
 	result := &OrchestrationResult{
 		ServicesTested: []string{},
@@ -98,9 +102,19 @@ func (o *Orchestrator) ProcessQuery(ctx context.Context, query string) *Orchestr
 		FallbackUsed:   false,
 	}
 
+	orchestrationID := fmt.Sprintf("orch_%d", startTime.UnixNano())
 	o.logger.Info("Starting query orchestration",
 		zap.String("query", query),
-		zap.String("orchestration_id", fmt.Sprintf("orch_%d", startTime.UnixNano())))
+		zap.String("user_id", userID),
+		zap.String("orchestration_id", orchestrationID))
+
+	// Step 0: Handle session management
+	sessionID, conversationHistory, err := o.handleSessionManagement(ctx, userID, query)
+	if err != nil {
+		o.logger.Warn("Session management failed, continuing without context", zap.Error(err))
+		sessionID = ""
+		conversationHistory = []session.Message{}
+	}
 
 	// Step 1: Validate service health
 	if !o.validateServiceHealth(ctx, result) {
@@ -123,8 +137,8 @@ func (o *Orchestrator) ProcessQuery(ctx context.Context, query string) *Orchestr
 		webResults = o.callWebSearchServiceWithFallback(ctx, query, result)
 	}
 
-	// Step 4: Call synthesize service with fallback
-	synthesizeResponse, err := o.callSynthesizeServiceWithFallback(ctx, query, retrieveResponse, webResults, result)
+	// Step 4: Call synthesize service with fallback (including conversation context)
+	synthesizeResponse, err := o.callSynthesizeServiceWithFallback(ctx, query, retrieveResponse, webResults, conversationHistory, result)
 	if err != nil {
 		result.Error = fmt.Errorf("synthesize service failed: %w", err)
 		result.ExecutionTimeMs = time.Since(startTime).Milliseconds()
@@ -139,8 +153,18 @@ func (o *Orchestrator) ProcessQuery(ctx context.Context, query string) *Orchestr
 	result.Response = synthesizeResponse
 	result.ExecutionTimeMs = time.Since(startTime).Milliseconds()
 
+	// Step 6: Store response in session (if session management is working)
+	if sessionID != "" {
+		if err := o.storeResponseInSession(ctx, sessionID, query, synthesizeResponse); err != nil {
+			o.logger.Warn("Failed to store response in session",
+				zap.String("session_id", sessionID), zap.Error(err))
+		}
+	}
+
 	o.logger.Info("Query orchestration completed",
 		zap.String("query", query),
+		zap.String("user_id", userID),
+		zap.String("session_id", sessionID),
 		zap.Int64("execution_time_ms", result.ExecutionTimeMs),
 		zap.Strings("services_used", result.ServicesUsed),
 		zap.Bool("fallback_used", result.FallbackUsed))
@@ -345,13 +369,14 @@ func (o *Orchestrator) callSynthesizeServiceWithFallback(
 	query string,
 	retrieveResponse *RetrieveResponse,
 	webResults []string,
+	conversationHistory []session.Message,
 	result *OrchestrationResult,
 ) (*synth.SynthesisResponse, error) {
 	o.logger.Info("Calling synthesize service", zap.String("query", query))
 
 	// Convert retrieve chunks to synthesis format
 	contextItems := o.convertRetrieveChunksToContextItems(retrieveResponse.Chunks)
-	synthesizeRequest := o.createSynthesizeRequest(query, contextItems, webResults)
+	synthesizeRequest := o.createSynthesizeRequest(query, contextItems, webResults, conversationHistory)
 
 	jsonBody, err := json.Marshal(synthesizeRequest)
 	if err != nil {
@@ -372,7 +397,7 @@ func (o *Orchestrator) callSynthesizeServiceWithFallback(
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		o.logger.Error("Synthesize service request failed", zap.Error(err))
-		return o.fallbackSynthesizeResponse(query, retrieveResponse, result), nil
+		return o.fallbackSynthesizeResponse(query, retrieveResponse, conversationHistory, result), nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -381,13 +406,13 @@ func (o *Orchestrator) callSynthesizeServiceWithFallback(
 		o.logger.Error("Synthesize service returned error",
 			zap.Int("status_code", resp.StatusCode),
 			zap.String("response_body", string(body)))
-		return o.fallbackSynthesizeResponse(query, retrieveResponse, result), nil
+		return o.fallbackSynthesizeResponse(query, retrieveResponse, conversationHistory, result), nil
 	}
 
 	var synthesizeResponse synth.SynthesisResponse
 	if err := json.NewDecoder(resp.Body).Decode(&synthesizeResponse); err != nil {
 		o.logger.Error("Failed to decode synthesize response", zap.Error(err))
-		return o.fallbackSynthesizeResponse(query, retrieveResponse, result), nil
+		return o.fallbackSynthesizeResponse(query, retrieveResponse, conversationHistory, result), nil
 	}
 
 	result.ServicesUsed = append(result.ServicesUsed, "synthesize")
@@ -402,6 +427,7 @@ func (o *Orchestrator) callSynthesizeServiceWithFallback(
 func (o *Orchestrator) fallbackSynthesizeResponse(
 	query string,
 	retrieveResponse *RetrieveResponse,
+	conversationHistory []session.Message,
 	result *OrchestrationResult,
 ) *synth.SynthesisResponse {
 	o.logger.Warn("Using fallback synthesize response")
@@ -504,6 +530,7 @@ func (o *Orchestrator) createSynthesizeRequest(
 	query string,
 	contextItems []synth.ContextItem,
 	webResults []string,
+	conversationHistory []session.Message,
 ) SynthesizeRequest {
 	chunks := make([]SynthesizeChunkItem, len(contextItems))
 	for i, item := range contextItems {
@@ -536,9 +563,10 @@ func (o *Orchestrator) createSynthesizeRequest(
 	}
 
 	return SynthesizeRequest{
-		Query:      query,
-		Chunks:     chunks,
-		WebResults: webResultItems,
+		Query:               query,
+		Chunks:              chunks,
+		WebResults:          webResultItems,
+		ConversationHistory: conversationHistory,
 	}
 }
 
@@ -576,7 +604,101 @@ type SynthesizeWebResult struct {
 
 // SynthesizeRequest represents a request to the synthesis service
 type SynthesizeRequest struct {
-	Query      string                `json:"query"`
-	Chunks     []SynthesizeChunkItem `json:"chunks"`
-	WebResults []SynthesizeWebResult `json:"web_results"`
+	Query               string                `json:"query"`
+	Chunks              []SynthesizeChunkItem `json:"chunks"`
+	WebResults          []SynthesizeWebResult `json:"web_results"`
+	ConversationHistory []session.Message     `json:"conversation_history,omitempty"`
+}
+
+// handleSessionManagement manages session creation and conversation history retrieval
+func (o *Orchestrator) handleSessionManagement(ctx context.Context, userID, query string) (string, []session.Message, error) {
+	if o.sessionManager == nil {
+		return "", []session.Message{}, fmt.Errorf("session manager not initialized")
+	}
+
+	// Try to get or create a session for the user
+	userSessions, err := o.sessionManager.ListUserSessions(ctx, userID)
+	if err != nil {
+		return "", []session.Message{}, fmt.Errorf("failed to list user sessions: %w", err)
+	}
+
+	var currentSession *session.Session
+
+	// Find the most recent active session
+	for _, sess := range userSessions {
+		if sess.Status == session.SessionActive {
+			// Use the most recently updated active session
+			if currentSession == nil || sess.UpdatedAt.After(currentSession.UpdatedAt) {
+				currentSession = sess
+			}
+		}
+	}
+
+	// If no active session found, create a new one
+	if currentSession == nil {
+		newSession, err := o.sessionManager.CreateSession(ctx, userID)
+		if err != nil {
+			return "", []session.Message{}, fmt.Errorf("failed to create session: %w", err)
+		}
+		currentSession = newSession
+	}
+
+	// Add the user query to the session
+	metadata := map[string]interface{}{
+		"timestamp": ctx.Value("timestamp"),
+		"source":    "teams",
+	}
+
+	if err := o.sessionManager.AddMessage(ctx, currentSession.ID, session.UserRole, query, metadata); err != nil {
+		o.logger.Warn("Failed to add user message to session", zap.Error(err))
+	}
+
+	// Get conversation history (limited by config)
+	maxHistory := o.config.Session.MaxHistoryLength
+	if maxHistory <= 0 {
+		maxHistory = 10 // Default fallback
+	}
+
+	history, err := o.sessionManager.GetConversationHistory(ctx, currentSession.ID, maxHistory)
+	if err != nil {
+		o.logger.Warn("Failed to get conversation history", zap.Error(err))
+		history = []session.Message{}
+	}
+
+	return currentSession.ID, history, nil
+}
+
+// storeResponseInSession stores the assistant's response in the session
+func (o *Orchestrator) storeResponseInSession(ctx context.Context, sessionID, query string, response *synth.SynthesisResponse) error {
+	if o.sessionManager == nil {
+		return fmt.Errorf("session manager not initialized")
+	}
+
+	// Format the response content for storage
+	responseContent := response.MainText
+
+	// Include diagram information if present
+	if response.DiagramURL != "" {
+		responseContent += fmt.Sprintf("\n\n[Diagram: %s]", response.DiagramURL)
+	}
+
+	// Include code snippets if present
+	if len(response.CodeSnippets) > 0 {
+		responseContent += "\n\nCode snippets included:"
+		for _, snippet := range response.CodeSnippets {
+			responseContent += fmt.Sprintf("\n- %s code snippet", snippet.Language)
+		}
+	}
+
+	// Add metadata about the response
+	metadata := map[string]interface{}{
+		"has_diagram":   response.DiagramCode != "",
+		"has_code":      len(response.CodeSnippets) > 0,
+		"source_count":  len(response.Sources),
+		"timestamp":     ctx.Value("timestamp"),
+		"response_type": "synthesis",
+	}
+
+	// Store the assistant response
+	return o.sessionManager.AddMessage(ctx, sessionID, session.AssistantRole, responseContent, metadata)
 }

@@ -22,6 +22,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/your-org/ai-sa-assistant/internal/session"
 )
 
 // ContextItem represents a piece of context with its source
@@ -104,6 +106,13 @@ func BuildPrompt(query string, contextItems []ContextItem, webResults []string) 
 	return BuildPromptWithConfig(query, contextItems, webResults, config)
 }
 
+// BuildPromptWithConversation combines context and conversation history into a comprehensive prompt for the LLM
+func BuildPromptWithConversation(query string, contextItems []ContextItem, webResults []string, conversationHistory []session.Message) string {
+	config := DefaultPromptConfig()
+	config.QueryType = DetectQueryType(query)
+	return BuildPromptWithConversationAndConfig(query, contextItems, webResults, conversationHistory, config)
+}
+
 // BuildPromptWithConfig combines context into a comprehensive prompt with configuration
 func BuildPromptWithConfig(query string, contextItems []ContextItem, webResults []string, config PromptConfig) string {
 	// Validate and deduplicate sources before processing
@@ -144,6 +153,73 @@ func BuildPromptWithConfig(query string, contextItems []ContextItem, webResults 
 	}
 
 	prompt.WriteString("\nPlease provide your comprehensive response now:")
+
+	// Ensure token limits are respected
+	finalPrompt := prompt.String()
+	if EstimateTokens(finalPrompt) > config.MaxTokens {
+		finalPrompt = TruncateToTokenLimit(finalPrompt, config.MaxTokens)
+	}
+
+	return finalPrompt
+}
+
+// BuildPromptWithConversationAndConfig combines context and conversation history into a comprehensive prompt with configuration
+func BuildPromptWithConversationAndConfig(query string, contextItems []ContextItem, webResults []string, conversationHistory []session.Message, config PromptConfig) string {
+	// Validate and deduplicate sources before processing
+	validatedContext, err := ValidateAndDeduplicateSources(contextItems)
+	if err != nil {
+		// Log warning but continue with original context if validation fails
+		validatedContext = contextItems
+	}
+
+	// Prioritize and limit context based on token constraints
+	optimizedContext := PrioritizeContext(validatedContext, config.MaxContextItems)
+	limitedWebResults := LimitWebResults(webResults, config.MaxWebResults)
+
+	var prompt strings.Builder
+
+	// System instructions based on query type
+	systemPrompt := buildSystemPrompt(config.QueryType)
+	prompt.WriteString(systemPrompt)
+
+	// Conversation history (if available)
+	if len(conversationHistory) > 0 {
+		prompt.WriteString("--- Previous Conversation Context ---\n")
+		conversationContext := formatConversationHistory(conversationHistory)
+		prompt.WriteString(conversationContext)
+		prompt.WriteString("\n")
+	}
+
+	// User query
+	prompt.WriteString(fmt.Sprintf("Current User Query: %s\n\n", query))
+
+	// Internal document context
+	if len(optimizedContext) > 0 {
+		prompt.WriteString("--- Internal Document Context ---\n")
+		for i, item := range optimizedContext {
+			prompt.WriteString(fmt.Sprintf("Context %d [%s]: %s\n\n", i+1, item.SourceID, item.Content))
+		}
+	}
+
+	// Web search results with enhanced URL tracking
+	if len(limitedWebResults) > 0 {
+		prompt.WriteString("--- Live Web Search Results ---\n")
+		for i, result := range limitedWebResults {
+			formattedResult := formatWebResultWithURL(i+1, result)
+			prompt.WriteString(formattedResult)
+		}
+	}
+
+	// Add instruction about conversation continuity
+	if len(conversationHistory) > 0 {
+		prompt.WriteString("\nIMPORTANT: This is a continuation of an ongoing conversation. Please:\n")
+		prompt.WriteString("- Reference previous context when relevant\n")
+		prompt.WriteString("- Build upon earlier discussions\n")
+		prompt.WriteString("- Maintain conversation continuity\n")
+		prompt.WriteString("- Use phrases like 'As we discussed earlier' when appropriate\n\n")
+	}
+
+	prompt.WriteString("Please provide your comprehensive response now:")
 
 	// Ensure token limits are respected
 	finalPrompt := prompt.String()
@@ -1621,4 +1697,70 @@ func buildCodeSecurityRequirements() string {
 - Suggest when technical implementation would be beneficial
 
 `
+}
+
+// formatConversationHistory formats conversation history for inclusion in prompts
+func formatConversationHistory(conversationHistory []session.Message) string {
+	if len(conversationHistory) == 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+
+	// Filter and limit conversation history to prevent prompt overflow
+	filteredMessages := filterConversationForPrompt(conversationHistory)
+	const maxHistoryMessages = 10
+
+	startIndex := 0
+	if len(filteredMessages) > maxHistoryMessages {
+		startIndex = len(filteredMessages) - maxHistoryMessages
+		builder.WriteString("...(earlier messages truncated for brevity)...\n\n")
+	}
+
+	for i := startIndex; i < len(filteredMessages); i++ {
+		message := filteredMessages[i]
+
+		// Format role name
+		var roleDisplay string
+		switch message.Role {
+		case session.UserRole:
+			roleDisplay = "User"
+		case session.AssistantRole:
+			roleDisplay = "Assistant"
+		case session.SystemRole:
+			roleDisplay = "System"
+		default:
+			roleDisplay = string(message.Role)
+		}
+
+		// Format timestamp for context
+		timestamp := message.Timestamp.Format("15:04")
+
+		// Add the message
+		builder.WriteString(fmt.Sprintf("%s [%s]: %s\n\n", roleDisplay, timestamp, message.Content))
+	}
+
+	return builder.String()
+}
+
+// filterConversationForPrompt filters conversation messages for prompt inclusion
+func filterConversationForPrompt(messages []session.Message) []session.Message {
+	var filtered []session.Message
+
+	for _, message := range messages {
+		// Include user and assistant messages, exclude system messages for brevity
+		if message.Role == session.UserRole || message.Role == session.AssistantRole {
+			// Truncate very long messages to prevent prompt overflow
+			const maxMessageLength = 1500
+			if len(message.Content) > maxMessageLength {
+				truncatedMessage := message
+				truncatedMessage.Content = message.Content[:maxMessageLength] + "...[truncated]"
+				filtered = append(filtered, truncatedMessage)
+			} else {
+				filtered = append(filtered, message)
+			}
+		}
+	}
+
+	return filtered
 }

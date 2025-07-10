@@ -28,9 +28,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/ai-sa-assistant/internal/config"
+	"github.com/your-org/ai-sa-assistant/internal/conversation"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/feedback"
 	"github.com/your-org/ai-sa-assistant/internal/health"
+	"github.com/your-org/ai-sa-assistant/internal/session"
 	"github.com/your-org/ai-sa-assistant/internal/teams"
 	"go.uber.org/zap"
 )
@@ -100,6 +102,23 @@ func main() {
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
+	// Initialize session manager
+	sessionConfig := session.Config{
+		StorageType:     session.StorageType(cfg.Session.StorageType),
+		RedisURL:        cfg.Session.RedisURL,
+		DefaultTTL:      time.Duration(cfg.Session.DefaultTTL) * time.Minute,
+		MaxSessions:     cfg.Session.MaxSessions,
+		CleanupInterval: time.Duration(cfg.Session.CleanupInterval) * time.Minute,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize session manager", zap.Error(err))
+	}
+	defer func() { _ = sessionManager.Close() }()
+
+	// Initialize conversation manager
+	conversationManager := conversation.NewManager(sessionManager, logger)
+
 	// Test diagram renderer connection
 	const testTimeout = 10 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
@@ -119,7 +138,7 @@ func main() {
 	webhookValidator := teams.NewWebhookValidator(cfg.Teams.WebhookSecret, logger)
 
 	// Initialize orchestrator
-	orchestrator := teams.NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	orchestrator := teams.NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	// Health check endpoint
 	router.GET("/health", gin.WrapH(healthManager.HTTPHandler()))
@@ -133,6 +152,13 @@ func main() {
 	router.POST("/teams-feedback", func(c *gin.Context) {
 		handleFeedback(c, cfg, feedbackLogger, logger)
 	})
+
+	// Conversation API endpoints (if enabled)
+	if cfg.Session.EnableConversationAPI {
+		conversationAPIHandler := conversation.NewAPIHandler(conversationManager, logger)
+		conversationAPIHandler.RegisterRoutes(router)
+		logger.Info("Conversation API endpoints enabled")
+	}
 
 	logger.Info("Starting teamsbot service",
 		zap.String("retrieve_url", cfg.Services.RetrieveURL),
@@ -206,9 +232,13 @@ func handleTeamsWebhook(
 		return
 	}
 
+	// Extract user ID for session management
+	userID := session.ExtractUserIDFromContext(parsedQuery.UserID, c.GetHeader("X-User-ID"), c.ClientIP())
+
 	logger.Info("Processing Teams query",
 		zap.String("query", parsedQuery.Query),
 		zap.String("user_id", parsedQuery.UserID),
+		zap.String("session_user_id", userID),
 		zap.String("conversation_id", parsedQuery.ConversationID),
 		zap.Bool("is_direct_message", parsedQuery.IsDirectMessage),
 		zap.Bool("bot_mentioned", parsedQuery.IsBotMentioned))
@@ -223,7 +253,7 @@ func handleTeamsWebhook(
 
 	// Start async processing
 	go func() {
-		result := orchestrator.ProcessQuery(ctx, parsedQuery.Query)
+		result := orchestrator.ProcessQuery(ctx, parsedQuery.Query, userID)
 		resultChan <- result
 	}()
 
@@ -255,7 +285,8 @@ func handleTeamsWebhook(
 	case <-ctx.Done():
 		logger.Error("Query processing timed out",
 			zap.String("query", parsedQuery.Query),
-			zap.String("user_id", parsedQuery.UserID))
+			zap.String("user_id", parsedQuery.UserID),
+			zap.String("session_user_id", userID))
 
 		// Send timeout response to Teams
 		timeoutResult := &teams.OrchestrationResult{

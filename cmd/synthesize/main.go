@@ -32,6 +32,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/health"
 	internalopenai "github.com/your-org/ai-sa-assistant/internal/openai"
+	"github.com/your-org/ai-sa-assistant/internal/session"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
 )
 
@@ -46,9 +47,10 @@ const (
 
 // SynthesisRequest represents the incoming synthesis request
 type SynthesisRequest struct {
-	Query      string      `json:"query" binding:"required"`
-	Chunks     []ChunkItem `json:"chunks"`
-	WebResults []WebResult `json:"web_results"`
+	Query               string            `json:"query" binding:"required"`
+	Chunks              []ChunkItem       `json:"chunks"`
+	WebResults          []WebResult       `json:"web_results"`
+	ConversationHistory []session.Message `json:"conversation_history,omitempty"`
 }
 
 // ChunkItem represents a document chunk with metadata
@@ -330,8 +332,8 @@ func processSynthesisRequest(
 		// Continue processing despite validation warnings
 	}
 
-	// Build comprehensive prompt
-	prompt := synth.BuildPrompt(req.Query, contextItems, webResultStrings)
+	// Build comprehensive prompt with conversation context
+	prompt := synth.BuildPromptWithConversation(req.Query, contextItems, webResultStrings, req.ConversationHistory)
 
 	// Call OpenAI Chat Completion API
 	ctx, cancel := context.WithTimeout(context.Background(), SynthesisRequestTimeout)

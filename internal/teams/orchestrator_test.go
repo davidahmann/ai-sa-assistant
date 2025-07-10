@@ -25,6 +25,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/health"
+	"github.com/your-org/ai-sa-assistant/internal/session"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
 	"go.uber.org/zap/zaptest"
 )
@@ -117,12 +118,25 @@ func TestOrchestrator_ProcessQuery_Success(t *testing.T) {
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
+	// Create session manager
+	sessionConfig := session.Config{
+		StorageType:     session.MemoryStorageType,
+		DefaultTTL:      30 * time.Minute,
+		MaxSessions:     1000,
+		CleanupInterval: 0,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		t.Fatalf("failed to create session manager: %v", err)
+	}
+	defer func() { _ = sessionManager.Close() }()
+
 	// Create orchestrator
-	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	// Test successful query processing
 	ctx := context.Background()
-	result := orchestrator.ProcessQuery(ctx, "test query")
+	result := orchestrator.ProcessQuery(ctx, "test query", "test_user")
 
 	if result.Error != nil {
 		t.Errorf("Expected no error, got %v", result.Error)
@@ -226,12 +240,25 @@ func TestOrchestrator_ProcessQuery_WithFreshness(t *testing.T) {
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
+	// Create session manager
+	sessionConfig := session.Config{
+		StorageType:     session.MemoryStorageType,
+		DefaultTTL:      30 * time.Minute,
+		MaxSessions:     1000,
+		CleanupInterval: 0,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		t.Fatalf("failed to create session manager: %v", err)
+	}
+	defer func() { _ = sessionManager.Close() }()
+
 	// Create orchestrator
-	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	// Test query with freshness keyword
 	ctx := context.Background()
-	result := orchestrator.ProcessQuery(ctx, "latest AWS updates")
+	result := orchestrator.ProcessQuery(ctx, "latest AWS updates", "test_user")
 
 	if result.Error != nil {
 		t.Errorf("Expected no error, got %v", result.Error)
@@ -326,12 +353,25 @@ func TestOrchestrator_ProcessQuery_RetrieveServiceFailure(t *testing.T) {
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
+	// Create session manager
+	sessionConfig := session.Config{
+		StorageType:     session.MemoryStorageType,
+		DefaultTTL:      30 * time.Minute,
+		MaxSessions:     1000,
+		CleanupInterval: 0,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		t.Fatalf("failed to create session manager: %v", err)
+	}
+	defer func() { _ = sessionManager.Close() }()
+
 	// Create orchestrator
-	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	// Test query with retrieve service failure
 	ctx := context.Background()
-	result := orchestrator.ProcessQuery(ctx, "test query")
+	result := orchestrator.ProcessQuery(ctx, "test query", "test_user")
 
 	if result.Error != nil {
 		t.Errorf("Expected no error due to fallback, got %v", result.Error)
@@ -422,12 +462,25 @@ func TestOrchestrator_ProcessQuery_SynthesizeServiceFailure(t *testing.T) {
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
+	// Create session manager
+	sessionConfig := session.Config{
+		StorageType:     session.MemoryStorageType,
+		DefaultTTL:      30 * time.Minute,
+		MaxSessions:     1000,
+		CleanupInterval: 0,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		t.Fatalf("failed to create session manager: %v", err)
+	}
+	defer func() { _ = sessionManager.Close() }()
+
 	// Create orchestrator
-	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	// Test query with synthesize service failure
 	ctx := context.Background()
-	result := orchestrator.ProcessQuery(ctx, "test query")
+	result := orchestrator.ProcessQuery(ctx, "test query", "test_user")
 
 	if result.Error != nil {
 		t.Errorf("Expected no error due to fallback, got %v", result.Error)
@@ -508,12 +561,25 @@ func TestOrchestrator_ProcessQuery_HealthCheckFailure(t *testing.T) {
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
+	// Create session manager
+	sessionConfig := session.Config{
+		StorageType:     session.MemoryStorageType,
+		DefaultTTL:      30 * time.Minute,
+		MaxSessions:     1000,
+		CleanupInterval: 0,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		t.Fatalf("failed to create session manager: %v", err)
+	}
+	defer func() { _ = sessionManager.Close() }()
+
 	// Create orchestrator
-	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	// Test query with health check failure
 	ctx := context.Background()
-	result := orchestrator.ProcessQuery(ctx, "test query")
+	result := orchestrator.ProcessQuery(ctx, "test query", "test_user")
 
 	if result.Error == nil {
 		t.Error("Expected error due to health check failure")
@@ -597,14 +663,27 @@ func TestOrchestrator_ProcessQuery_Timeout(t *testing.T) {
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
+	// Create session manager
+	sessionConfig := session.Config{
+		StorageType:     session.MemoryStorageType,
+		DefaultTTL:      30 * time.Minute,
+		MaxSessions:     1000,
+		CleanupInterval: 0,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		t.Fatalf("failed to create session manager: %v", err)
+	}
+	defer func() { _ = sessionManager.Close() }()
+
 	// Create orchestrator
-	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	// Test query with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	result := orchestrator.ProcessQuery(ctx, "test query")
+	result := orchestrator.ProcessQuery(ctx, "test query", "test_user")
 
 	// Should complete with fallback due to timeout
 	if result.Error != nil {
@@ -634,7 +713,20 @@ func TestOrchestrator_needsFreshness(t *testing.T) {
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
-	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	// Create session manager
+	sessionConfig := session.Config{
+		StorageType:     session.MemoryStorageType,
+		DefaultTTL:      30 * time.Minute,
+		MaxSessions:     1000,
+		CleanupInterval: 0,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		t.Fatalf("failed to create session manager: %v", err)
+	}
+	defer func() { _ = sessionManager.Close() }()
+
+	orchestrator := NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	tests := []struct {
 		query    string

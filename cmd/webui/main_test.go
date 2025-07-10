@@ -27,6 +27,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/health"
+	"github.com/your-org/ai-sa-assistant/internal/session"
 	"github.com/your-org/ai-sa-assistant/internal/teams"
 	"go.uber.org/zap"
 )
@@ -42,7 +43,19 @@ func setupTestServer() *WebUIServer {
 	diagramConfig := diagram.RendererConfig{}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
-	orchestrator := teams.NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	// Create session manager
+	sessionConfig := session.Config{
+		StorageType:     session.MemoryStorageType,
+		DefaultTTL:      30 * time.Minute,
+		MaxSessions:     1000,
+		CleanupInterval: 0,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		panic(err) // Should not happen in test
+	}
+
+	orchestrator := teams.NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	return &WebUIServer{
 		config:        cfg,

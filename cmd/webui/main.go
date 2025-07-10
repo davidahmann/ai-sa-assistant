@@ -26,6 +26,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/diagram"
 	"github.com/your-org/ai-sa-assistant/internal/health"
+	"github.com/your-org/ai-sa-assistant/internal/session"
 	"github.com/your-org/ai-sa-assistant/internal/teams"
 	"go.uber.org/zap"
 )
@@ -118,8 +119,20 @@ func main() {
 	}
 	diagramRenderer := diagram.NewRenderer(diagramConfig, logger)
 
+	// Initialize session manager for conversation memory
+	sessionConfig := session.Config{
+		StorageType:     session.StorageType(cfg.Session.StorageType),
+		DefaultTTL:      time.Duration(cfg.Session.DefaultTTL) * time.Minute,
+		MaxSessions:     cfg.Session.MaxSessions,
+		CleanupInterval: time.Duration(cfg.Session.CleanupInterval) * time.Minute,
+	}
+	sessionManager, err := session.NewManager(sessionConfig, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize session manager", zap.Error(err))
+	}
+
 	// Initialize orchestrator (reuse Teams Bot orchestration logic)
-	orchestrator := teams.NewOrchestrator(cfg, healthManager, diagramRenderer, logger)
+	orchestrator := teams.NewOrchestrator(cfg, healthManager, diagramRenderer, sessionManager, logger)
 
 	// Create web UI server
 	server := &WebUIServer{

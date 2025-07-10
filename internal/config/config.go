@@ -77,6 +77,7 @@ type Config struct {
 	Diagram   DiagramConfig   `mapstructure:"diagram"`
 	Logging   LoggingConfig   `mapstructure:"logging"`
 	Feedback  FeedbackConfig  `mapstructure:"feedback"`
+	Session   SessionConfig   `mapstructure:"session"`
 }
 
 // OpenAIConfig contains OpenAI API configuration
@@ -151,6 +152,17 @@ type FeedbackConfig struct {
 	StorageType string `mapstructure:"storage_type"`
 	FilePath    string `mapstructure:"file_path"`
 	DBPath      string `mapstructure:"db_path"`
+}
+
+// SessionConfig contains session management configuration
+type SessionConfig struct {
+	StorageType           string `mapstructure:"storage_type"`
+	RedisURL              string `mapstructure:"redis_url"`
+	DefaultTTL            int    `mapstructure:"default_ttl_minutes"`
+	MaxSessions           int    `mapstructure:"max_sessions"`
+	CleanupInterval       int    `mapstructure:"cleanup_interval_minutes"`
+	MaxHistoryLength      int    `mapstructure:"max_history_length"`
+	EnableConversationAPI bool   `mapstructure:"enable_conversation_api"`
 }
 
 // ValidationError represents a configuration validation error
@@ -280,6 +292,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("feedback.storage_type", "file")
 	v.SetDefault("feedback.file_path", "./feedback.log")
 	v.SetDefault("feedback.db_path", "./feedback.db")
+
+	// Session defaults
+	v.SetDefault("session.storage_type", "memory")
+	v.SetDefault("session.redis_url", "redis://localhost:6379")
+	v.SetDefault("session.default_ttl_minutes", 30)
+	v.SetDefault("session.max_sessions", 1000)
+	v.SetDefault("session.cleanup_interval_minutes", 5)
+	v.SetDefault("session.max_history_length", 20)
+	v.SetDefault("session.enable_conversation_api", true)
 }
 
 // setConfigFile sets the configuration file path with fallback logic
@@ -337,6 +358,9 @@ func setEnvironmentMappings(v *viper.Viper) {
 		"LOG_LEVEL":            "logging.level",
 		"LOG_FORMAT":           "logging.format",
 		"LOG_OUTPUT":           "logging.output",
+		"SESSION_STORAGE_TYPE": "session.storage_type",
+		"SESSION_REDIS_URL":    "session.redis_url",
+		"SESSION_TTL_MINUTES":  "session.default_ttl_minutes",
 	}
 
 	for envVar, configKey := range envMappings {
@@ -477,6 +501,50 @@ func validateConfig(config *Config) error {
 		})
 	}
 
+	// Validate session configuration
+	validSessionStorageTypes := []string{"memory", "redis"}
+	if !contains(validSessionStorageTypes, config.Session.StorageType) {
+		errors = append(errors, ValidationError{
+			Field:   "session.storage_type",
+			Message: fmt.Sprintf("session storage type must be one of: %s", strings.Join(validSessionStorageTypes, ", ")),
+		})
+	}
+
+	if config.Session.StorageType == "redis" && config.Session.RedisURL == "" {
+		errors = append(errors, ValidationError{
+			Field:   "session.redis_url",
+			Message: "Redis URL is required when using Redis storage",
+		})
+	}
+
+	if config.Session.DefaultTTL <= 0 {
+		errors = append(errors, ValidationError{
+			Field:   "session.default_ttl_minutes",
+			Message: "session TTL must be greater than 0",
+		})
+	}
+
+	if config.Session.MaxSessions <= 0 {
+		errors = append(errors, ValidationError{
+			Field:   "session.max_sessions",
+			Message: "max sessions must be greater than 0",
+		})
+	}
+
+	if config.Session.CleanupInterval <= 0 {
+		errors = append(errors, ValidationError{
+			Field:   "session.cleanup_interval_minutes",
+			Message: "cleanup interval must be greater than 0",
+		})
+	}
+
+	if config.Session.MaxHistoryLength <= 0 {
+		errors = append(errors, ValidationError{
+			Field:   "session.max_history_length",
+			Message: "max history length must be greater than 0",
+		})
+	}
+
 	// Validate file paths
 	if config.Metadata.DBPath == "" {
 		errors = append(errors, ValidationError{
@@ -520,6 +588,9 @@ func (c *Config) MaskSensitiveValues() *Config {
 	}
 	if masked.Teams.WebhookSecret != "" {
 		masked.Teams.WebhookSecret = maskValue(masked.Teams.WebhookSecret)
+	}
+	if masked.Session.RedisURL != "" {
+		masked.Session.RedisURL = maskValue(masked.Session.RedisURL)
 	}
 
 	return &masked
