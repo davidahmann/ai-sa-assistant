@@ -224,8 +224,223 @@ class ChatApp {
     }
 
     formatMessageContent(content) {
-        // Basic text formatting - will be enhanced in future issues
-        return this.escapeHtml(content).replace(/\n/g, '<br>');
+        // Enhanced text formatting with diagram and code block support
+        let formattedContent = this.escapeHtml(content);
+
+        // Process code blocks first (including mermaid diagrams)
+        formattedContent = this.processCodeBlocks(formattedContent);
+
+        // Convert remaining newlines to <br>
+        formattedContent = formattedContent.replace(/\n/g, '<br>');
+
+        return formattedContent;
+    }
+
+    processCodeBlocks(content) {
+        // Regex to match code blocks: ```language\ncontent\n```
+        const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
+
+        return content.replace(codeBlockRegex, (match, language, code) => {
+            const trimmedCode = code.trim();
+            const lang = language.toLowerCase();
+
+            // Check if it's a mermaid diagram
+            if (lang === 'mermaid' || this.isMermaidDiagram(trimmedCode)) {
+                return this.renderMermaidDiagram(trimmedCode);
+            }
+
+            // Otherwise, render as syntax-highlighted code block
+            return this.renderCodeBlock(trimmedCode, lang);
+        });
+    }
+
+    isMermaidDiagram(code) {
+        // Check if the code contains mermaid diagram syntax
+        const mermaidKeywords = ['graph TD', 'graph LR', 'flowchart', 'sequenceDiagram', 'classDiagram', 'gitgraph'];
+        return mermaidKeywords.some(keyword => code.includes(keyword));
+    }
+
+    renderMermaidDiagram(mermaidCode) {
+        const diagramId = 'diagram-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+
+        // Create container with loading state
+        const container = `
+            <div class="diagram-container" id="container-${diagramId}">
+                <div class="diagram-header">
+                    <span class="diagram-title">Architecture Diagram</span>
+                    <div class="diagram-actions">
+                        <button class="diagram-btn zoom-btn" title="Zoom In/Out" onclick="chatApp.toggleDiagramZoom('${diagramId}')">
+                            🔍
+                        </button>
+                        <button class="diagram-btn copy-btn" title="Copy Diagram Code" onclick="chatApp.copyDiagramCode('${diagramId}')">
+                            📋
+                        </button>
+                    </div>
+                </div>
+                <div class="diagram-content" id="${diagramId}">
+                    <div class="diagram-loading">
+                        <div class="spinner"></div>
+                        <span>Rendering diagram...</span>
+                    </div>
+                </div>
+                <div class="diagram-source" style="display: none;" data-source="${this.escapeHtml(mermaidCode)}"></div>
+            </div>
+        `;
+
+        // Schedule diagram rendering after DOM update
+        setTimeout(() => this.renderMermaidAsync(diagramId, mermaidCode), 100);
+
+        return container;
+    }
+
+    async renderMermaidAsync(diagramId, mermaidCode) {
+        try {
+            // Initialize mermaid if not already done
+            if (typeof mermaid !== 'undefined' && !window.mermaidInitialized) {
+                mermaid.initialize({
+                    startOnLoad: false,
+                    theme: 'default',
+                    securityLevel: 'strict',
+                    er: { layoutDirection: 'TB' },
+                    flowchart: { useMaxWidth: true, htmlLabels: true }
+                });
+                window.mermaidInitialized = true;
+            }
+
+            const element = document.getElementById(diagramId);
+            if (!element) return;
+
+            // Clear loading state
+            element.innerHTML = '';
+
+            // Render the diagram
+            if (typeof mermaid !== 'undefined') {
+                const { svg } = await mermaid.render(diagramId + '-svg', mermaidCode);
+                element.innerHTML = svg;
+                element.classList.add('diagram-rendered');
+            } else {
+                throw new Error('Mermaid library not loaded');
+            }
+        } catch (error) {
+            console.error('Failed to render mermaid diagram:', error);
+            this.renderDiagramFallback(diagramId, mermaidCode, error.message);
+        }
+    }
+
+    renderDiagramFallback(diagramId, mermaidCode, errorMessage) {
+        const element = document.getElementById(diagramId);
+        if (!element) return;
+
+        element.innerHTML = `
+            <div class="diagram-error">
+                <div class="error-icon">⚠️</div>
+                <div class="error-text">
+                    <strong>Diagram Rendering Failed</strong>
+                    <br><small>${this.escapeHtml(errorMessage)}</small>
+                </div>
+            </div>
+            <details class="diagram-fallback">
+                <summary>View Diagram Code</summary>
+                <pre><code>${this.escapeHtml(mermaidCode)}</code></pre>
+            </details>
+        `;
+    }
+
+    renderCodeBlock(code, language) {
+        const codeId = 'code-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        const displayLang = language || 'text';
+
+        const container = `
+            <div class="code-container" id="container-${codeId}">
+                <div class="code-header">
+                    <span class="code-language">${displayLang}</span>
+                    <div class="code-actions">
+                        <button class="code-btn copy-btn" title="Copy Code" onclick="chatApp.copyCode('${codeId}')">
+                            📋
+                        </button>
+                    </div>
+                </div>
+                <pre class="code-block"><code id="${codeId}" class="language-${language || 'text'}">${this.escapeHtml(code)}</code></pre>
+            </div>
+        `;
+
+        // Schedule syntax highlighting after DOM update
+        setTimeout(() => this.highlightCodeAsync(codeId), 100);
+
+        return container;
+    }
+
+    async highlightCodeAsync(codeId) {
+        try {
+            const element = document.getElementById(codeId);
+            if (!element) return;
+
+            // Apply syntax highlighting if Prism is available
+            if (typeof Prism !== 'undefined') {
+                Prism.highlightElement(element);
+            }
+        } catch (error) {
+            console.error('Failed to highlight code:', error);
+        }
+    }
+
+    // Interactive feature methods
+    toggleDiagramZoom(diagramId) {
+        const container = document.getElementById('container-' + diagramId);
+        if (container) {
+            container.classList.toggle('diagram-zoomed');
+        }
+    }
+
+    copyDiagramCode(diagramId) {
+        const container = document.getElementById('container-' + diagramId);
+        const sourceElement = container?.querySelector('.diagram-source');
+        if (sourceElement) {
+            const source = sourceElement.dataset.source;
+            this.copyToClipboard(source, 'Diagram code copied to clipboard!');
+        }
+    }
+
+    copyCode(codeId) {
+        const element = document.getElementById(codeId);
+        if (element) {
+            const code = element.textContent;
+            this.copyToClipboard(code, 'Code copied to clipboard!');
+        }
+    }
+
+    copyToClipboard(text, successMessage) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => {
+                this.showToast(successMessage, 'success');
+            }).catch(err => {
+                console.error('Failed to copy to clipboard:', err);
+                this.fallbackCopyToClipboard(text, successMessage);
+            });
+        } else {
+            this.fallbackCopyToClipboard(text, successMessage);
+        }
+    }
+
+    fallbackCopyToClipboard(text, successMessage) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+            document.execCommand('copy');
+            this.showToast(successMessage, 'success');
+        } catch (err) {
+            console.error('Fallback copy failed:', err);
+            this.showToast('Copy failed. Please select and copy manually.', 'error');
+        } finally {
+            document.body.removeChild(textArea);
+        }
     }
 
     async sendMessage() {
@@ -576,5 +791,5 @@ class ChatApp {
 
 // Initialize the app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new ChatApp();
+    window.chatApp = new ChatApp();
 });
