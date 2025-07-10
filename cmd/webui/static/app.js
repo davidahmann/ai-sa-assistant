@@ -21,6 +21,9 @@ class ChatApp {
 
         // Mobile touch gestures
         this.setupTouchGestures();
+
+        // Initialize theme
+        this.initializeTheme();
     }
 
     initializeElements() {
@@ -42,6 +45,9 @@ class ChatApp {
         // Loading and toast elements
         this.loadingIndicator = document.getElementById('loadingIndicator');
         this.toastContainer = document.getElementById('toastContainer');
+
+        // Theme toggle element
+        this.themeToggle = document.getElementById('themeToggle');
     }
 
     bindEvents() {
@@ -71,6 +77,9 @@ class ChatApp {
 
         // Window resize
         window.addEventListener('resize', () => this.handleResize());
+
+        // Theme toggle
+        this.themeToggle.addEventListener('click', () => this.toggleTheme());
     }
 
     setupAutoResize() {
@@ -1583,6 +1592,74 @@ class ChatApp {
 
         this.isStreaming = false;
         this.updateSendButton();
+    }
+
+    // Theme Management Methods
+
+    initializeTheme() {
+        // Check for saved theme preference
+        const savedTheme = localStorage.getItem('ai-sa-assistant-theme');
+
+        // Check system preference
+        const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        // Determine initial theme
+        let initialTheme = 'light';
+        if (savedTheme) {
+            initialTheme = savedTheme;
+        } else if (systemPrefersDark) {
+            initialTheme = 'dark';
+        }
+
+        // Apply theme
+        this.setTheme(initialTheme);
+
+        // Listen for system theme changes
+        if (window.matchMedia) {
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            mediaQuery.addEventListener('change', (e) => {
+                // Only auto-switch if user hasn't manually set a preference
+                if (!localStorage.getItem('ai-sa-assistant-theme')) {
+                    this.setTheme(e.matches ? 'dark' : 'light');
+                }
+            });
+        }
+    }
+
+    toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        this.setTheme(newTheme);
+
+        // Save user preference
+        localStorage.setItem('ai-sa-assistant-theme', newTheme);
+
+        // Show toast notification
+        this.showToast(`Switched to ${newTheme} mode`, 'success');
+    }
+
+    setTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+
+        // Update meta theme-color for mobile browsers
+        const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+        if (metaThemeColor) {
+            if (theme === 'dark') {
+                metaThemeColor.setAttribute('content', '#1e293b');
+            } else {
+                metaThemeColor.setAttribute('content', '#2563eb');
+            }
+        }
+
+        // Update Apple touch icon style
+        const appleStatusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+        if (appleStatusBar) {
+            appleStatusBar.setAttribute('content', theme === 'dark' ? 'black-translucent' : 'default');
+        }
+    }
+
+    getCurrentTheme() {
+        return document.documentElement.getAttribute('data-theme') || 'light';
     }
 }
 
