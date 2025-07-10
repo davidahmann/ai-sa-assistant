@@ -488,3 +488,415 @@ func GenerateComparisonCard(query, originalResponse, regeneratedResponse string,
 func generateResponseID() string {
 	return fmt.Sprintf("resp_%d", time.Now().UnixNano())
 }
+
+// GenerateClarificationCard creates a card for clarification requests
+func GenerateClarificationCard(query string, questions []string, suggestions []string, quickOptions []string) (string, error) {
+	card := AdaptiveCard{
+		Type:    "AdaptiveCard",
+		Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+		Version: "1.5",
+		Body:    []CardElement{},
+		Actions: []CardAction{},
+	}
+
+	// Header
+	card.Body = append(card.Body, CardElement{
+		Type:   "TextBlock",
+		Text:   "❓ Clarification Needed",
+		Size:   "Medium",
+		Weight: "Bolder",
+		Color:  "Warning",
+	})
+
+	// Original query
+	card.Body = append(card.Body, CardElement{
+		Type:      "TextBlock",
+		Text:      fmt.Sprintf("**Your query:** %s", query),
+		Wrap:      true,
+		Spacing:   "Medium",
+		Separator: true,
+	})
+
+	// Explanation
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    "To provide you with the most accurate and helpful response, I need a bit more information:",
+		Wrap:    true,
+		Spacing: "Medium",
+	})
+
+	// Questions section
+	if len(questions) > 0 {
+		card.Body = append(card.Body, CardElement{
+			Type:    "TextBlock",
+			Text:    "**Questions to help me assist you better:**",
+			Weight:  "Bolder",
+			Spacing: "Medium",
+		})
+
+		for i, question := range questions {
+			card.Body = append(card.Body, CardElement{
+				Type:    "TextBlock",
+				Text:    fmt.Sprintf("• %s", question),
+				Wrap:    true,
+				Spacing: "Small",
+			})
+			if i >= 4 { // Limit to 5 questions max
+				break
+			}
+		}
+	}
+
+	// Suggestions section
+	if len(suggestions) > 0 {
+		card.Body = append(card.Body, CardElement{
+			Type:    "TextBlock",
+			Text:    "**Suggestions for a better query:**",
+			Weight:  "Bolder",
+			Spacing: "Medium",
+		})
+
+		for i, suggestion := range suggestions {
+			card.Body = append(card.Body, CardElement{
+				Type:    "TextBlock",
+				Text:    fmt.Sprintf("• %s", suggestion),
+				Wrap:    true,
+				Spacing: "Small",
+			})
+			if i >= 2 { // Limit to 3 suggestions max
+				break
+			}
+		}
+	}
+
+	// Quick options as action buttons
+	if len(quickOptions) > 0 {
+		card.Body = append(card.Body, CardElement{
+			Type:    "TextBlock",
+			Text:    "**Quick selection options:**",
+			Weight:  "Bolder",
+			Spacing: "Medium",
+		})
+
+		// Add quick option buttons
+		for i, option := range quickOptions {
+			card.Actions = append(card.Actions, CardAction{
+				Type:   "Action.Http",
+				Title:  option,
+				Method: "POST",
+				URL:    "/teams-clarify",
+				Body: map[string]interface{}{
+					"original_query": query,
+					"clarification":  option,
+					"action":         "quick_select",
+					"timestamp":      time.Now().Format(time.RFC3339),
+				},
+			})
+			if i >= 3 { // Limit to 4 quick options
+				break
+			}
+		}
+	}
+
+	// General actions
+	card.Actions = append(card.Actions,
+		CardAction{
+			Type:   "Action.Http",
+			Title:  "📝 Provide More Details",
+			Method: "POST",
+			URL:    "/teams-clarify",
+			Body: map[string]interface{}{
+				"original_query": query,
+				"action":         "provide_details",
+				"timestamp":      time.Now().Format(time.RFC3339),
+			},
+		},
+		CardAction{
+			Type:   "Action.Http",
+			Title:  "🎯 Use Template",
+			Method: "POST",
+			URL:    "/teams-clarify",
+			Body: map[string]interface{}{
+				"original_query": query,
+				"action":         "use_template",
+				"timestamp":      time.Now().Format(time.RFC3339),
+			},
+		},
+	)
+
+	// Marshal to JSON
+	cardJSON, err := json.MarshalIndent(card, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal clarification card: %w", err)
+	}
+
+	return string(cardJSON), nil
+}
+
+// GenerateTemplateSelectionCard creates a card for guided template selection
+func GenerateTemplateSelectionCard(query string) (string, error) {
+	card := AdaptiveCard{
+		Type:    "AdaptiveCard",
+		Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+		Version: "1.5",
+		Body:    []CardElement{},
+		Actions: []CardAction{},
+	}
+
+	// Header
+	card.Body = append(card.Body, CardElement{
+		Type:   "TextBlock",
+		Text:   "🎯 Guided Question Templates",
+		Size:   "Medium",
+		Weight: "Bolder",
+		Color:  "Good",
+	})
+
+	// Description
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    "Choose a template to help structure your question for better results:",
+		Wrap:    true,
+		Spacing: "Medium",
+	})
+
+	// Migration template
+	card.Body = append(card.Body, CardElement{
+		Type:      "TextBlock",
+		Text:      "**Migration Planning Template**",
+		Weight:    "Bolder",
+		Spacing:   "Medium",
+		Separator: true,
+	})
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    "For planning cloud migrations and workload transfers",
+		Spacing: "Small",
+		Color:   "Default",
+	})
+
+	card.Actions = append(card.Actions, CardAction{
+		Type:   "Action.Http",
+		Title:  "🚀 Migration Template",
+		Method: "POST",
+		URL:    "/teams-clarify",
+		Body: map[string]interface{}{
+			"original_query": query,
+			"template":       "migration",
+			"action":         "apply_template",
+			"timestamp":      time.Now().Format(time.RFC3339),
+		},
+	})
+
+	// Security template
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    "**Security & Compliance Template**",
+		Weight:  "Bolder",
+		Spacing: "Medium",
+	})
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    "For security assessments and compliance planning",
+		Spacing: "Small",
+		Color:   "Default",
+	})
+
+	card.Actions = append(card.Actions, CardAction{
+		Type:   "Action.Http",
+		Title:  "🔒 Security Template",
+		Method: "POST",
+		URL:    "/teams-clarify",
+		Body: map[string]interface{}{
+			"original_query": query,
+			"template":       "security",
+			"action":         "apply_template",
+			"timestamp":      time.Now().Format(time.RFC3339),
+		},
+	})
+
+	// Architecture template
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    "**Architecture Design Template**",
+		Weight:  "Bolder",
+		Spacing: "Medium",
+	})
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    "For solution architecture and technical design",
+		Spacing: "Small",
+		Color:   "Default",
+	})
+
+	card.Actions = append(card.Actions, CardAction{
+		Type:   "Action.Http",
+		Title:  "🏗️ Architecture Template",
+		Method: "POST",
+		URL:    "/teams-clarify",
+		Body: map[string]interface{}{
+			"original_query": query,
+			"template":       "architecture",
+			"action":         "apply_template",
+			"timestamp":      time.Now().Format(time.RFC3339),
+		},
+	})
+
+	// Cost optimization template
+	card.Actions = append(card.Actions, CardAction{
+		Type:   "Action.Http",
+		Title:  "💰 Cost Optimization Template",
+		Method: "POST",
+		URL:    "/teams-clarify",
+		Body: map[string]interface{}{
+			"original_query": query,
+			"template":       "cost",
+			"action":         "apply_template",
+			"timestamp":      time.Now().Format(time.RFC3339),
+		},
+	})
+
+	// Back action
+	card.Actions = append(card.Actions, CardAction{
+		Type:   "Action.Http",
+		Title:  "← Back to Clarification",
+		Method: "POST",
+		URL:    "/teams-clarify",
+		Body: map[string]interface{}{
+			"original_query": query,
+			"action":         "back_to_clarification",
+			"timestamp":      time.Now().Format(time.RFC3339),
+		},
+	})
+
+	// Marshal to JSON
+	cardJSON, err := json.MarshalIndent(card, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal template selection card: %w", err)
+	}
+
+	return string(cardJSON), nil
+}
+
+// GenerateGuidedTemplateCard creates a guided template form
+func GenerateGuidedTemplateCard(query, templateType string) (string, error) {
+	card := AdaptiveCard{
+		Type:    "AdaptiveCard",
+		Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+		Version: "1.5",
+		Body:    []CardElement{},
+		Actions: []CardAction{},
+	}
+
+	// Header based on template type
+	var headerText, templateDescription, exampleText string
+	switch templateType {
+	case "migration":
+		headerText = "🚀 Migration Planning Template"
+		templateDescription = "Fill in the details below to get a comprehensive migration plan:"
+		exampleText = "Example: Help me migrate 50 Windows VMs from VMware to AWS with 6-month timeline for production workloads"
+	case "security":
+		headerText = "🔒 Security & Compliance Template"
+		templateDescription = "Provide security requirements for a tailored assessment:"
+		exampleText = "Example: Create a HIPAA-compliant security plan for healthcare data in Azure production environment"
+	case "architecture":
+		headerText = "🏗️ Architecture Design Template"
+		templateDescription = "Specify your architectural requirements:"
+		exampleText = "Example: Design a scalable web application architecture for 100,000 users on AWS with high availability"
+	case "cost":
+		headerText = "💰 Cost Optimization Template"
+		templateDescription = "Help us understand your cost optimization goals:"
+		exampleText = "Example: Optimize AWS costs for development environments with $10,000 monthly budget"
+	default:
+		headerText = "🎯 Guided Template"
+		templateDescription = "Fill in the template below:"
+		exampleText = "Provide specific details for better assistance"
+	}
+
+	card.Body = append(card.Body, CardElement{
+		Type:   "TextBlock",
+		Text:   headerText,
+		Size:   "Medium",
+		Weight: "Bolder",
+		Color:  "Good",
+	})
+
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    templateDescription,
+		Wrap:    true,
+		Spacing: "Medium",
+	})
+
+	// Example
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    fmt.Sprintf("**Example:** %s", exampleText),
+		Wrap:    true,
+		Spacing: "Medium",
+		Color:   "Attention",
+	})
+
+	// Template-specific guidance
+	switch templateType {
+	case "migration":
+		card.Body = append(card.Body, CardElement{
+			Type:    "TextBlock",
+			Text:    "**Key Information Needed:**\n• Source environment (VMware, Hyper-V, physical)\n• Target cloud provider (AWS, Azure, GCP)\n• Workload types and count\n• Timeline and constraints\n• Compliance requirements",
+			Wrap:    true,
+			Spacing: "Medium",
+		})
+	case "security":
+		card.Body = append(card.Body, CardElement{
+			Type:    "TextBlock",
+			Text:    "**Key Information Needed:**\n• Compliance standards (HIPAA, GDPR, SOX, PCI)\n• Data types and sensitivity\n• Environment (production, development)\n• Current security concerns\n• Budget and timeline",
+			Wrap:    true,
+			Spacing: "Medium",
+		})
+	case "architecture":
+		card.Body = append(card.Body, CardElement{
+			Type:    "TextBlock",
+			Text:    "**Key Information Needed:**\n• Application type and requirements\n• Expected load and scale\n• Performance requirements\n• High availability needs\n• Integration requirements",
+			Wrap:    true,
+			Spacing: "Medium",
+		})
+	case "cost":
+		card.Body = append(card.Body, CardElement{
+			Type:    "TextBlock",
+			Text:    "**Key Information Needed:**\n• Current cloud spending\n• Workload types to optimize\n• Target savings goals\n• Usage patterns\n• Acceptable trade-offs",
+			Wrap:    true,
+			Spacing: "Medium",
+		})
+	}
+
+	// Instructions
+	card.Body = append(card.Body, CardElement{
+		Type:      "TextBlock",
+		Text:      "**Instructions:** Please rewrite your question using the guidance above, then send it as a new message to get a comprehensive response.",
+		Wrap:      true,
+		Spacing:   "Medium",
+		Separator: true,
+		Color:     "Good",
+	})
+
+	// Back action
+	card.Actions = append(card.Actions, CardAction{
+		Type:   "Action.Http",
+		Title:  "← Back to Templates",
+		Method: "POST",
+		URL:    "/teams-clarify",
+		Body: map[string]interface{}{
+			"original_query": query,
+			"action":         "show_templates",
+			"timestamp":      time.Now().Format(time.RFC3339),
+		},
+	})
+
+	// Marshal to JSON
+	cardJSON, err := json.MarshalIndent(card, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal guided template card: %w", err)
+	}
+
+	return string(cardJSON), nil
+}

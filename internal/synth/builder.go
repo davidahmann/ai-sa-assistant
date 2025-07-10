@@ -2216,3 +2216,241 @@ func extractDomainFromURL(url string) string {
 
 	return domain
 }
+
+// BuildClarificationPrompt builds a prompt for generating clarification questions
+func BuildClarificationPrompt(query string, contextItems []ContextItem, conversationHistory []session.Message) string {
+	var prompt strings.Builder
+
+	// System prompt for clarification
+	prompt.WriteString(`You are an expert Solutions Architect assistant specializing in cloud technologies. Your role is to analyze user queries and determine if they need clarification before providing a comprehensive response.
+
+When a query is ambiguous, incomplete, or lacks sufficient context, you should ask clarifying questions rather than making assumptions.
+
+## Analysis Guidelines:
+
+### Ambiguous Queries - Ask for clarification when:
+- Query uses vague terms like "best", "good", "simple" without criteria
+- Multiple valid interpretations exist
+- Key requirements are not specified
+- Scale or scope is unclear
+
+### Incomplete Queries - Ask for clarification when:
+- Missing critical context (source/target for migrations)
+- No compliance or security requirements specified
+- Timeline or budget constraints not mentioned
+- Technical requirements incomplete
+
+### Follow-up Questions - When user references:
+- "That diagram" - ask which specific element they want modified
+- "More details" - ask about which specific area needs elaboration
+- "Alternative approach" - ask about specific constraints or preferences
+
+## Response Format:
+If clarification is needed, respond with:
+
+**CLARIFICATION_NEEDED**
+
+**Questions:**
+[List 2-3 specific questions that would help provide a better response]
+
+**Suggestions:**
+[Provide 2-3 helpful suggestions for improving the query]
+
+**Quick Options:**
+[Provide 3-4 quick selection options if applicable]
+
+If the query is clear and complete, respond with:
+
+**PROCEED_WITH_SYNTHESIS**
+
+`)
+
+	// Add conversation history if available
+	if len(conversationHistory) > 0 {
+		prompt.WriteString("--- Previous Conversation Context ---\n")
+		conversationContext := formatConversationHistoryWithTokenLimit(conversationHistory, 800)
+		prompt.WriteString(conversationContext)
+		prompt.WriteString("\n")
+	}
+
+	// Add current query
+	prompt.WriteString(fmt.Sprintf("Current User Query: %s\n\n", query))
+
+	// Add any available context
+	if len(contextItems) > 0 {
+		prompt.WriteString("--- Available Context ---\n")
+		for i, item := range contextItems {
+			if i >= 3 { // Limit context for clarification analysis
+				break
+			}
+			prompt.WriteString(fmt.Sprintf("Context %d [%s]: %s\n\n", i+1, item.SourceID, item.Content))
+		}
+	}
+
+	prompt.WriteString("Please analyze this query and determine if clarification is needed:")
+
+	return prompt.String()
+}
+
+// BuildFollowupPrompt builds a prompt for handling follow-up questions with context resolution
+func BuildFollowupPrompt(query string, contextItems []ContextItem, conversationHistory []session.Message, previousResponse string) string {
+	var prompt strings.Builder
+
+	// System prompt for follow-up handling
+	prompt.WriteString(`You are an expert Solutions Architect assistant handling a follow-up question in an ongoing conversation.
+
+## Follow-up Analysis:
+- Identify what the user is referencing from the previous response
+- Resolve references like "that diagram", "the security section", "mentioned earlier"
+- Build upon the previous response while addressing the new request
+
+## Context Resolution Guidelines:
+- When user says "that diagram" - reference the specific architecture diagram from previous response
+- When user says "more details" - identify which section needs elaboration
+- When user asks "what about costs" - add cost analysis to the previous solution
+- When user asks for "alternatives" - provide different approaches to the same problem
+
+## Response Strategy:
+- Acknowledge the reference to previous content
+- Provide the requested information or modification
+- Maintain consistency with the previous response
+- Enhance rather than replace the previous solution
+
+`)
+
+	// Add conversation history
+	if len(conversationHistory) > 0 {
+		prompt.WriteString("--- Previous Conversation ---\n")
+		conversationContext := formatConversationHistoryWithTokenLimit(conversationHistory, 1200)
+		prompt.WriteString(conversationContext)
+		prompt.WriteString("\n")
+	}
+
+	// Add previous response if provided
+	if previousResponse != "" {
+		prompt.WriteString("--- Previous Response to Reference ---\n")
+		// Truncate previous response if too long
+		if len(previousResponse) > 2000 {
+			previousResponse = previousResponse[:2000] + "...(truncated)"
+		}
+		prompt.WriteString(previousResponse)
+		prompt.WriteString("\n\n")
+	}
+
+	// Add current follow-up query
+	prompt.WriteString(fmt.Sprintf("Follow-up Query: %s\n\n", query))
+
+	// Add context items
+	if len(contextItems) > 0 {
+		prompt.WriteString("--- Additional Context ---\n")
+		for i, item := range contextItems {
+			if i >= 5 { // Limit context for follow-up
+				break
+			}
+			prompt.WriteString(fmt.Sprintf("Context %d [%s]: %s\n\n", i+1, item.SourceID, item.Content))
+		}
+	}
+
+	prompt.WriteString("Please provide a response that addresses the follow-up question while referencing and building upon the previous response:")
+
+	return prompt.String()
+}
+
+// IsQueryClear analyzes if a query is clear enough to proceed without clarification
+func IsQueryClear(query string) bool {
+	queryLower := strings.ToLower(query)
+
+	// Check for ambiguous terms
+	ambiguousTerms := []string{"best", "good", "better", "simple", "easy", "quick", "basic", "general", "overview"}
+	for _, term := range ambiguousTerms {
+		if strings.Contains(queryLower, term) && !hasSpecificContext(queryLower) {
+			return false
+		}
+	}
+
+	// Check if query is too short or generic
+	if len(strings.Fields(query)) < 5 {
+		return false
+	}
+
+	// Check for overly generic queries
+	genericPatterns := []string{
+		"help me", "assist me", "how do i", "what should i",
+		"migrate to cloud", "security plan", "architecture design",
+	}
+
+	for _, pattern := range genericPatterns {
+		if strings.Contains(queryLower, pattern) && !hasSpecificContext(queryLower) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// hasSpecificContext checks if the query contains specific contextual information
+func hasSpecificContext(queryLower string) bool {
+	specificTerms := []string{
+		// Cloud providers
+		"aws", "azure", "gcp", "google cloud",
+		// Technologies
+		"vmware", "hyper-v", "kubernetes", "docker", "terraform",
+		// Compliance
+		"hipaa", "gdpr", "sox", "pci", "iso 27001",
+		// Specifics
+		"production", "staging", "development", "gb", "tb", "users",
+		"million", "thousand", "hours", "minutes", "days", "months",
+	}
+
+	for _, term := range specificTerms {
+		if strings.Contains(queryLower, term) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// DetectFollowupType detects the type of follow-up question
+func DetectFollowupType(query string) string {
+	queryLower := strings.ToLower(query)
+
+	// Reference patterns
+	if strings.Contains(queryLower, "that") || strings.Contains(queryLower, "this") ||
+		strings.Contains(queryLower, "the above") || strings.Contains(queryLower, "mentioned") {
+		return "reference"
+	}
+
+	// Expansion patterns
+	if strings.Contains(queryLower, "more") || strings.Contains(queryLower, "detail") ||
+		strings.Contains(queryLower, "expand") || strings.Contains(queryLower, "elaborate") {
+		return "expansion"
+	}
+
+	// Alternative patterns
+	if strings.Contains(queryLower, "different") || strings.Contains(queryLower, "alternative") ||
+		strings.Contains(queryLower, "another") || strings.Contains(queryLower, "instead") {
+		return "alternative"
+	}
+
+	// Modification patterns
+	if strings.Contains(queryLower, "change") || strings.Contains(queryLower, "modify") ||
+		strings.Contains(queryLower, "update") || strings.Contains(queryLower, "improve") {
+		return "modification"
+	}
+
+	// Specific inquiry patterns
+	if strings.Contains(queryLower, "cost") || strings.Contains(queryLower, "price") {
+		return "cost_inquiry"
+	}
+
+	if strings.Contains(queryLower, "security") || strings.Contains(queryLower, "compliance") {
+		return "security_inquiry"
+	}
+
+	if strings.Contains(queryLower, "diagram") || strings.Contains(queryLower, "architecture") {
+		return "diagram_inquiry"
+	}
+
+	return "general_followup"
+}

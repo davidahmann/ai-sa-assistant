@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/your-org/ai-sa-assistant/internal/clarification"
 	"github.com/your-org/ai-sa-assistant/internal/classifier"
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/conversation"
@@ -160,6 +161,11 @@ func main() {
 	// Regeneration endpoint
 	router.POST("/teams-regenerate", func(c *gin.Context) {
 		handleRegeneration(c, cfg, orchestrator, feedbackLogger, logger)
+	})
+
+	// Clarification endpoint
+	router.POST("/teams-clarify", func(c *gin.Context) {
+		handleClarification(c, cfg, orchestrator, feedbackLogger, logger)
 	})
 
 	// Conversation API endpoints (if enabled)
@@ -304,6 +310,89 @@ func handleTeamsWebhook(
 		zap.String("category", classificationResult.Category),
 		zap.Float64("confidence", classificationResult.Confidence),
 	)
+
+	// Check if query needs clarification before processing
+	analyzer := clarification.NewAnalyzer()
+	analysis, err := analyzer.AnalyzeQuery(context.Background(), parsedQuery.Query, []session.Message{})
+	if err != nil {
+		logger.Error("Failed to analyze query for clarification", zap.Error(err))
+		// Continue with normal processing if analysis fails
+	} else if analysis.RequiresClarification {
+		logger.Info("Query requires clarification",
+			zap.String("query", parsedQuery.Query),
+			zap.Bool("is_ambiguous", analysis.IsAmbiguous),
+			zap.Bool("is_incomplete", analysis.IsIncomplete),
+			zap.Float64("ambiguity_score", analysis.AmbiguityScore),
+			zap.Float64("completeness_score", analysis.CompletenessScore))
+
+		// Generate clarification request
+		clarificationReq, err := analyzer.GenerateClarificationRequest(context.Background(), analysis)
+		if err != nil {
+			logger.Error("Failed to generate clarification request", zap.Error(err))
+			// Continue with normal processing if clarification generation fails
+		} else {
+			// Convert to simple slices for card generation
+			questions := make([]string, len(clarificationReq.Questions))
+			for i, q := range clarificationReq.Questions {
+				questions[i] = q.Question
+			}
+
+			suggestions := clarificationReq.Suggestions
+
+			quickOptions := make([]string, len(clarificationReq.QuickOptions))
+			for i, opt := range clarificationReq.QuickOptions {
+				quickOptions[i] = opt.Text
+			}
+
+			// Generate and send clarification card
+			clarificationCard, err := teams.GenerateClarificationCard(
+				parsedQuery.Query,
+				questions,
+				suggestions,
+				quickOptions,
+			)
+			if err != nil {
+				logger.Error("Failed to generate clarification card", zap.Error(err))
+				// Continue with normal processing if card generation fails
+			} else {
+				// Send clarification card to Teams
+				payload, err := teams.CreateTeamsPayload(clarificationCard)
+				if err != nil {
+					logger.Error("Failed to create clarification payload", zap.Error(err))
+				} else {
+					req, err := http.NewRequest("POST", cfg.Teams.WebhookURL, strings.NewReader(payload))
+					if err != nil {
+						logger.Error("Failed to create clarification webhook request", zap.Error(err))
+					} else {
+						req.Header.Set("Content-Type", "application/json")
+
+						client := &http.Client{}
+						resp, err := client.Do(req)
+						if err != nil {
+							logger.Error("Failed to send clarification webhook", zap.Error(err))
+						} else {
+							defer func() { _ = resp.Body.Close() }()
+							logger.Info("Clarification sent to Teams", zap.String("query", parsedQuery.Query))
+
+							c.JSON(http.StatusOK, gin.H{
+								"message": "Clarification requested",
+								"clarification": gin.H{
+									"is_ambiguous":        analysis.IsAmbiguous,
+									"is_incomplete":       analysis.IsIncomplete,
+									"ambiguity_score":     analysis.AmbiguityScore,
+									"completeness_score":  analysis.CompletenessScore,
+									"questions_count":     len(questions),
+									"suggestions_count":   len(suggestions),
+									"quick_options_count": len(quickOptions),
+								},
+							})
+							return
+						}
+					}
+				}
+			}
+		}
+	}
 
 	// Extract user ID for session management
 	userID := session.ExtractUserIDFromContext(parsedQuery.UserID, c.GetHeader("X-User-ID"), c.ClientIP())
@@ -535,6 +624,15 @@ type RegenerationRequest struct {
 	Timestamp        string `json:"timestamp,omitempty"`
 }
 
+// ClarificationRequest represents a request for clarification handling
+type ClarificationRequest struct {
+	OriginalQuery string `json:"original_query"`
+	Action        string `json:"action"` // "quick_select", "provide_details", "use_template", "apply_template", "show_templates", "back_to_clarification"
+	Clarification string `json:"clarification,omitempty"`
+	Template      string `json:"template,omitempty"`
+	Timestamp     string `json:"timestamp,omitempty"`
+}
+
 // handleFeedback handles feedback submissions
 func handleFeedback(c *gin.Context, _ *config.Config, feedbackLogger *feedback.Logger, logger *zap.Logger) {
 	var feedbackRequest FeedbackRequest
@@ -743,6 +841,215 @@ func extractUserIDFromRequest(c *gin.Context) string {
 	}
 
 	return "anonymous"
+}
+
+// handleClarification handles clarification requests
+func handleClarification(c *gin.Context, cfg *config.Config, orchestrator *teams.Orchestrator, feedbackLogger *feedback.Logger, logger *zap.Logger) {
+	var clarifyRequest ClarificationRequest
+	if err := c.ShouldBindJSON(&clarifyRequest); err != nil {
+		logger.Error("Failed to parse clarification request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid clarification request format"})
+		return
+	}
+
+	logger.Info("Received clarification request",
+		zap.String("original_query", clarifyRequest.OriginalQuery),
+		zap.String("action", clarifyRequest.Action),
+		zap.String("clarification", clarifyRequest.Clarification),
+		zap.String("template", clarifyRequest.Template))
+
+	switch clarifyRequest.Action {
+	case "quick_select":
+		// User selected a quick option - enhance query and proceed
+		enhancedQuery := clarifyRequest.OriginalQuery + " " + clarifyRequest.Clarification
+		logger.Info("Processing enhanced query from quick selection",
+			zap.String("original", clarifyRequest.OriginalQuery),
+			zap.String("enhanced", enhancedQuery))
+
+		// Process the enhanced query through normal flow
+		userID := extractUserIDFromRequest(c)
+		result := orchestrator.ProcessQuery(context.Background(), enhancedQuery, userID)
+		if result.Error != nil {
+			logger.Error("Failed to process enhanced query", zap.Error(result.Error))
+			sendErrorCard(cfg, enhancedQuery, fmt.Sprintf("Processing failed: %v", result.Error), logger)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Processing failed"})
+			return
+		}
+
+		// Generate and send response card
+		if err := sendResponseCard(cfg, result, enhancedQuery, logger); err != nil {
+			logger.Error("Failed to send response card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send response"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Enhanced query processed"})
+
+	case "provide_details":
+		// Show guidance for providing more details
+		detailsCard, err := teams.GenerateSimpleCard(
+			"📝 Provide More Details",
+			"Please add more specific information to your question:\n\n• Include specific technologies, versions, or tools\n• Mention your environment (production, development, etc.)\n• Specify requirements, constraints, or goals\n• Add context about current setup or challenges\n\nThen send your updated question as a new message.",
+		)
+		if err != nil {
+			logger.Error("Failed to generate details card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate guidance"})
+			return
+		}
+
+		if err := sendCardToTeams(cfg, detailsCard, logger); err != nil {
+			logger.Error("Failed to send details card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send guidance"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Details guidance sent"})
+
+	case "use_template":
+		// Show template selection card
+		templateCard, err := teams.GenerateTemplateSelectionCard(clarifyRequest.OriginalQuery)
+		if err != nil {
+			logger.Error("Failed to generate template selection card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate templates"})
+			return
+		}
+
+		if err := sendCardToTeams(cfg, templateCard, logger); err != nil {
+			logger.Error("Failed to send template card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send templates"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Template selection sent"})
+
+	case "apply_template":
+		// Show specific template guidance
+		if clarifyRequest.Template == "" {
+			logger.Error("Template type not specified")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Template type required"})
+			return
+		}
+
+		guidedCard, err := teams.GenerateGuidedTemplateCard(clarifyRequest.OriginalQuery, clarifyRequest.Template)
+		if err != nil {
+			logger.Error("Failed to generate guided template card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate template"})
+			return
+		}
+
+		if err := sendCardToTeams(cfg, guidedCard, logger); err != nil {
+			logger.Error("Failed to send guided template card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send template"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Guided template sent"})
+
+	case "show_templates":
+		// Navigate back to template selection
+		templateCard, err := teams.GenerateTemplateSelectionCard(clarifyRequest.OriginalQuery)
+		if err != nil {
+			logger.Error("Failed to generate template selection card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate templates"})
+			return
+		}
+
+		if err := sendCardToTeams(cfg, templateCard, logger); err != nil {
+			logger.Error("Failed to send template card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send templates"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Template selection sent"})
+
+	case "back_to_clarification":
+		// Generate a new clarification analysis
+		analyzer := clarification.NewAnalyzer()
+		analysis, err := analyzer.AnalyzeQuery(context.Background(), clarifyRequest.OriginalQuery, []session.Message{})
+		if err != nil {
+			logger.Error("Failed to analyze query for clarification", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Analysis failed"})
+			return
+		}
+
+		clarificationReq, err := analyzer.GenerateClarificationRequest(context.Background(), analysis)
+		if err != nil {
+			logger.Error("Failed to generate clarification request", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Clarification generation failed"})
+			return
+		}
+
+		// Convert to simple slices for card generation
+		questions := make([]string, len(clarificationReq.Questions))
+		for i, q := range clarificationReq.Questions {
+			questions[i] = q.Question
+		}
+
+		suggestions := clarificationReq.Suggestions
+
+		quickOptions := make([]string, len(clarificationReq.QuickOptions))
+		for i, opt := range clarificationReq.QuickOptions {
+			quickOptions[i] = opt.Text
+		}
+
+		clarificationCard, err := teams.GenerateClarificationCard(
+			clarifyRequest.OriginalQuery,
+			questions,
+			suggestions,
+			quickOptions,
+		)
+		if err != nil {
+			logger.Error("Failed to generate clarification card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate clarification"})
+			return
+		}
+
+		if err := sendCardToTeams(cfg, clarificationCard, logger); err != nil {
+			logger.Error("Failed to send clarification card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send clarification"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Clarification sent"})
+
+	default:
+		logger.Error("Invalid clarification action", zap.String("action", clarifyRequest.Action))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid action"})
+	}
+}
+
+// Helper functions for sending cards
+func sendResponseCard(cfg *config.Config, result *teams.OrchestrationResult, query string, logger *zap.Logger) error {
+	// Generate diagram URL if diagram exists
+	var diagramURL string
+	if result.Response.DiagramCode != "" {
+		diagramURL = generateDiagramURL(result.Response.DiagramCode)
+	}
+
+	// Generate the main response card
+	cardJSON, err := teams.GenerateCard(*result.Response, query, diagramURL)
+	if err != nil {
+		return fmt.Errorf("failed to generate response card: %w", err)
+	}
+
+	return sendCardToTeams(cfg, cardJSON, logger)
+}
+
+func sendErrorCard(cfg *config.Config, query, errorMessage string, logger *zap.Logger) {
+	errorCard, err := teams.GenerateSimpleCard("❌ Error", errorMessage)
+	if err != nil {
+		logger.Error("Failed to generate error card", zap.Error(err))
+		return
+	}
+
+	if err := sendCardToTeams(cfg, errorCard, logger); err != nil {
+		logger.Error("Failed to send error card to Teams", zap.Error(err))
+	}
+}
+
+func generateDiagramURL(diagramCode string) string {
+	// Simple placeholder - in real implementation this would call diagram service
+	return ""
 }
 
 // setupHealthChecks configures health checks for the teamsbot service
