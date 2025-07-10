@@ -18,6 +18,9 @@ class ChatApp {
 
         // Auto-resize textarea
         this.setupAutoResize();
+        
+        // Mobile touch gestures
+        this.setupTouchGestures();
     }
 
     initializeElements() {
@@ -1083,6 +1086,129 @@ class ChatApp {
     handleResize() {
         if (window.innerWidth > 768) {
             this.closeSidebar();
+        }
+    }
+
+    setupTouchGestures() {
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchEndX = 0;
+        let touchEndY = 0;
+        let isSwiping = false;
+        let isHorizontalSwipe = false;
+
+        const minSwipeDistance = 50;
+        const maxVerticalDeviation = 100;
+        const swipeThreshold = 0.3; // 30% of screen width
+
+        // Touch start handler
+        const handleTouchStart = (e) => {
+            if (window.innerWidth > 768) return; // Only on mobile
+            
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            isSwiping = true;
+            isHorizontalSwipe = false;
+        };
+
+        // Touch move handler
+        const handleTouchMove = (e) => {
+            if (!isSwiping || window.innerWidth > 768) return;
+
+            touchEndX = e.touches[0].clientX;
+            touchEndY = e.touches[0].clientY;
+
+            const deltaX = Math.abs(touchEndX - touchStartX);
+            const deltaY = Math.abs(touchEndY - touchStartY);
+
+            // Determine if this is a horizontal swipe
+            if (!isHorizontalSwipe && deltaX > 10) {
+                isHorizontalSwipe = deltaX > deltaY;
+                
+                if (isHorizontalSwipe) {
+                    // Prevent vertical scrolling during horizontal swipe
+                    e.preventDefault();
+                }
+            }
+
+            // Show visual feedback for swipe to open sidebar
+            if (isHorizontalSwipe && touchStartX < 50 && (touchEndX - touchStartX) > 20) {
+                const progress = Math.min((touchEndX - touchStartX) / (window.innerWidth * swipeThreshold), 1);
+                this.showSwipeProgress(progress);
+            }
+        };
+
+        // Touch end handler
+        const handleTouchEnd = (e) => {
+            if (!isSwiping || window.innerWidth > 768) return;
+
+            const deltaX = touchEndX - touchStartX;
+            const deltaY = Math.abs(touchEndY - touchStartY);
+
+            // Only process horizontal swipes
+            if (isHorizontalSwipe && Math.abs(deltaX) > minSwipeDistance && deltaY < maxVerticalDeviation) {
+                // Swipe right from left edge - open sidebar
+                if (deltaX > 0 && touchStartX < 50) {
+                    this.openSidebar();
+                }
+                // Swipe left - close sidebar
+                else if (deltaX < 0 && this.sidebar.classList.contains('open')) {
+                    this.closeSidebar();
+                }
+            }
+
+            // Reset state
+            this.hideSwipeProgress();
+            isSwiping = false;
+            isHorizontalSwipe = false;
+            touchStartX = 0;
+            touchStartY = 0;
+            touchEndX = 0;
+            touchEndY = 0;
+        };
+
+        // Attach touch listeners to main content area
+        this.messagesContainer.addEventListener('touchstart', handleTouchStart, { passive: false });
+        this.messagesContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+        this.messagesContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+        // Also attach to input area for swipe gestures
+        const inputContainer = document.querySelector('.input-container');
+        if (inputContainer) {
+            inputContainer.addEventListener('touchstart', handleTouchStart, { passive: false });
+            inputContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+            inputContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+        }
+
+        console.log('SA Assistant: Touch gestures initialized');
+    }
+
+    showSwipeProgress(progress) {
+        // Add visual feedback during swipe
+        if (!this.swipeIndicator) {
+            this.swipeIndicator = document.createElement('div');
+            this.swipeIndicator.className = 'swipe-indicator';
+            document.body.appendChild(this.swipeIndicator);
+        }
+        
+        this.swipeIndicator.style.width = `${progress * 100}%`;
+        this.swipeIndicator.style.opacity = Math.min(progress * 2, 0.3);
+    }
+
+    hideSwipeProgress() {
+        if (this.swipeIndicator) {
+            this.swipeIndicator.style.width = '0%';
+            this.swipeIndicator.style.opacity = '0';
+        }
+    }
+
+    openSidebar() {
+        this.sidebar.classList.add('open');
+        this.sidebarOverlay.classList.add('show');
+        
+        // Add haptic feedback if available
+        if (navigator.vibrate) {
+            navigator.vibrate(10);
         }
     }
 

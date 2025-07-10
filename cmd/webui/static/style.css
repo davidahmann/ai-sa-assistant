@@ -2451,3 +2451,181 @@ body {
         transition: width 0.2s ease;
     }
 }
+
+/* Touch Gesture Indicators */
+.swipe-indicator {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    background: linear-gradient(90deg, var(--color-primary-500), transparent);
+    width: 0%;
+    opacity: 0;
+    transition: opacity 0.1s ease-out;
+    pointer-events: none;
+    z-index: var(--z-toast);
+}
+
+/* PWA Install Button */
+.pwa-install-banner {
+    position: fixed;
+    bottom: var(--spacing-lg);
+    left: var(--spacing-lg);
+    right: var(--spacing-lg);
+    background: var(--color-primary-600);
+    color: var(--color-text-inverse);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    z-index: var(--z-toast);
+    transform: translateY(100%);
+    transition: var(--transition-base);
+}
+
+.pwa-install-banner.show {
+    display: flex;
+    transform: translateY(0);
+}
+
+.pwa-install-banner .install-text {
+    flex: 1;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+.pwa-install-banner .install-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.pwa-install-banner .btn-install {
+    background: var(--color-surface);
+    color: var(--color-primary-600);
+    border: none;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-lg);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.pwa-install-banner .btn-install:hover {
+    background: var(--color-neutral-100);
+}
+
+.pwa-install-banner .btn-dismiss {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: var(--color-text-inverse);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-lg);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.pwa-install-banner .btn-dismiss:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Enhanced Mobile Diagram Support */
+.diagram-container {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    touch-action: pan-x pan-y;
+}
+
+.diagram-zoom-controls {
+    position: absolute;
+    top: var(--spacing-sm);
+    right: var(--spacing-sm);
+    display: none;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    z-index: var(--z-dropdown);
+}
+
+.diagram-zoom-btn {
+    width: calc(var(--grid-unit) * 5); /* 40px */
+    height: calc(var(--grid-unit) * 5); /* 40px */
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    box-shadow: var(--shadow-sm);
+    transition: var(--transition-fast);
+    user-select: none;
+}
+
+.diagram-zoom-btn:hover {
+    background: var(--color-neutral-50);
+    transform: scale(1.05);
+}
+
+.diagram-zoom-btn:active {
+    transform: scale(0.95);
+}
+
+/* Enhanced Mobile Touch Targets */
+@media (max-width: 768px) {
+    .diagram-zoom-controls {
+        display: flex;
+    }
+    
+    .diagram-container {
+        touch-action: manipulation;
+    }
+    
+    /* Enhanced touch targets on mobile */
+    .example-btn {
+        min-height: calc(var(--grid-unit) * 6); /* 48px minimum touch target */
+        touch-action: manipulation;
+    }
+    
+    .conversation-item {
+        min-height: calc(var(--grid-unit) * 7); /* 56px minimum touch target */
+        touch-action: manipulation;
+    }
+    
+    .action-btn {
+        min-width: calc(var(--grid-unit) * 6); /* 48px minimum touch target */
+        min-height: calc(var(--grid-unit) * 6); /* 48px minimum touch target */
+        touch-action: manipulation;
+    }
+    
+    /* Improve text readability on mobile */
+    .message-content {
+        font-size: var(--font-size-base);
+        line-height: var(--line-height-relaxed);
+    }
+    
+    /* Enhanced mobile input area */
+    .input-area textarea {
+        font-size: max(var(--font-size-base), 16px); /* Prevent zoom on iOS */
+        touch-action: manipulation;
+    }
+    
+    /* Better mobile conversation list */
+    .conversation-title {
+        font-size: var(--font-size-base);
+        line-height: var(--line-height-normal);
+    }
+    
+    .conversation-meta {
+        font-size: var(--font-size-sm);
+    }
+}
