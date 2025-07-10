@@ -54,6 +54,20 @@ type OrchestrationResult struct {
 	FallbackUsed       bool
 	ExecutionTimeMs    int64
 	HealthChecksPassed bool
+	Query              string               // Query that was processed
+	PresetUsed         string               // Regeneration preset used (if any)
+	ProcessingTime     time.Duration        // Total processing time
+	Errors             []string             // List of errors encountered
+	Metrics            OrchestrationMetrics // Detailed metrics
+}
+
+// OrchestrationMetrics contains detailed timing and performance metrics
+type OrchestrationMetrics struct {
+	StartTime     time.Time
+	EndTime       time.Time
+	RetrievalTime time.Duration
+	WebSearchTime time.Duration
+	SynthesisTime time.Duration
 }
 
 // ServiceStatus represents the health status of a service
@@ -1126,4 +1140,165 @@ func (o *Orchestrator) storeResponseInSession(
 
 	// Store the assistant response
 	return o.sessionManager.AddMessage(ctx, sessionID, session.AssistantRole, responseContent, metadata)
+}
+
+// ProcessRegenerationQuery processes a regeneration request with specific parameters
+func (o *Orchestrator) ProcessRegenerationQuery(ctx context.Context, query, preset, previousResponse string) (*OrchestrationResult, error) {
+	startTime := time.Now()
+	o.logger.Info("Processing regeneration query",
+		zap.String("query", query),
+		zap.String("preset", preset),
+		zap.Bool("has_previous_response", previousResponse != ""))
+
+	// Create a specialized orchestration result for regeneration
+	result := &OrchestrationResult{
+		Query:      query,
+		PresetUsed: preset,
+		Metrics: OrchestrationMetrics{
+			StartTime: startTime,
+		},
+		Errors: []string{},
+	}
+
+	// Step 1: Retrieve context (same as normal query)
+	o.logger.Debug("Retrieving context for regeneration")
+	retrieveResp, err := o.callRetrieveServiceWithFallback(ctx, query, result)
+	if err != nil {
+		o.logger.Error("Failed to retrieve context for regeneration", zap.Error(err))
+		result.Errors = append(result.Errors, fmt.Sprintf("Context retrieval failed: %v", err))
+		return result, err
+	}
+
+	// Step 2: Web search (if applicable)
+	webResults := []string{}
+	needsWeb := o.needsFreshness(query)
+	if needsWeb {
+		o.logger.Debug("Performing web search for regeneration", zap.Bool("freshness_detected", true))
+		webResults = o.callWebSearchServiceWithFallback(ctx, query, result)
+	}
+
+	// Step 3: Call regeneration endpoint with custom parameters
+	o.logger.Debug("Calling regeneration service", zap.String("preset", preset))
+	regenerationResp, err := o.callRegenerationService(ctx, query, preset, previousResponse, retrieveResp, webResults, result)
+	if err != nil {
+		o.logger.Error("Failed to call regeneration service", zap.Error(err))
+		result.Errors = append(result.Errors, fmt.Sprintf("Regeneration failed: %v", err))
+		return result, err
+	}
+
+	// Step 4: Parse and validate response
+	if regenerationResp == nil {
+		err = fmt.Errorf("regeneration service returned empty response")
+		result.Errors = append(result.Errors, err.Error())
+		return result, err
+	}
+
+	result.Response = regenerationResp
+	result.ProcessingTime = time.Since(result.Metrics.StartTime)
+	result.Metrics.EndTime = time.Now()
+	result.ExecutionTimeMs = result.ProcessingTime.Milliseconds()
+
+	o.logger.Info("Regeneration query processing completed",
+		zap.String("preset", preset),
+		zap.Duration("processing_time", result.ProcessingTime),
+		zap.Int("response_length", len(regenerationResp.MainText)),
+		zap.Bool("has_diagram", regenerationResp.DiagramCode != ""),
+		zap.Int("sources_count", len(regenerationResp.Sources)))
+
+	return result, nil
+}
+
+// callRegenerationService calls the synthesis service with regeneration parameters
+func (o *Orchestrator) callRegenerationService(ctx context.Context, query, preset, previousResponse string, retrieveResp *RetrieveResponse, webResults []string, result *OrchestrationResult) (*synth.SynthesisResponse, error) {
+	// Build regeneration request
+	regenRequest := map[string]interface{}{
+		"query":                query,
+		"previous_response":    previousResponse,
+		"chunks":               []map[string]interface{}{},
+		"web_results":          []map[string]interface{}{},
+		"conversation_history": []map[string]interface{}{},
+		"parameters": map[string]interface{}{
+			"preset": preset,
+		},
+	}
+
+	// Add chunks from retrieve response
+	if retrieveResp != nil {
+		for _, chunk := range retrieveResp.Chunks {
+			regenRequest["chunks"] = append(regenRequest["chunks"].([]map[string]interface{}), map[string]interface{}{
+				"text":      chunk.Text,
+				"doc_id":    chunk.DocID,
+				"source_id": chunk.SourceID,
+			})
+		}
+	}
+
+	// Add web results (simple string format)
+	for i, webResult := range webResults {
+		regenRequest["web_results"] = append(regenRequest["web_results"].([]map[string]interface{}), map[string]interface{}{
+			"title":   fmt.Sprintf("Web Result %d", i+1),
+			"snippet": webResult,
+			"url":     "",
+		})
+	}
+
+	// Make HTTP request to regeneration endpoint
+	reqBody, err := json.Marshal(regenRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal regeneration request: %w", err)
+	}
+
+	regenerateURL := fmt.Sprintf("%s/regenerate", strings.TrimSuffix(o.config.Services.SynthesizeURL, "/"))
+
+	startTime := time.Now()
+	resp, err := http.Post(regenerateURL, "application/json", bytes.NewBuffer(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to call regeneration service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Record metrics
+	result.Metrics.SynthesisTime = time.Since(startTime)
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("regeneration service returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var regenResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&regenResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse regeneration response: %w", err)
+	}
+
+	// Convert to SynthesisResponse
+	mainText, _ := regenResponse["main_text"].(string)
+	diagramCode, _ := regenResponse["diagram_code"].(string)
+	sources := []string{}
+	if sourceList, ok := regenResponse["sources"].([]interface{}); ok {
+		for _, source := range sourceList {
+			if sourceStr, ok := source.(string); ok {
+				sources = append(sources, sourceStr)
+			}
+		}
+	}
+
+	codeSnippets := []synth.CodeSnippet{}
+	if snippetList, ok := regenResponse["code_snippets"].([]interface{}); ok {
+		for _, snippet := range snippetList {
+			if snippetMap, ok := snippet.(map[string]interface{}); ok {
+				codeSnippets = append(codeSnippets, synth.CodeSnippet{
+					Language: snippetMap["language"].(string),
+					Code:     snippetMap["code"].(string),
+				})
+			}
+		}
+	}
+
+	return &synth.SynthesisResponse{
+		MainText:     mainText,
+		DiagramCode:  diagramCode,
+		CodeSnippets: codeSnippets,
+		Sources:      sources,
+	}, nil
 }

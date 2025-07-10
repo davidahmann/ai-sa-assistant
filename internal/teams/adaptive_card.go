@@ -167,7 +167,7 @@ func GenerateCard(response synth.SynthesisResponse, query string, diagramURL str
 		})
 	}
 
-	// Feedback actions
+	// Feedback and regeneration actions
 	card.Actions = append(card.Actions,
 		CardAction{
 			Type:   "Action.Http",
@@ -191,6 +191,19 @@ func GenerateCard(response synth.SynthesisResponse, query string, diagramURL str
 				"response_id": responseID,
 				"feedback":    "negative",
 				"timestamp":   time.Now().Format(time.RFC3339),
+			},
+		},
+		CardAction{
+			Type:   "Action.Http",
+			Title:  "🔄 Regenerate",
+			Method: "POST",
+			URL:    "/teams-regenerate",
+			Body: map[string]interface{}{
+				"query":             query,
+				"response_id":       responseID,
+				"previous_response": response.MainText,
+				"action":            "show_options",
+				"timestamp":         time.Now().Format(time.RFC3339),
 			},
 		},
 	)
@@ -270,6 +283,205 @@ func CreateTeamsPayload(cardJSON string) (string, error) {
 	}
 
 	return string(payloadJSON), nil
+}
+
+// GenerateRegenerationOptionsCard creates a card with parameter selection options
+func GenerateRegenerationOptionsCard(query, responseID, previousResponse string) (string, error) {
+	card := AdaptiveCard{
+		Type:    "AdaptiveCard",
+		Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+		Version: "1.5",
+		Body:    []CardElement{},
+		Actions: []CardAction{},
+	}
+
+	// Header
+	card.Body = append(card.Body, CardElement{
+		Type:   "TextBlock",
+		Text:   "🔄 Regenerate Response",
+		Size:   "Medium",
+		Weight: "Bolder",
+		Color:  "Accent",
+	})
+
+	// Description
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    "Choose how you'd like the response to be regenerated:",
+		Wrap:    true,
+		Spacing: "Medium",
+	})
+
+	// Preset options
+	presetOptions := []struct {
+		preset      string
+		title       string
+		description string
+		emoji       string
+	}{
+		{"creative", "More Creative", "Higher creativity with varied approaches", "🎨"},
+		{"balanced", "Balanced", "Good balance of creativity and focus", "⚖️"},
+		{"focused", "More Focused", "Precise and deterministic responses", "🎯"},
+		{"detailed", "More Detailed", "Comprehensive and thorough responses", "📚"},
+		{"concise", "More Concise", "Brief and to-the-point responses", "⚡"},
+	}
+
+	// Add preset action buttons
+	for _, option := range presetOptions {
+		card.Actions = append(card.Actions, CardAction{
+			Type:   "Action.Http",
+			Title:  fmt.Sprintf("%s %s", option.emoji, option.title),
+			Method: "POST",
+			URL:    "/teams-regenerate",
+			Body: map[string]interface{}{
+				"query":             query,
+				"response_id":       responseID,
+				"previous_response": previousResponse,
+				"action":            "regenerate",
+				"preset":            option.preset,
+				"timestamp":         time.Now().Format(time.RFC3339),
+			},
+		})
+	}
+
+	// Cancel action
+	card.Actions = append(card.Actions, CardAction{
+		Type:   "Action.Http",
+		Title:  "❌ Cancel",
+		Method: "POST",
+		URL:    "/teams-feedback",
+		Body: map[string]interface{}{
+			"query":       query,
+			"response_id": responseID,
+			"action":      "cancel_regeneration",
+			"timestamp":   time.Now().Format(time.RFC3339),
+		},
+	})
+
+	// Marshal to JSON
+	cardJSON, err := json.MarshalIndent(card, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal regeneration options card: %w", err)
+	}
+
+	return string(cardJSON), nil
+}
+
+// GenerateComparisonCard creates a card showing both original and regenerated responses
+func GenerateComparisonCard(query, originalResponse, regeneratedResponse string, preset string) (string, error) {
+	responseID := generateResponseID()
+	card := AdaptiveCard{
+		Type:    "AdaptiveCard",
+		Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+		Version: "1.5",
+		Body:    []CardElement{},
+		Actions: []CardAction{},
+	}
+
+	// Header
+	card.Body = append(card.Body, CardElement{
+		Type:   "TextBlock",
+		Text:   "🔄 Regenerated Response",
+		Size:   "Medium",
+		Weight: "Bolder",
+		Color:  "Accent",
+	})
+
+	// Query
+	card.Body = append(card.Body, CardElement{
+		Type:      "TextBlock",
+		Text:      fmt.Sprintf("**Query:** %s", query),
+		Wrap:      true,
+		Spacing:   "Medium",
+		Separator: true,
+	})
+
+	// Preset used
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    fmt.Sprintf("**Generated with:** %s preset", strings.Title(preset)),
+		Weight:  "Bolder",
+		Spacing: "Small",
+		Color:   "Good",
+	})
+
+	// New response
+	card.Body = append(card.Body, CardElement{
+		Type:    "TextBlock",
+		Text:    regeneratedResponse,
+		Wrap:    true,
+		Spacing: "Medium",
+	})
+
+	// Original response (collapsible)
+	if originalResponse != "" {
+		card.Body = append(card.Body, CardElement{
+			Type:      "TextBlock",
+			Text:      "**Previous Response:**",
+			Weight:    "Bolder",
+			Spacing:   "Large",
+			Separator: true,
+		})
+
+		card.Body = append(card.Body, CardElement{
+			Type:    "TextBlock",
+			Text:    originalResponse,
+			Wrap:    true,
+			Spacing: "Small",
+			Color:   "Attention",
+		})
+	}
+
+	// Actions
+	card.Actions = append(card.Actions,
+		CardAction{
+			Type:   "Action.Http",
+			Title:  "👍 Better",
+			Method: "POST",
+			URL:    "/teams-feedback",
+			Body: map[string]interface{}{
+				"query":       query,
+				"response_id": responseID,
+				"feedback":    "regeneration_better",
+				"preset":      preset,
+				"timestamp":   time.Now().Format(time.RFC3339),
+			},
+		},
+		CardAction{
+			Type:   "Action.Http",
+			Title:  "👎 Worse",
+			Method: "POST",
+			URL:    "/teams-feedback",
+			Body: map[string]interface{}{
+				"query":       query,
+				"response_id": responseID,
+				"feedback":    "regeneration_worse",
+				"preset":      preset,
+				"timestamp":   time.Now().Format(time.RFC3339),
+			},
+		},
+		CardAction{
+			Type:   "Action.Http",
+			Title:  "🔄 Try Another",
+			Method: "POST",
+			URL:    "/teams-regenerate",
+			Body: map[string]interface{}{
+				"query":             query,
+				"response_id":       responseID,
+				"previous_response": regeneratedResponse,
+				"action":            "show_options",
+				"timestamp":         time.Now().Format(time.RFC3339),
+			},
+		},
+	)
+
+	// Marshal to JSON
+	cardJSON, err := json.MarshalIndent(card, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal comparison card: %w", err)
+	}
+
+	return string(cardJSON), nil
 }
 
 // generateResponseID generates a unique response ID for feedback correlation

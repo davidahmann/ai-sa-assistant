@@ -53,6 +53,74 @@ type SynthesisRequest struct {
 	ConversationHistory []session.Message `json:"conversation_history,omitempty"`
 }
 
+// RegenerationRequest represents a request to regenerate a response with different parameters
+type RegenerationRequest struct {
+	Query               string            `json:"query" binding:"required"`
+	Chunks              []ChunkItem       `json:"chunks"`
+	WebResults          []WebResult       `json:"web_results"`
+	ConversationHistory []session.Message `json:"conversation_history,omitempty"`
+	Parameters          GenerationParams  `json:"parameters"`
+	PreviousResponse    *string           `json:"previous_response,omitempty"`
+}
+
+// GenerationParams defines parameters for response generation
+type GenerationParams struct {
+	Temperature float32 `json:"temperature"`
+	MaxTokens   int     `json:"max_tokens"`
+	Model       string  `json:"model"`
+	Preset      string  `json:"preset"` // "creative", "balanced", "focused", "detailed", "concise"
+}
+
+// ParameterPreset defines predefined parameter combinations
+type ParameterPreset struct {
+	Name        string
+	Temperature float32
+	MaxTokens   int
+	Model       string
+	Description string
+}
+
+// getParameterPresets returns available parameter presets
+func getParameterPresets() map[string]ParameterPreset {
+	return map[string]ParameterPreset{
+		"creative": {
+			Name:        "creative",
+			Temperature: 0.8,
+			MaxTokens:   3000,
+			Model:       "gpt-4o",
+			Description: "More creative and varied responses with higher temperature",
+		},
+		"balanced": {
+			Name:        "balanced",
+			Temperature: 0.4,
+			MaxTokens:   2000,
+			Model:       "gpt-4o",
+			Description: "Balanced approach between creativity and focus",
+		},
+		"focused": {
+			Name:        "focused",
+			Temperature: 0.1,
+			MaxTokens:   2000,
+			Model:       "gpt-4o",
+			Description: "More focused and deterministic responses",
+		},
+		"detailed": {
+			Name:        "detailed",
+			Temperature: 0.3,
+			MaxTokens:   4000,
+			Model:       "gpt-4o",
+			Description: "Comprehensive and detailed responses",
+		},
+		"concise": {
+			Name:        "concise",
+			Temperature: 0.2,
+			MaxTokens:   1000,
+			Model:       "gpt-4o-mini",
+			Description: "Brief and to-the-point responses",
+		},
+	}
+}
+
 // ChunkItem represents a document chunk with metadata
 type ChunkItem struct {
 	Text     string `json:"text" binding:"required"`
@@ -100,6 +168,89 @@ func validateSynthesisRequest(req SynthesisRequest) error {
 	}
 
 	return nil
+}
+
+// validateRegenerationRequest validates the regeneration request
+func validateRegenerationRequest(req RegenerationRequest) error {
+	// First validate as a basic synthesis request
+	synthReq := SynthesisRequest{
+		Query:               req.Query,
+		Chunks:              req.Chunks,
+		WebResults:          req.WebResults,
+		ConversationHistory: req.ConversationHistory,
+	}
+	if err := validateSynthesisRequest(synthReq); err != nil {
+		return fmt.Errorf("base validation failed: %w", err)
+	}
+
+	// Validate parameters
+	if err := validateGenerationParams(req.Parameters); err != nil {
+		return fmt.Errorf("parameter validation failed: %w", err)
+	}
+
+	return nil
+}
+
+// validateGenerationParams validates generation parameters
+func validateGenerationParams(params GenerationParams) error {
+	presets := getParameterPresets()
+
+	// If preset is specified, validate it exists
+	if params.Preset != "" {
+		if _, exists := presets[params.Preset]; !exists {
+			availablePresets := make([]string, 0, len(presets))
+			for name := range presets {
+				availablePresets = append(availablePresets, name)
+			}
+			return fmt.Errorf("invalid preset '%s', available presets: %v", params.Preset, availablePresets)
+		}
+	}
+
+	// Validate temperature range
+	if params.Temperature < 0.0 || params.Temperature > 2.0 {
+		return fmt.Errorf("temperature must be between 0.0 and 2.0, got %f", params.Temperature)
+	}
+
+	// Validate max tokens
+	if params.MaxTokens < 100 || params.MaxTokens > 8000 {
+		return fmt.Errorf("max_tokens must be between 100 and 8000, got %d", params.MaxTokens)
+	}
+
+	// Validate model
+	validModels := []string{"gpt-4o", "gpt-4o-mini", "gpt-4-turbo"}
+	modelValid := false
+	for _, validModel := range validModels {
+		if params.Model == validModel {
+			modelValid = true
+			break
+		}
+	}
+	if !modelValid {
+		return fmt.Errorf("invalid model '%s', valid models: %v", params.Model, validModels)
+	}
+
+	return nil
+}
+
+// applyParameterPreset applies a preset to generation parameters
+func applyParameterPreset(params *GenerationParams) {
+	if params.Preset == "" {
+		return
+	}
+
+	presets := getParameterPresets()
+	if preset, exists := presets[params.Preset]; exists {
+		// Only override if not explicitly set
+		if params.Temperature == 0 {
+			params.Temperature = preset.Temperature
+		}
+		if params.MaxTokens == 0 {
+			params.MaxTokens = preset.MaxTokens
+		}
+		if params.Model == "" {
+			params.Model = preset.Model
+		}
+	}
 }
 
 func main() {
@@ -189,6 +340,8 @@ func setupRouter(cfg *config.Config, logger *zap.Logger, openaiClient *internalo
 
 	router.GET("/health", gin.WrapH(healthManager.HTTPHandler()))
 	router.POST("/synthesize", createSynthesisHandler(cfg, logger, openaiClient))
+	router.POST("/regenerate", createRegenerationHandler(cfg, logger, openaiClient))
+	router.GET("/presets", createPresetsHandler())
 
 	return router
 }
@@ -288,6 +441,57 @@ func createSynthesisHandler(
 	}
 }
 
+// createRegenerationHandler creates the regeneration endpoint handler
+func createRegenerationHandler(
+	cfg *config.Config,
+	logger *zap.Logger,
+	openaiClient *internalopenai.Client,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		startTime := time.Now()
+
+		logger.Info("Regeneration request received",
+			zap.String("client_ip", c.ClientIP()),
+			zap.String("user_agent", c.GetHeader("User-Agent")),
+		)
+
+		// Parse and validate regeneration request
+		req, valid := parseRegenerationRequest(c, logger)
+		if !valid {
+			return
+		}
+
+		// Apply preset parameters
+		applyParameterPreset(&req.Parameters)
+
+		// Process the regeneration request
+		response, err := processRegenerationRequest(req, cfg, logger, openaiClient)
+		if err != nil {
+			logger.Error("Regeneration processing failed", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to process regeneration request",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		// Log completion and return response
+		processingTime := time.Since(startTime)
+		logRegenerationCompletion(req, response, processingTime, logger)
+		c.JSON(http.StatusOK, buildRegenerationResponse(response, req.Parameters, processingTime))
+	}
+}
+
+// createPresetsHandler creates the presets endpoint handler
+func createPresetsHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		presets := getParameterPresets()
+		c.JSON(http.StatusOK, gin.H{
+			"presets": presets,
+		})
+	}
+}
+
 // parseSynthesisRequest parses and validates the synthesis request
 func parseSynthesisRequest(c *gin.Context, logger *zap.Logger) (SynthesisRequest, bool) {
 	var req SynthesisRequest
@@ -302,6 +506,30 @@ func parseSynthesisRequest(c *gin.Context, logger *zap.Logger) (SynthesisRequest
 
 	if err := validateSynthesisRequest(req); err != nil {
 		logger.Error("Invalid synthesis request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request",
+			"details": err.Error(),
+		})
+		return req, false
+	}
+
+	return req, true
+}
+
+// parseRegenerationRequest parses and validates the regeneration request
+func parseRegenerationRequest(c *gin.Context, logger *zap.Logger) (RegenerationRequest, bool) {
+	var req RegenerationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error("Failed to parse regeneration request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request format",
+			"details": err.Error(),
+		})
+		return req, false
+	}
+
+	if err := validateRegenerationRequest(req); err != nil {
+		logger.Error("Invalid regeneration request", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request",
 			"details": err.Error(),
@@ -350,6 +578,78 @@ func processSynthesisRequest(
 			},
 		},
 	})
+}
+
+// processRegenerationRequest handles the core regeneration logic with custom parameters
+func processRegenerationRequest(
+	req RegenerationRequest,
+	cfg *config.Config,
+	logger *zap.Logger,
+	openaiClient *internalopenai.Client,
+) (*internalopenai.ChatCompletionResponse, error) {
+	// Convert request to internal format
+	contextItems := convertChunksToContextItems(req.Chunks)
+	webResultStrings, webSourceURLs := convertWebResults(req.WebResults)
+
+	// Validate source metadata
+	if err := validateSynthesisSourceMetadata(contextItems, webSourceURLs, logger); err != nil {
+		logger.Warn("Source metadata validation failed, continuing with available data",
+			zap.Error(err),
+			zap.Int("context_items", len(contextItems)),
+			zap.Int("web_sources", len(webSourceURLs)))
+		// Continue processing despite validation warnings
+	}
+
+	// Build enhanced prompt for regeneration
+	prompt := buildRegenerationPrompt(req.Query, contextItems, webResultStrings, req.ConversationHistory, req.PreviousResponse)
+
+	// Call OpenAI Chat Completion API with custom parameters
+	ctx, cancel := context.WithTimeout(context.Background(), SynthesisRequestTimeout)
+	defer cancel()
+
+	logger.Info("Regenerating with custom parameters",
+		zap.String("preset", req.Parameters.Preset),
+		zap.String("model", req.Parameters.Model),
+		zap.Float64("temperature", float64(req.Parameters.Temperature)),
+		zap.Int("max_tokens", req.Parameters.MaxTokens),
+	)
+
+	return openaiClient.CreateChatCompletion(ctx, internalopenai.ChatCompletionRequest{
+		Model:       req.Parameters.Model,
+		MaxTokens:   req.Parameters.MaxTokens,
+		Temperature: req.Parameters.Temperature,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+	})
+}
+
+// buildRegenerationPrompt builds a specialized prompt for regeneration requests
+func buildRegenerationPrompt(query string, contextItems []synth.ContextItem, webResultStrings []string, conversationHistory []session.Message, previousResponse *string) string {
+	// Start with the base prompt
+	prompt := synth.BuildPromptWithConversation(query, contextItems, webResultStrings, conversationHistory)
+
+	// Add regeneration-specific instructions if we have a previous response
+	if previousResponse != nil && *previousResponse != "" {
+		prompt += fmt.Sprintf(`
+
+--- Previous Response ---
+%s
+
+--- Regeneration Instructions ---
+Please provide an alternative response to the same query. Consider:
+1. Different perspectives or approaches to the problem
+2. Alternative architectural patterns or solutions
+3. Varied level of technical detail
+4. Different emphasis areas (cost, security, performance, etc.)
+
+Generate a fresh response that covers the same query but with a different angle or approach.`, *previousResponse)
+	}
+
+	return prompt
 }
 
 // convertChunksToContextItems converts request chunks to internal context items
@@ -435,6 +735,50 @@ func logSynthesisCompletion(
 	)
 }
 
+// logRegenerationCompletion logs regeneration completion details
+func logRegenerationCompletion(
+	req RegenerationRequest,
+	response *internalopenai.ChatCompletionResponse,
+	processingTime time.Duration,
+	logger *zap.Logger,
+) {
+	allAvailableSources := make([]string, 0, len(req.Chunks)+len(req.WebResults))
+	for _, chunk := range req.Chunks {
+		// Prefer SourceID if available, otherwise use DocID
+		if chunk.SourceID != "" {
+			allAvailableSources = append(allAvailableSources, chunk.SourceID)
+		} else if chunk.DocID != "" {
+			allAvailableSources = append(allAvailableSources, chunk.DocID)
+		}
+	}
+	for _, webResult := range req.WebResults {
+		if webResult.URL != "" {
+			allAvailableSources = append(allAvailableSources, webResult.URL)
+		}
+	}
+
+	synthesisResponse := synth.ParseResponseWithSources(response.Content, allAvailableSources)
+
+	logger.Info("Regeneration completed",
+		zap.String("query", req.Query),
+		zap.String("preset", req.Parameters.Preset),
+		zap.String("model", req.Parameters.Model),
+		zap.Float64("temperature", float64(req.Parameters.Temperature)),
+		zap.Int("max_tokens", req.Parameters.MaxTokens),
+		zap.Int("context_items", len(req.Chunks)),
+		zap.Int("web_results", len(req.WebResults)),
+		zap.Int("total_tokens", response.Usage.TotalTokens),
+		zap.Int("prompt_tokens", response.Usage.PromptTokens),
+		zap.Int("completion_tokens", response.Usage.CompletionTokens),
+		zap.Duration("processing_time", processingTime),
+		zap.Int("response_length", len(synthesisResponse.MainText)),
+		zap.Int("sources_count", len(synthesisResponse.Sources)),
+		zap.Int("code_snippets_count", len(synthesisResponse.CodeSnippets)),
+		zap.Bool("has_diagram", synthesisResponse.DiagramCode != ""),
+		zap.Bool("has_previous_response", req.PreviousResponse != nil),
+	)
+}
+
 // buildSynthesisResponse builds the final synthesis response
 func buildSynthesisResponse(
 	response *internalopenai.ChatCompletionResponse,
@@ -455,6 +799,37 @@ func buildSynthesisResponse(
 			"prompt_tokens":     response.Usage.PromptTokens,
 			"completion_tokens": response.Usage.CompletionTokens,
 			"model":             cfg.Synthesis.Model,
+		},
+	}
+}
+
+// buildRegenerationResponse builds the final regeneration response
+func buildRegenerationResponse(
+	response *internalopenai.ChatCompletionResponse,
+	params GenerationParams,
+	processingTime time.Duration,
+) gin.H {
+	allAvailableSources := []string{} // Simplified for response building
+	synthesisResponse := synth.ParseResponseWithSources(response.Content, allAvailableSources)
+
+	return gin.H{
+		"main_text":     synthesisResponse.MainText,
+		"diagram_code":  synthesisResponse.DiagramCode,
+		"code_snippets": synthesisResponse.CodeSnippets,
+		"sources":       synthesisResponse.Sources,
+		"regeneration": gin.H{
+			"preset":      params.Preset,
+			"temperature": params.Temperature,
+			"max_tokens":  params.MaxTokens,
+			"model":       params.Model,
+		},
+		"metadata": gin.H{
+			"processing_time":   processingTime.Milliseconds(),
+			"total_tokens":      response.Usage.TotalTokens,
+			"prompt_tokens":     response.Usage.PromptTokens,
+			"completion_tokens": response.Usage.CompletionTokens,
+			"model":             params.Model,
+			"is_regeneration":   true,
 		},
 	}
 }

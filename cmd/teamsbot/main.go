@@ -157,6 +157,11 @@ func main() {
 		handleFeedback(c, cfg, feedbackLogger, logger)
 	})
 
+	// Regeneration endpoint
+	router.POST("/teams-regenerate", func(c *gin.Context) {
+		handleRegeneration(c, cfg, orchestrator, feedbackLogger, logger)
+	})
+
 	// Conversation API endpoints (if enabled)
 	if cfg.Session.EnableConversationAPI {
 		conversationAPIHandler := conversation.NewAPIHandler(conversationManager, logger)
@@ -520,6 +525,16 @@ type FeedbackRequest struct {
 	Timestamp  string `json:"timestamp,omitempty"`
 }
 
+// RegenerationRequest represents a request to regenerate a response
+type RegenerationRequest struct {
+	Query            string `json:"query"`
+	ResponseID       string `json:"response_id,omitempty"`
+	PreviousResponse string `json:"previous_response,omitempty"`
+	Action           string `json:"action"` // "show_options" or "regenerate"
+	Preset           string `json:"preset,omitempty"`
+	Timestamp        string `json:"timestamp,omitempty"`
+}
+
 // handleFeedback handles feedback submissions
 func handleFeedback(c *gin.Context, _ *config.Config, feedbackLogger *feedback.Logger, logger *zap.Logger) {
 	var feedbackRequest FeedbackRequest
@@ -561,6 +576,126 @@ func handleFeedback(c *gin.Context, _ *config.Config, feedbackLogger *feedback.L
 		zap.String("user_id", userID))
 
 	c.JSON(http.StatusOK, gin.H{"message": "Feedback received"})
+}
+
+// handleRegeneration handles regeneration requests
+func handleRegeneration(c *gin.Context, cfg *config.Config, orchestrator *teams.Orchestrator, feedbackLogger *feedback.Logger, logger *zap.Logger) {
+	var regenRequest RegenerationRequest
+	if err := c.ShouldBindJSON(&regenRequest); err != nil {
+		logger.Error("Failed to parse regeneration request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid regeneration request format"})
+		return
+	}
+
+	logger.Info("Received regeneration request",
+		zap.String("query", regenRequest.Query),
+		zap.String("action", regenRequest.Action),
+		zap.String("preset", regenRequest.Preset),
+		zap.String("response_id", regenRequest.ResponseID))
+
+	switch regenRequest.Action {
+	case "show_options":
+		// Generate and send regeneration options card
+		optionsCard, err := teams.GenerateRegenerationOptionsCard(regenRequest.Query, regenRequest.ResponseID, regenRequest.PreviousResponse)
+		if err != nil {
+			logger.Error("Failed to generate regeneration options card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate options"})
+			return
+		}
+
+		// Send the options card to Teams
+		if err := sendCardToTeams(cfg, optionsCard, logger); err != nil {
+			logger.Error("Failed to send options card to Teams", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send options"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Regeneration options sent"})
+
+	case "regenerate":
+		// Validate preset
+		if regenRequest.Preset == "" {
+			logger.Error("No preset specified for regeneration")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Preset required for regeneration"})
+			return
+		}
+
+		// Call orchestrator to perform regeneration
+		result, err := orchestrator.ProcessRegenerationQuery(context.Background(), regenRequest.Query, regenRequest.Preset, regenRequest.PreviousResponse)
+		if err != nil {
+			logger.Error("Failed to process regeneration", zap.Error(err))
+			sendErrorCardToTeams(cfg, regenRequest.Query, fmt.Sprintf("Regeneration failed: %v", err), logger)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Regeneration failed"})
+			return
+		}
+
+		// Generate comparison card with original and regenerated responses
+		comparisonCard, err := teams.GenerateComparisonCard(regenRequest.Query, regenRequest.PreviousResponse, result.Response.MainText, regenRequest.Preset)
+		if err != nil {
+			logger.Error("Failed to generate comparison card", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate comparison"})
+			return
+		}
+
+		// Send the comparison card to Teams
+		if err := sendCardToTeams(cfg, comparisonCard, logger); err != nil {
+			logger.Error("Failed to send comparison card to Teams", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send comparison"})
+			return
+		}
+
+		// Log the regeneration for feedback analysis
+		userID := extractUserIDFromRequest(c)
+		if err := feedbackLogger.LogFeedbackWithContext(
+			regenRequest.Query,
+			fmt.Sprintf("regeneration_requested_%s", regenRequest.Preset),
+			userID,
+			regenRequest.ResponseID,
+		); err != nil {
+			logger.Warn("Failed to log regeneration feedback", zap.Error(err))
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Regeneration completed"})
+
+	default:
+		logger.Error("Invalid regeneration action", zap.String("action", regenRequest.Action))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid action"})
+	}
+}
+
+// sendCardToTeams sends an Adaptive Card to Teams via webhook
+func sendCardToTeams(cfg *config.Config, cardJSON string, logger *zap.Logger) error {
+	payload, err := teams.CreateTeamsPayload(cardJSON)
+	if err != nil {
+		return fmt.Errorf("failed to create Teams payload: %w", err)
+	}
+
+	resp, err := http.Post(cfg.Teams.WebhookURL, "application/json", strings.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to send to Teams: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Teams webhook returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	logger.Debug("Successfully sent card to Teams", zap.Int("status_code", resp.StatusCode))
+	return nil
+}
+
+// sendErrorCardToTeams sends a simple error card to Teams
+func sendErrorCardToTeams(cfg *config.Config, query, errorMessage string, logger *zap.Logger) {
+	errorCard, err := teams.GenerateSimpleCard("❌ Error", errorMessage)
+	if err != nil {
+		logger.Error("Failed to generate error card", zap.Error(err))
+		return
+	}
+
+	if err := sendCardToTeams(cfg, errorCard, logger); err != nil {
+		logger.Error("Failed to send error card to Teams", zap.Error(err))
+	}
 }
 
 // sanitizeFeedbackQuery removes sensitive information from queries before logging
