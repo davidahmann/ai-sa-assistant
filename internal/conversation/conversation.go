@@ -221,7 +221,11 @@ func (m *Manager) DeleteConversation(ctx context.Context, conversationID string)
 }
 
 // GetConversationHistory returns the full message history for a conversation
-func (m *Manager) GetConversationHistory(ctx context.Context, conversationID string, maxMessages int) ([]session.Message, error) {
+func (m *Manager) GetConversationHistory(
+	ctx context.Context,
+	conversationID string,
+	maxMessages int,
+) ([]session.Message, error) {
 	if maxMessages <= 0 {
 		maxMessages = 50 // Default limit
 	}
@@ -235,7 +239,13 @@ func (m *Manager) GetConversationHistory(ctx context.Context, conversationID str
 }
 
 // AddMessageToConversation adds a message to a conversation
-func (m *Manager) AddMessageToConversation(ctx context.Context, conversationID string, role session.MessageRole, content string, metadata map[string]interface{}) error {
+func (m *Manager) AddMessageToConversation(
+	ctx context.Context,
+	conversationID string,
+	role session.MessageRole,
+	content string,
+	metadata map[string]interface{},
+) error {
 	if err := m.sessionManager.AddMessage(ctx, conversationID, role, content, metadata); err != nil {
 		return fmt.Errorf("failed to add message to conversation: %w", err)
 	}
@@ -248,7 +258,11 @@ func (m *Manager) AddMessageToConversation(ctx context.Context, conversationID s
 }
 
 // SearchConversations searches conversations by title or content
-func (m *Manager) SearchConversations(ctx context.Context, userID, query string, limit int) ([]ConversationSummary, error) {
+func (m *Manager) SearchConversations(
+	ctx context.Context,
+	userID, query string,
+	limit int,
+) ([]ConversationSummary, error) {
 	if limit <= 0 {
 		limit = 10
 	}

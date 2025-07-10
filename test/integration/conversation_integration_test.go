@@ -52,8 +52,8 @@ func SetupIntegrationTest(t *testing.T) *TestSetup {
 	logger := zaptest.NewLogger(t)
 
 	// Set test mode to avoid OpenAI API requirements
-	os.Setenv("TEST_MODE", "true")
-	defer os.Unsetenv("TEST_MODE")
+	_ = os.Setenv("TEST_MODE", "true")
+	defer func() { _ = os.Unsetenv("TEST_MODE") }()
 
 	// Create session manager
 	sessionConfig := session.Config{
@@ -117,7 +117,7 @@ func TestMultiTurnConversationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create conversation: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", resp.StatusCode)
@@ -147,7 +147,7 @@ func TestMultiTurnConversationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get conversation: %v", err)
 	}
-	defer conversationResp.Body.Close()
+	defer func() { _ = conversationResp.Body.Close() }()
 
 	var updatedConversation struct {
 		Title string `json:"title"`
@@ -180,7 +180,7 @@ func TestMultiTurnConversationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get conversation history: %v", err)
 	}
-	defer historyResp.Body.Close()
+	defer func() { _ = historyResp.Body.Close() }()
 
 	var historyResponse struct {
 		ConversationID string            `json:"conversation_id"`
@@ -226,7 +226,7 @@ func TestMultiTurnConversationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get stats: %v", err)
 	}
-	defer statsResp.Body.Close()
+	defer func() { _ = statsResp.Body.Close() }()
 
 	var stats map[string]interface{}
 	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
@@ -247,7 +247,7 @@ func TestMultiTurnConversationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to search conversations: %v", err)
 	}
-	defer searchResp.Body.Close()
+	defer func() { _ = searchResp.Body.Close() }()
 
 	var searchResults struct {
 		Query         string                             `json:"query"`
@@ -287,7 +287,7 @@ func TestSessionExpiration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create short TTL session manager: %v", err)
 	}
-	defer shortSessionManager.Close()
+	defer func() { _ = shortSessionManager.Close() }()
 
 	// Create conversation
 	sess, err := shortSessionManager.CreateSession(ctx, userID)

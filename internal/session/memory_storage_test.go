@@ -373,7 +373,7 @@ func TestMemoryStorageErrorCases(t *testing.T) {
 		Status:    SessionActive,
 	}
 
-	err = storage.Set(ctx, pastSession, -time.Hour)
+	_ = storage.Set(ctx, pastSession, -time.Hour)
 	// Note: Memory storage doesn't validate TTL - it just stores sessions
 	// This test verifies the behavior is consistent
 }

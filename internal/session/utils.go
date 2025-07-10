@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -44,12 +45,17 @@ func GenerateMessageID() string {
 	return "msg_" + hex.EncodeToString(bytes)
 }
 
+const (
+	// DefaultConversationTitle is used when no content is available for title generation
+	DefaultConversationTitle = "New Conversation"
+)
+
 // GenerateTitle generates a conversation title from the first user message
 func GenerateTitle(content string) string {
 	// Clean up the content
 	content = strings.TrimSpace(content)
 	if content == "" {
-		return "New Conversation"
+		return DefaultConversationTitle
 	}
 
 	// Remove bot mentions and common prefixes
@@ -76,7 +82,7 @@ func GenerateTitle(content string) string {
 	content = regexp.MustCompile(`\s+`).ReplaceAllString(content, " ")
 
 	if content == "" {
-		return "New Conversation"
+		return DefaultConversationTitle
 	}
 
 	return content
@@ -246,11 +252,20 @@ func BuildConversationContext(messages []Message) string {
 	builder.WriteString("## Previous Conversation Context\n\n")
 
 	for _, msg := range messages {
-		roleStr := strings.Title(string(msg.Role))
+		roleStr := toTitle(string(msg.Role))
 		builder.WriteString(fmt.Sprintf("**%s**: %s\n\n", roleStr, msg.Content))
 	}
 
 	return builder.String()
+}
+
+// toTitle converts the first character of a string to uppercase (replacement for deprecated strings.Title)
+func toTitle(s string) string {
+	if s == "" {
+		return s
+	}
+	r, size := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 // GetUserQueryFromMessages extracts the most recent user query from messages

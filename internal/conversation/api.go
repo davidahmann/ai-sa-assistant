@@ -312,7 +312,8 @@ func (h *APIHandler) addMessage(c *gin.Context) {
 		return
 	}
 
-	if err := h.manager.AddMessageToConversation(c.Request.Context(), conversationID, role, content, req.Metadata); err != nil {
+	ctx := c.Request.Context()
+	if err := h.manager.AddMessageToConversation(ctx, conversationID, role, content, req.Metadata); err != nil {
 		h.logger.Error("Failed to add message to conversation",
 			zap.String("id", conversationID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add message"})
@@ -397,7 +398,9 @@ func (h *APIHandler) CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Credentials", "true")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		allowedHeaders := "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, " +
+			"Authorization, accept, origin, Cache-Control, X-Requested-With"
+		c.Header("Access-Control-Allow-Headers", allowedHeaders)
 		c.Header("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
 
 		if c.Request.Method == "OPTIONS" {

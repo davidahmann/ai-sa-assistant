@@ -41,7 +41,7 @@ func NewMemoryStorage(maxSessions int) *MemoryStorage {
 }
 
 // Get retrieves a session by ID
-func (m *MemoryStorage) Get(ctx context.Context, sessionID string) (*Session, error) {
+func (m *MemoryStorage) Get(_ context.Context, sessionID string) (*Session, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -62,7 +62,7 @@ func (m *MemoryStorage) Get(ctx context.Context, sessionID string) (*Session, er
 }
 
 // Set stores a session with optional TTL
-func (m *MemoryStorage) Set(ctx context.Context, session *Session, ttl time.Duration) error {
+func (m *MemoryStorage) Set(_ context.Context, session *Session, ttl time.Duration) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -93,7 +93,7 @@ func (m *MemoryStorage) Set(ctx context.Context, session *Session, ttl time.Dura
 }
 
 // Delete removes a session
-func (m *MemoryStorage) Delete(ctx context.Context, sessionID string) error {
+func (m *MemoryStorage) Delete(_ context.Context, sessionID string) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -113,7 +113,7 @@ func (m *MemoryStorage) Delete(ctx context.Context, sessionID string) error {
 }
 
 // List returns all sessions for a user
-func (m *MemoryStorage) List(ctx context.Context, userID string) ([]*Session, error) {
+func (m *MemoryStorage) List(_ context.Context, userID string) ([]*Session, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -137,7 +137,7 @@ func (m *MemoryStorage) List(ctx context.Context, userID string) ([]*Session, er
 }
 
 // Exists checks if a session exists
-func (m *MemoryStorage) Exists(ctx context.Context, sessionID string) (bool, error) {
+func (m *MemoryStorage) Exists(_ context.Context, sessionID string) (bool, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -146,7 +146,7 @@ func (m *MemoryStorage) Exists(ctx context.Context, sessionID string) (bool, err
 }
 
 // UpdateExpiry updates the expiry time for a session
-func (m *MemoryStorage) UpdateExpiry(ctx context.Context, sessionID string, expiresAt time.Time) error {
+func (m *MemoryStorage) UpdateExpiry(_ context.Context, sessionID string, expiresAt time.Time) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -162,7 +162,7 @@ func (m *MemoryStorage) UpdateExpiry(ctx context.Context, sessionID string, expi
 }
 
 // Cleanup removes expired sessions
-func (m *MemoryStorage) Cleanup(ctx context.Context) error {
+func (m *MemoryStorage) Cleanup(_ context.Context) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -301,11 +301,12 @@ func (m *MemoryStorage) estimateMemoryUsage() string {
 	// Rough estimate: session metadata + message content
 	estimatedBytes := len(m.sessions)*200 + totalContent
 
-	if estimatedBytes < 1024 {
+	switch {
+	case estimatedBytes < 1024:
 		return fmt.Sprintf("%d bytes", estimatedBytes)
-	} else if estimatedBytes < 1024*1024 {
+	case estimatedBytes < 1024*1024:
 		return fmt.Sprintf("%.1f KB", float64(estimatedBytes)/1024)
-	} else {
+	default:
 		return fmt.Sprintf("%.1f MB", float64(estimatedBytes)/(1024*1024))
 	}
 }

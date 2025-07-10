@@ -222,7 +222,13 @@ func (m *Manager) UpdateSession(ctx context.Context, session *Session) error {
 }
 
 // AddMessage adds a message to a session
-func (m *Manager) AddMessage(ctx context.Context, sessionID string, role MessageRole, content string, metadata map[string]interface{}) error {
+func (m *Manager) AddMessage(
+	ctx context.Context,
+	sessionID string,
+	role MessageRole,
+	content string,
+	metadata map[string]interface{},
+) error {
 	session, err := m.GetSession(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
@@ -367,7 +373,7 @@ func (m *Manager) Close() error {
 }
 
 // GetStats returns session statistics
-func (m *Manager) GetStats(ctx context.Context) (map[string]interface{}, error) {
+func (m *Manager) GetStats(_ context.Context) (map[string]interface{}, error) {
 	// This is a simplified version - in a production system you'd want more detailed metrics
 	stats := map[string]interface{}{
 		"storage_type": string(m.config.StorageType),

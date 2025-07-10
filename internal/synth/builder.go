@@ -107,10 +107,17 @@ func BuildPrompt(query string, contextItems []ContextItem, webResults []string) 
 }
 
 // BuildPromptWithConversation combines context and conversation history into a comprehensive prompt for the LLM
-func BuildPromptWithConversation(query string, contextItems []ContextItem, webResults []string, conversationHistory []session.Message) string {
+func BuildPromptWithConversation(
+	query string,
+	contextItems []ContextItem,
+	webResults []string,
+	conversationHistory []session.Message,
+) string {
 	config := DefaultPromptConfig()
 	config.QueryType = DetectQueryType(query)
-	return BuildPromptWithConversationAndConfig(query, contextItems, webResults, conversationHistory, config)
+	return BuildPromptWithConversationAndConfig(
+		query, contextItems, webResults, conversationHistory, config,
+	)
 }
 
 // BuildPromptWithConfig combines context into a comprehensive prompt with configuration
@@ -163,8 +170,15 @@ func BuildPromptWithConfig(query string, contextItems []ContextItem, webResults 
 	return finalPrompt
 }
 
-// BuildPromptWithConversationAndConfig combines context and conversation history into a comprehensive prompt with configuration
-func BuildPromptWithConversationAndConfig(query string, contextItems []ContextItem, webResults []string, conversationHistory []session.Message, config PromptConfig) string {
+// BuildPromptWithConversationAndConfig combines context and conversation history
+// into a comprehensive prompt with configuration
+func BuildPromptWithConversationAndConfig(
+	query string,
+	contextItems []ContextItem,
+	webResults []string,
+	conversationHistory []session.Message,
+	config PromptConfig,
+) string {
 	// Validate and deduplicate sources before processing
 	validatedContext, err := ValidateAndDeduplicateSources(contextItems)
 	if err != nil {

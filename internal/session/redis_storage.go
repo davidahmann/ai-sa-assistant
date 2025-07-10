@@ -44,7 +44,7 @@ type RedisClient interface {
 }
 
 // NewRedisStorage creates a new Redis session storage
-func NewRedisStorage(redisURL string, logger *zap.Logger) (*RedisStorage, error) {
+func NewRedisStorage(_ string, _ *zap.Logger) (*RedisStorage, error) {
 	// For now, we'll return an error since Redis client implementation
 	// would require adding the go-redis dependency to go.mod
 	// In a real implementation, you would:
@@ -52,7 +52,7 @@ func NewRedisStorage(redisURL string, logger *zap.Logger) (*RedisStorage, error)
 	// 2. Create a Redis client instance
 	// 3. Test the connection
 
-	return nil, fmt.Errorf("Redis storage not implemented in demo - use memory storage instead")
+	return nil, fmt.Errorf("redis storage not implemented in demo - use memory storage instead")
 }
 
 // Get retrieves a session by ID

@@ -138,7 +138,9 @@ func (o *Orchestrator) ProcessQuery(ctx context.Context, query string, userID st
 	}
 
 	// Step 4: Call synthesize service with fallback (including conversation context)
-	synthesizeResponse, err := o.callSynthesizeServiceWithFallback(ctx, query, retrieveResponse, webResults, conversationHistory, result)
+	synthesizeResponse, err := o.callSynthesizeServiceWithFallback(
+		ctx, query, retrieveResponse, webResults, conversationHistory, result,
+	)
 	if err != nil {
 		result.Error = fmt.Errorf("synthesize service failed: %w", err)
 		result.ExecutionTimeMs = time.Since(startTime).Milliseconds()
@@ -427,7 +429,7 @@ func (o *Orchestrator) callSynthesizeServiceWithFallback(
 func (o *Orchestrator) fallbackSynthesizeResponse(
 	query string,
 	retrieveResponse *RetrieveResponse,
-	conversationHistory []session.Message,
+	_ []session.Message,
 	result *OrchestrationResult,
 ) *synth.SynthesisResponse {
 	o.logger.Warn("Using fallback synthesize response")
@@ -611,7 +613,10 @@ type SynthesizeRequest struct {
 }
 
 // handleSessionManagement manages session creation and conversation history retrieval
-func (o *Orchestrator) handleSessionManagement(ctx context.Context, userID, query string) (string, []session.Message, error) {
+func (o *Orchestrator) handleSessionManagement(
+	ctx context.Context,
+	userID, query string,
+) (string, []session.Message, error) {
 	if o.sessionManager == nil {
 		return "", []session.Message{}, fmt.Errorf("session manager not initialized")
 	}
@@ -669,7 +674,11 @@ func (o *Orchestrator) handleSessionManagement(ctx context.Context, userID, quer
 }
 
 // storeResponseInSession stores the assistant's response in the session
-func (o *Orchestrator) storeResponseInSession(ctx context.Context, sessionID, query string, response *synth.SynthesisResponse) error {
+func (o *Orchestrator) storeResponseInSession(
+	ctx context.Context,
+	sessionID, _ string,
+	response *synth.SynthesisResponse,
+) error {
 	if o.sessionManager == nil {
 		return fmt.Errorf("session manager not initialized")
 	}
