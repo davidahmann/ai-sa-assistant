@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=5.0, minimum-scale=1.0">
     <title>{{.title}}</title>
-    
+
     <!-- PWA Meta Tags -->
     <meta name="description" content="AI-powered Solutions Architect assistant for cloud architecture planning and migrations">
     <meta name="keywords" content="AI, Solutions Architect, Cloud, AWS, Azure, Architecture, Migration, DevOps">
@@ -16,21 +16,21 @@
     <meta name="apple-mobile-web-app-title" content="SA Assistant">
     <meta name="msapplication-TileColor" content="#2563eb">
     <meta name="msapplication-config" content="/static/browserconfig.xml">
-    
+
     <!-- Manifest -->
     <link rel="manifest" href="/static/manifest.json">
-    
+
     <!-- Icons -->
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16x16.png">
     <link rel="mask-icon" href="/static/icons/safari-pinned-tab.svg" color="#2563eb">
-    
+
     <!-- Stylesheets -->
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/libs/prism.css">
-    
+
     <!-- Preload critical resources -->
     <link rel="preload" href="/static/libs/mermaid.min.js" as="script">
     <link rel="preload" href="/static/app.js" as="script">
@@ -136,7 +136,7 @@
 
     <!-- Application Scripts -->
     <script src="/static/app.js"></script>
-    
+
     <!-- Service Worker Registration -->
     <script>
         // Register service worker for PWA functionality
@@ -145,7 +145,7 @@
                 navigator.serviceWorker.register('/static/sw.js')
                     .then((registration) => {
                         console.log('SA Assistant: Service Worker registered successfully:', registration.scope);
-                        
+
                         // Check for updates
                         registration.addEventListener('updatefound', () => {
                             const newWorker = registration.installing;
@@ -164,20 +164,20 @@
                     });
             });
         }
-        
+
         // Handle install prompt for PWA
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             console.log('SA Assistant: PWA install prompt available');
             e.preventDefault();
             deferredPrompt = e;
-            
+
             // Show install button or notification
             if (window.chatApp && typeof window.chatApp.showInstallPrompt === 'function') {
                 window.chatApp.showInstallPrompt();
             }
         });
-        
+
         // Track PWA installation
         window.addEventListener('appinstalled', () => {
             console.log('SA Assistant: PWA installed successfully');
@@ -186,7 +186,7 @@
             }
             deferredPrompt = null;
         });
-        
+
         // Make install function globally available
         window.installPWA = function() {
             if (deferredPrompt) {

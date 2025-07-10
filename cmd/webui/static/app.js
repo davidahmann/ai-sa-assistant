@@ -18,7 +18,7 @@ class ChatApp {
 
         // Auto-resize textarea
         this.setupAutoResize();
-        
+
         // Mobile touch gestures
         this.setupTouchGestures();
     }
@@ -1104,7 +1104,7 @@ class ChatApp {
         // Touch start handler
         const handleTouchStart = (e) => {
             if (window.innerWidth > 768) return; // Only on mobile
-            
+
             touchStartX = e.touches[0].clientX;
             touchStartY = e.touches[0].clientY;
             isSwiping = true;
@@ -1124,7 +1124,7 @@ class ChatApp {
             // Determine if this is a horizontal swipe
             if (!isHorizontalSwipe && deltaX > 10) {
                 isHorizontalSwipe = deltaX > deltaY;
-                
+
                 if (isHorizontalSwipe) {
                     // Prevent vertical scrolling during horizontal swipe
                     e.preventDefault();
@@ -1190,7 +1190,7 @@ class ChatApp {
             this.swipeIndicator.className = 'swipe-indicator';
             document.body.appendChild(this.swipeIndicator);
         }
-        
+
         this.swipeIndicator.style.width = `${progress * 100}%`;
         this.swipeIndicator.style.opacity = Math.min(progress * 2, 0.3);
     }
@@ -1205,7 +1205,7 @@ class ChatApp {
     openSidebar() {
         this.sidebar.classList.add('open');
         this.sidebarOverlay.classList.add('show');
-        
+
         // Add haptic feedback if available
         if (navigator.vibrate) {
             navigator.vibrate(10);

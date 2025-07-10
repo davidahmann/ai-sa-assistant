@@ -2585,46 +2585,46 @@ body {
     .diagram-zoom-controls {
         display: flex;
     }
-    
+
     .diagram-container {
         touch-action: manipulation;
     }
-    
+
     /* Enhanced touch targets on mobile */
     .example-btn {
         min-height: calc(var(--grid-unit) * 6); /* 48px minimum touch target */
         touch-action: manipulation;
     }
-    
+
     .conversation-item {
         min-height: calc(var(--grid-unit) * 7); /* 56px minimum touch target */
         touch-action: manipulation;
     }
-    
+
     .action-btn {
         min-width: calc(var(--grid-unit) * 6); /* 48px minimum touch target */
         min-height: calc(var(--grid-unit) * 6); /* 48px minimum touch target */
         touch-action: manipulation;
     }
-    
+
     /* Improve text readability on mobile */
     .message-content {
         font-size: var(--font-size-base);
         line-height: var(--line-height-relaxed);
     }
-    
+
     /* Enhanced mobile input area */
     .input-area textarea {
         font-size: max(var(--font-size-base), 16px); /* Prevent zoom on iOS */
         touch-action: manipulation;
     }
-    
+
     /* Better mobile conversation list */
     .conversation-title {
         font-size: var(--font-size-base);
         line-height: var(--line-height-normal);
     }
-    
+
     .conversation-meta {
         font-size: var(--font-size-sm);
     }

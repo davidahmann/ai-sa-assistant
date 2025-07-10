@@ -281,7 +281,7 @@ func (dfc *DetailedFeedbackCollector) GetFeedbackStats() (map[string]interface{}
 // getDetailedStats returns detailed feedback statistics
 func (dfc *DetailedFeedbackCollector) getDetailedStats() (map[string]interface{}, error) {
 	query := `
-		SELECT 
+		SELECT
 			query_type,
 			overall_feedback,
 			COUNT(*) as count,

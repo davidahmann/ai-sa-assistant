@@ -27,7 +27,7 @@ const API_ENDPOINTS = [
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
   console.log('SA Assistant SW: Installing...');
-  
+
   event.waitUntil(
     caches.open(STATIC_CACHE_NAME)
       .then((cache) => {
@@ -47,13 +47,13 @@ self.addEventListener('install', (event) => {
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
   console.log('SA Assistant SW: Activating...');
-  
+
   event.waitUntil(
     caches.keys()
       .then((cacheNames) => {
         return Promise.all(
           cacheNames.map((cacheName) => {
-            if (cacheName !== STATIC_CACHE_NAME && 
+            if (cacheName !== STATIC_CACHE_NAME &&
                 cacheName !== DATA_CACHE_NAME &&
                 cacheName !== CACHE_NAME) {
               console.log('SA Assistant SW: Deleting old cache', cacheName);
@@ -73,13 +73,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
-  
+
   // Handle static assets with cache-first strategy
-  if (request.destination === 'document' || 
+  if (request.destination === 'document' ||
       request.destination === 'script' ||
       request.destination === 'style' ||
       url.pathname.startsWith('/static/')) {
-    
+
     event.respondWith(
       caches.match(request)
         .then((cachedResponse) => {
@@ -87,7 +87,7 @@ self.addEventListener('fetch', (event) => {
             console.log('SA Assistant SW: Serving from cache:', url.pathname);
             return cachedResponse;
           }
-          
+
           // If not in cache, fetch and cache it
           return fetch(request)
             .then((response) => {
@@ -103,24 +103,24 @@ self.addEventListener('fetch', (event) => {
             })
             .catch((error) => {
               console.error('SA Assistant SW: Network request failed:', error);
-              
+
               // Return offline fallback for HTML requests
               if (request.destination === 'document') {
                 return caches.match('/');
               }
-              
+
               throw error;
             });
         })
     );
     return;
   }
-  
+
   // Handle API requests with network-first strategy
-  if (url.pathname.startsWith('/api/') || 
+  if (url.pathname.startsWith('/api/') ||
       url.pathname === '/conversations' ||
       url.pathname.startsWith('/conversation/')) {
-    
+
     event.respondWith(
       fetch(request)
         .then((response) => {
@@ -136,7 +136,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch((error) => {
           console.log('SA Assistant SW: Network failed, trying cache:', url.pathname);
-          
+
           // Try to serve from cache if network fails
           return caches.match(request)
             .then((cachedResponse) => {
@@ -144,7 +144,7 @@ self.addEventListener('fetch', (event) => {
                 console.log('SA Assistant SW: Serving API from cache:', url.pathname);
                 return cachedResponse;
               }
-              
+
               // Return error response for failed API calls
               return new Response(
                 JSON.stringify({
@@ -164,7 +164,7 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-  
+
   // For all other requests, just pass through
   event.respondWith(fetch(request));
 });
@@ -172,7 +172,7 @@ self.addEventListener('fetch', (event) => {
 // Background sync for conversation updates
 self.addEventListener('sync', (event) => {
   console.log('SA Assistant SW: Background sync triggered:', event.tag);
-  
+
   if (event.tag === 'conversation-sync') {
     event.waitUntil(syncConversations());
   }
@@ -181,7 +181,7 @@ self.addEventListener('sync', (event) => {
 // Push notification handling
 self.addEventListener('push', (event) => {
   console.log('SA Assistant SW: Push message received');
-  
+
   let notificationData = {
     title: 'AI SA Assistant',
     body: 'Your query has been processed',
@@ -191,7 +191,7 @@ self.addEventListener('push', (event) => {
       url: '/'
     }
   };
-  
+
   if (event.data) {
     try {
       const data = event.data.json();
@@ -200,7 +200,7 @@ self.addEventListener('push', (event) => {
       console.error('SA Assistant SW: Failed to parse push data:', error);
     }
   }
-  
+
   event.waitUntil(
     self.registration.showNotification(notificationData.title, {
       body: notificationData.body,
@@ -224,12 +224,12 @@ self.addEventListener('push', (event) => {
 // Notification click handling
 self.addEventListener('notificationclick', (event) => {
   console.log('SA Assistant SW: Notification clicked:', event.action);
-  
+
   event.notification.close();
-  
+
   if (event.action === 'view' || !event.action) {
     const url = event.notification.data?.url || '/';
-    
+
     event.waitUntil(
       clients.matchAll({ type: 'window', includeUncontrolled: true })
         .then((clientList) => {
@@ -239,7 +239,7 @@ self.addEventListener('notificationclick', (event) => {
               return client.focus();
             }
           }
-          
+
           // Open new window if none exists
           if (clients.openWindow) {
             return clients.openWindow(url);
@@ -253,17 +253,17 @@ self.addEventListener('notificationclick', (event) => {
 async function syncConversations() {
   try {
     console.log('SA Assistant SW: Syncing conversations...');
-    
+
     const response = await fetch('/conversations');
     if (response.ok) {
       const conversations = await response.json();
-      
+
       // Cache the updated conversations
       const cache = await caches.open(DATA_CACHE_NAME);
       await cache.put('/conversations', new Response(JSON.stringify(conversations), {
         headers: { 'Content-Type': 'application/json' }
       }));
-      
+
       console.log('SA Assistant SW: Conversations synced successfully');
     }
   } catch (error) {
@@ -274,11 +274,11 @@ async function syncConversations() {
 // Message handling for communication with main thread
 self.addEventListener('message', (event) => {
   console.log('SA Assistant SW: Message received:', event.data);
-  
+
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
-  
+
   if (event.data && event.data.type === 'GET_VERSION') {
     event.ports[0].postMessage({ version: CACHE_NAME });
   }

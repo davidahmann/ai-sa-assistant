@@ -297,8 +297,8 @@ func (a *Analytics) calculateQualityTrend(feedback []DetailedFeedback) float64 {
 	// Calculate quality scores for first and second half
 	// Assuming feedback is ordered newest first, split into recent (first half) and older (second half)
 	half := len(feedback) / 2
-	recentHalf := feedback[:half]   // newer feedback
-	olderHalf := feedback[half:]    // older feedback
+	recentHalf := feedback[:half] // newer feedback
+	olderHalf := feedback[half:]  // older feedback
 
 	recentScore := a.calculateAverageQuality(recentHalf)
 	olderScore := a.calculateAverageQuality(olderHalf)
@@ -357,7 +357,7 @@ func classifyQuery(query string) string {
 	if strings.Contains(queryLower, "migrate") || strings.Contains(queryLower, "migration") {
 		return "migration"
 	}
-	if strings.Contains(queryLower, "security") || strings.Contains(queryLower, "compliance") || 
+	if strings.Contains(queryLower, "security") || strings.Contains(queryLower, "compliance") ||
 		strings.Contains(queryLower, "gdpr") || strings.Contains(queryLower, "hipaa") ||
 		strings.Contains(queryLower, "encryption") || strings.Contains(queryLower, "audit") {
 		return "security"
