@@ -250,9 +250,9 @@ func TestMultiTurnConversationFlow(t *testing.T) {
 	defer func() { _ = searchResp.Body.Close() }()
 
 	var searchResults struct {
-		Query         string                             `json:"query"`
+		Query         string                 `json:"query"`
 		Conversations []conversation.Summary `json:"conversations"`
-		Count         int                                `json:"count"`
+		Count         int                    `json:"count"`
 	}
 	if err := json.NewDecoder(searchResp.Body).Decode(&searchResults); err != nil {
 		t.Fatalf("failed to decode search results: %v", err)

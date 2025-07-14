@@ -5,6 +5,7 @@ This directory contains the integration test infrastructure for the AI SA Assist
 ## Overview
 
 The integration test infrastructure provides:
+
 - ChromaDB test instance for vector database testing
 - Service health checks and availability detection
 - Test data seeding and isolation
@@ -55,7 +56,7 @@ make test-integration
 ### ChromaDB Test Instance
 
 - **Port**: 8001 (to avoid conflicts with production ChromaDB on 8000)
-- **Docker Service**: `chromadb-test` 
+- **Docker Service**: `chromadb-test`
 - **Health Check**: Available at `http://localhost:8001/api/v1/heartbeat`
 - **Data Persistence**: Isolated test volume
 
@@ -75,7 +76,7 @@ make test-integration
 ```bash
 # Test Infrastructure
 make start-test-infra        # Start ChromaDB test instance
-make stop-test-infra         # Stop test infrastructure  
+make stop-test-infra         # Stop test infrastructure
 make status                  # Check service status
 
 # Testing
@@ -95,6 +96,7 @@ make clean                   # Clean up containers and volumes
 ### ChromaDB-Only Mode
 
 When `CHROMADB_ONLY_TESTS=true` is set:
+
 - Only ChromaDB test instance is required
 - Other service tests are skipped
 - Focuses on vector database functionality
@@ -102,6 +104,7 @@ When `CHROMADB_ONLY_TESTS=true` is set:
 ### Full Integration Mode
 
 When all services are available:
+
 - Tests complete end-to-end workflows
 - Service interaction validation
 - Performance and resilience testing

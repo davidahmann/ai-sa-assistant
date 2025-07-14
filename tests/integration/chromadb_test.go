@@ -46,24 +46,24 @@ func TestChromaDBTestInstance(t *testing.T) {
 	t.Run("CreateCollection", func(t *testing.T) {
 		collectionName := fmt.Sprintf("test_collection_%d", time.Now().UnixNano())
 		client := chroma.NewClient(testChromaDBURL, collectionName)
-		
+
 		err := client.CreateCollection(ctx, collectionName, nil)
 		if err != nil {
 			t.Fatalf("Failed to create collection: %v", err)
 		}
-		
+
 		t.Logf("✅ Created collection: %s", collectionName)
-		
+
 		// Verify collection exists
 		info, err := client.GetCollection(ctx, collectionName)
 		if err != nil {
 			t.Fatalf("Failed to get collection info: %v", err)
 		}
-		
+
 		if info.Name != collectionName {
 			t.Errorf("Expected collection name %s, got %s", collectionName, info.Name)
 		}
-		
+
 		// Cleanup
 		if err := client.DeleteCollection(ctx, collectionName); err != nil {
 			t.Logf("⚠️  Failed to cleanup collection: %v", err)
@@ -73,13 +73,13 @@ func TestChromaDBTestInstance(t *testing.T) {
 	t.Run("AddAndSearchDocuments", func(t *testing.T) {
 		collectionName := fmt.Sprintf("test_docs_%d", time.Now().UnixNano())
 		client := chroma.NewClient(testChromaDBURL, collectionName)
-		
+
 		// Create collection
 		err := client.CreateCollection(ctx, collectionName, nil)
 		if err != nil {
 			t.Fatalf("Failed to create collection: %v", err)
 		}
-		
+
 		// Prepare test data
 		documents := []chroma.Document{
 			{
@@ -107,39 +107,39 @@ func TestChromaDBTestInstance(t *testing.T) {
 				},
 			},
 		}
-		
+
 		embeddings := [][]float32{
 			generateSimpleEmbedding(0, 1536),
 			generateSimpleEmbedding(1, 1536),
 			generateSimpleEmbedding(2, 1536),
 		}
-		
+
 		// Add documents
 		err = client.AddDocuments(ctx, documents, embeddings)
 		if err != nil {
 			t.Fatalf("Failed to add documents: %v", err)
 		}
-		
+
 		t.Logf("✅ Added %d documents to collection", len(documents))
-		
+
 		// Search documents
 		queryEmbedding := generateSimpleEmbedding(0, 1536) // Similar to first document
 		results, err := client.Search(ctx, queryEmbedding, 2, nil)
 		if err != nil {
 			t.Fatalf("Failed to search documents: %v", err)
 		}
-		
+
 		if len(results) == 0 {
 			t.Fatal("No results returned from search")
 		}
-		
+
 		t.Logf("✅ Search returned %d results", len(results))
-		
+
 		// Verify first result is most similar (doc1)
 		if results[0].ID != "doc1" {
 			t.Errorf("Expected first result to be 'doc1', got '%s'", results[0].ID)
 		}
-		
+
 		// Cleanup
 		if err := client.DeleteCollection(ctx, collectionName); err != nil {
 			t.Logf("⚠️  Failed to cleanup collection: %v", err)
@@ -149,31 +149,31 @@ func TestChromaDBTestInstance(t *testing.T) {
 	t.Run("CollectionMetadata", func(t *testing.T) {
 		collectionName := fmt.Sprintf("test_metadata_%d", time.Now().UnixNano())
 		client := chroma.NewClient(testChromaDBURL, collectionName)
-		
+
 		metadata := map[string]interface{}{
 			"description": "Test collection for metadata",
 			"version":     "1.0",
 			"created_by":  "integration_test",
 		}
-		
+
 		// Create collection with metadata
 		err := client.CreateCollection(ctx, collectionName, metadata)
 		if err != nil {
 			t.Fatalf("Failed to create collection with metadata: %v", err)
 		}
-		
+
 		// Get collection info
 		info, err := client.GetCollection(ctx, collectionName)
 		if err != nil {
 			t.Fatalf("Failed to get collection info: %v", err)
 		}
-		
+
 		if info.Name != collectionName {
 			t.Errorf("Expected collection name %s, got %s", collectionName, info.Name)
 		}
-		
+
 		t.Logf("✅ Collection metadata verified for: %s", collectionName)
-		
+
 		// Cleanup
 		if err := client.DeleteCollection(ctx, collectionName); err != nil {
 			t.Logf("⚠️  Failed to cleanup collection: %v", err)
@@ -203,7 +203,7 @@ func TestChromaDBTestInstanceSeeding(t *testing.T) {
 				t.Fatalf("Failed to create collection: %v", err)
 			}
 		}
-		
+
 		// Add sample test data
 		documents := []chroma.Document{
 			{
@@ -234,31 +234,31 @@ func TestChromaDBTestInstanceSeeding(t *testing.T) {
 				},
 			},
 		}
-		
+
 		embeddings := [][]float32{
 			generateSimpleEmbedding(100, 1536),
 			generateSimpleEmbedding(200, 1536),
 			generateSimpleEmbedding(300, 1536),
 		}
-		
+
 		// Add documents
 		err = client.AddDocuments(ctx, documents, embeddings)
 		if err != nil {
 			t.Fatalf("Failed to add test data: %v", err)
 		}
-		
+
 		t.Logf("✅ Successfully seeded %d test documents", len(documents))
-		
+
 		// Verify documents were added
 		results, err := client.Search(ctx, generateSimpleEmbedding(100, 1536), 3, nil)
 		if err != nil {
 			t.Fatalf("Failed to search seeded data: %v", err)
 		}
-		
+
 		if len(results) == 0 {
 			t.Fatal("No results returned from seeded data search")
 		}
-		
+
 		t.Logf("✅ Verified seeded data - found %d documents", len(results))
 	})
 }
@@ -267,10 +267,10 @@ func TestChromaDBTestInstanceSeeding(t *testing.T) {
 
 func isChromaDBTestAvailable() bool {
 	client := chroma.NewClient(testChromaDBURL, "temp_health_check")
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	
+
 	return client.HealthCheck(ctx) == nil
 }
 

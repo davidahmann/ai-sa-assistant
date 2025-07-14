@@ -77,12 +77,12 @@ func servicesAvailable() bool {
 	if chromaAvailable && servicesAvailable >= 3 {
 		return true // Full integration test environment
 	}
-	
+
 	// Allow ChromaDB-only tests if CHROMADB_ONLY_TESTS is set
 	if chromaAvailable && os.Getenv("CHROMADB_ONLY_TESTS") == "true" {
 		return true
 	}
-	
+
 	return false
 }
 

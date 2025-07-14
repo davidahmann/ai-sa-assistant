@@ -33,7 +33,6 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/metadata"
 )
 
-
 // ResourceUsageStats tracks resource usage metrics
 type ResourceUsageStats struct {
 	MemoryUsage    MemoryStats
