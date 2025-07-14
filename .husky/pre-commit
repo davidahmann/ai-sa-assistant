@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run Go formatting and linting first
+echo "Running Go formatting..."
+go fmt ./...
+
+echo "Running Go linting..."
+golangci-lint run --fast
+
+# Run JavaScript/frontend linting and formatting for staged files
+echo "Running JavaScript linting and formatting..."
+npx lint-staged

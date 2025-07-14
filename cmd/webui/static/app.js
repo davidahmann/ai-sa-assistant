@@ -53,7 +53,7 @@ class ChatApp {
     bindEvents() {
         // Send message events
         this.sendBtn.addEventListener('click', () => this.sendMessage());
-        this.messageInput.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        this.messageInput.addEventListener('keydown', e => this.handleKeyDown(e));
         this.messageInput.addEventListener('input', () => this.updateSendButton());
 
         // Sidebar events
@@ -63,7 +63,7 @@ class ChatApp {
         this.clearChatBtn.addEventListener('click', () => this.clearCurrentConversation());
 
         // Example question buttons
-        document.addEventListener('click', (e) => {
+        document.addEventListener('click', e => {
             if (e.target.classList.contains('example-btn')) {
                 const message = e.target.getAttribute('data-message');
                 this.messageInput.value = message;
@@ -85,7 +85,7 @@ class ChatApp {
     setupAutoResize() {
         this.messageInput.addEventListener('input', () => {
             this.messageInput.style.height = 'auto';
-            this.messageInput.style.height = Math.min(this.messageInput.scrollHeight, 120) + 'px';
+            this.messageInput.style.height = `${Math.min(this.messageInput.scrollHeight, 120)}px`;
         });
     }
 
@@ -141,7 +141,7 @@ class ChatApp {
             `;
 
             // Click to load conversation
-            item.addEventListener('click', (e) => {
+            item.addEventListener('click', e => {
                 if (!e.target.classList.contains('action-btn') && !e.target.classList.contains('title-input')) {
                     this.loadConversation(conv.id);
                     this.closeSidebar();
@@ -150,14 +150,14 @@ class ChatApp {
 
             // Edit conversation title
             const editBtn = item.querySelector('.edit-btn');
-            editBtn.addEventListener('click', (e) => {
+            editBtn.addEventListener('click', e => {
                 e.stopPropagation();
                 this.startEditingTitle(conv.id);
             });
 
             // Delete conversation
             const deleteBtn = item.querySelector('.delete-btn');
-            deleteBtn.addEventListener('click', (e) => {
+            deleteBtn.addEventListener('click', e => {
                 e.stopPropagation();
                 this.deleteConversation(conv.id);
             });
@@ -321,7 +321,9 @@ class ChatApp {
     }
 
     formatInternalSources(sources) {
-        if (!sources || sources.length === 0) return '';
+        if (!sources || sources.length === 0) {
+            return '';
+        }
 
         let html = `
             <div class="internal-sources">
@@ -356,7 +358,9 @@ class ChatApp {
     }
 
     formatWebSources(sources) {
-        if (!sources || sources.length === 0) return '';
+        if (!sources || sources.length === 0) {
+            return '';
+        }
 
         let html = `
             <div class="web-sources">
@@ -393,7 +397,9 @@ class ChatApp {
     }
 
     formatLLMSynthesis(stats) {
-        if (!stats || !stats.model_used) return '';
+        if (!stats || !stats.model_used) {
+            return '';
+        }
 
         return `
             <div class="llm-synthesis">
@@ -408,7 +414,9 @@ class ChatApp {
     }
 
     formatPipelineDecisions(pipeline) {
-        if (!pipeline) return '';
+        if (!pipeline) {
+            return '';
+        }
 
         let html = `
             <div class="pipeline-decisions">
@@ -422,11 +430,11 @@ class ChatApp {
         }
 
         if (pipeline.fallback_search_used) {
-            html += `<div class="fallback">🔄 Fallback search used due to insufficient initial results</div>`;
+            html += '<div class="fallback">🔄 Fallback search used due to insufficient initial results</div>';
         }
 
         if (pipeline.web_search_triggered) {
-            html += `<div class="web-search">🌐 Web search triggered for fresh information</div>`;
+            html += '<div class="web-search">🌐 Web search triggered for fresh information</div>';
             if (pipeline.freshness_keywords && pipeline.freshness_keywords.length > 0) {
                 html += `<div class="freshness">Freshness keywords: ${pipeline.freshness_keywords.join(', ')}</div>`;
             }
@@ -449,7 +457,9 @@ class ChatApp {
     }
 
     formatProcessingStats(stats) {
-        if (!stats || !stats.total_processing_time_ms) return '';
+        if (!stats || !stats.total_processing_time_ms) {
+            return '';
+        }
 
         const totalTime = this.formatDuration(stats.total_processing_time_ms);
         const cost = stats.estimated_cost_usd ? `$${stats.estimated_cost_usd.toFixed(4)}` : '';
@@ -468,7 +478,9 @@ class ChatApp {
     }
 
     formatTrustIndicators(metadata) {
-        if (!metadata) return '';
+        if (!metadata) {
+            return '';
+        }
 
         // Calculate trust indicators on the client side
         const contextSources = metadata.context_sources || [];
@@ -492,16 +504,24 @@ class ChatApp {
             }
         });
 
-        if (totalSources === 0) return '';
+        if (totalSources === 0) {
+            return '';
+        }
 
         const avgQuality = sourceQuality / totalSources;
         const confidenceLevel = avgQuality >= 0.8 ? 'High' : avgQuality >= 0.6 ? 'Medium' : 'Low';
         const freshness = pipeline.web_search_triggered ? 'Recent' : 'Standard';
 
         const badges = [];
-        if (avgQuality >= 0.8) badges.push('High Quality Sources');
-        if (contextSources.length > 0) badges.push('Internal Documentation');
-        if (pipeline.web_search_triggered) badges.push('Fresh Information');
+        if (avgQuality >= 0.8) {
+            badges.push('High Quality Sources');
+        }
+        if (contextSources.length > 0) {
+            badges.push('Internal Documentation');
+        }
+        if (pipeline.web_search_triggered) {
+            badges.push('Fresh Information');
+        }
 
         return `
             <div class="trust-indicators">
@@ -541,7 +561,7 @@ class ChatApp {
     }
 
     renderMermaidDiagram(mermaidCode) {
-        const diagramId = 'diagram-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        const diagramId = `diagram-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
         // Create container with loading state
         const container = `
@@ -588,14 +608,16 @@ class ChatApp {
             }
 
             const element = document.getElementById(diagramId);
-            if (!element) return;
+            if (!element) {
+                return;
+            }
 
             // Clear loading state
             element.innerHTML = '';
 
             // Render the diagram
             if (typeof mermaid !== 'undefined') {
-                const { svg } = await mermaid.render(diagramId + '-svg', mermaidCode);
+                const { svg } = await mermaid.render(`${diagramId}-svg`, mermaidCode);
                 element.innerHTML = svg;
                 element.classList.add('diagram-rendered');
             } else {
@@ -609,7 +631,9 @@ class ChatApp {
 
     renderDiagramFallback(diagramId, mermaidCode, errorMessage) {
         const element = document.getElementById(diagramId);
-        if (!element) return;
+        if (!element) {
+            return;
+        }
 
         element.innerHTML = `
             <div class="diagram-error">
@@ -627,7 +651,7 @@ class ChatApp {
     }
 
     renderCodeBlock(code, language) {
-        const codeId = 'code-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        const codeId = `code-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const displayLang = language || 'text';
 
         const container = `
@@ -653,7 +677,9 @@ class ChatApp {
     async highlightCodeAsync(codeId) {
         try {
             const element = document.getElementById(codeId);
-            if (!element) return;
+            if (!element) {
+                return;
+            }
 
             // Apply syntax highlighting if Prism is available
             if (typeof Prism !== 'undefined') {
@@ -666,14 +692,14 @@ class ChatApp {
 
     // Interactive feature methods
     toggleDiagramZoom(diagramId) {
-        const container = document.getElementById('container-' + diagramId);
+        const container = document.getElementById(`container-${diagramId}`);
         if (container) {
             container.classList.toggle('diagram-zoomed');
         }
     }
 
     copyDiagramCode(diagramId) {
-        const container = document.getElementById('container-' + diagramId);
+        const container = document.getElementById(`container-${diagramId}`);
         const sourceElement = container?.querySelector('.diagram-source');
         if (sourceElement) {
             const source = sourceElement.dataset.source;
@@ -691,12 +717,15 @@ class ChatApp {
 
     copyToClipboard(text, successMessage) {
         if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(text).then(() => {
-                this.showToast(successMessage, 'success');
-            }).catch(err => {
-                console.error('Failed to copy to clipboard:', err);
-                this.fallbackCopyToClipboard(text, successMessage);
-            });
+            navigator.clipboard
+                .writeText(text)
+                .then(() => {
+                    this.showToast(successMessage, 'success');
+                })
+                .catch(err => {
+                    console.error('Failed to copy to clipboard:', err);
+                    this.fallbackCopyToClipboard(text, successMessage);
+                });
         } else {
             this.fallbackCopyToClipboard(text, successMessage);
         }
@@ -725,16 +754,19 @@ class ChatApp {
 
     async sendMessage() {
         const message = this.messageInput.value.trim();
-        if (!message || this.isLoading || this.isStreaming) return;
+        if (!message || this.isLoading || this.isStreaming) {
+            return Promise.resolve();
+        }
 
         // Check if streaming mode is enabled (we'll assume streaming by default for demo)
         const useStreaming = true; // This could be controlled by a UI toggle
 
         if (useStreaming) {
-            return this.sendMessageStreaming(message);
+            await this.sendMessageStreaming(message);
         } else {
-            return this.sendMessageTraditional(message);
+            await this.sendMessageTraditional(message);
         }
+        return Promise.resolve();
     }
 
     async sendMessageTraditional(message) {
@@ -764,7 +796,7 @@ class ChatApp {
             const response = await fetch('/chat', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     message: message,
@@ -800,7 +832,9 @@ class ChatApp {
     }
 
     async sendMessageStreaming(message) {
-        if (this.isStreaming) return; // Prevent multiple concurrent streams
+        if (this.isStreaming) {
+            return;
+        } // Prevent multiple concurrent streams
 
         this.isStreaming = true;
         this.messageInput.value = '';
@@ -831,7 +865,7 @@ class ChatApp {
             const response = await fetch('/chat/stream', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     message: message,
@@ -869,7 +903,7 @@ class ChatApp {
             const response = await fetch('/conversations', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/json'
                 }
             });
 
@@ -891,7 +925,10 @@ class ChatApp {
     }
 
     async deleteConversation(conversationId) {
-        if (!confirm('Are you sure you want to delete this conversation?')) return;
+        // eslint-disable-next-line no-alert
+        if (!confirm('Are you sure you want to delete this conversation?')) {
+            return;
+        }
 
         try {
             const response = await fetch(`/conversations/${conversationId}`, {
@@ -917,7 +954,10 @@ class ChatApp {
     }
 
     clearCurrentConversation() {
-        if (!confirm('Clear this conversation? This cannot be undone.')) return;
+        // eslint-disable-next-line no-alert
+        if (!confirm('Clear this conversation? This cannot be undone.')) {
+            return;
+        }
 
         if (this.currentConversationId) {
             this.deleteConversation(this.currentConversationId);
@@ -939,12 +979,16 @@ class ChatApp {
 
     startEditingTitle(conversationId) {
         const titleContainer = document.querySelector(`.conversation-title[data-id="${conversationId}"]`);
-        if (!titleContainer) return;
+        if (!titleContainer) {
+            return;
+        }
 
         const titleText = titleContainer.querySelector('.title-text');
         const titleInput = titleContainer.querySelector('.title-input');
 
-        if (!titleText || !titleInput) return;
+        if (!titleText || !titleInput) {
+            return;
+        }
 
         // Hide text, show input
         titleText.style.display = 'none';
@@ -957,25 +1001,33 @@ class ChatApp {
         const cancelEditing = () => this.cancelEditingTitle(conversationId);
 
         titleInput.addEventListener('blur', finishEditing, { once: true });
-        titleInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                finishEditing();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                cancelEditing();
-            }
-        }, { once: true });
+        titleInput.addEventListener(
+            'keydown',
+            e => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    finishEditing();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelEditing();
+                }
+            },
+            { once: true }
+        );
     }
 
     async finishEditingTitle(conversationId) {
         const titleContainer = document.querySelector(`.conversation-title[data-id="${conversationId}"]`);
-        if (!titleContainer) return;
+        if (!titleContainer) {
+            return;
+        }
 
         const titleText = titleContainer.querySelector('.title-text');
         const titleInput = titleContainer.querySelector('.title-input');
 
-        if (!titleText || !titleInput) return;
+        if (!titleText || !titleInput) {
+            return;
+        }
 
         const newTitle = titleInput.value.trim();
         const conversation = this.conversations.get(conversationId);
@@ -995,7 +1047,7 @@ class ChatApp {
             const response = await fetch(`/conversations/${conversationId}`, {
                 method: 'PUT',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     title: newTitle
@@ -1031,12 +1083,16 @@ class ChatApp {
 
     cancelEditingTitle(conversationId) {
         const titleContainer = document.querySelector(`.conversation-title[data-id="${conversationId}"]`);
-        if (!titleContainer) return;
+        if (!titleContainer) {
+            return;
+        }
 
         const titleText = titleContainer.querySelector('.title-text');
         const titleInput = titleContainer.querySelector('.title-input');
 
-        if (!titleText || !titleInput) return;
+        if (!titleText || !titleInput) {
+            return;
+        }
 
         const conversation = this.conversations.get(conversationId);
         if (conversation) {
@@ -1111,8 +1167,10 @@ class ChatApp {
         const swipeThreshold = 0.3; // 30% of screen width
 
         // Touch start handler
-        const handleTouchStart = (e) => {
-            if (window.innerWidth > 768) return; // Only on mobile
+        const handleTouchStart = e => {
+            if (window.innerWidth > 768) {
+                return;
+            } // Only on mobile
 
             touchStartX = e.touches[0].clientX;
             touchStartY = e.touches[0].clientY;
@@ -1121,8 +1179,10 @@ class ChatApp {
         };
 
         // Touch move handler
-        const handleTouchMove = (e) => {
-            if (!isSwiping || window.innerWidth > 768) return;
+        const handleTouchMove = e => {
+            if (!isSwiping || window.innerWidth > 768) {
+                return;
+            }
 
             touchEndX = e.touches[0].clientX;
             touchEndY = e.touches[0].clientY;
@@ -1141,15 +1201,17 @@ class ChatApp {
             }
 
             // Show visual feedback for swipe to open sidebar
-            if (isHorizontalSwipe && touchStartX < 50 && (touchEndX - touchStartX) > 20) {
+            if (isHorizontalSwipe && touchStartX < 50 && touchEndX - touchStartX > 20) {
                 const progress = Math.min((touchEndX - touchStartX) / (window.innerWidth * swipeThreshold), 1);
                 this.showSwipeProgress(progress);
             }
         };
 
         // Touch end handler
-        const handleTouchEnd = (e) => {
-            if (!isSwiping || window.innerWidth > 768) return;
+        const handleTouchEnd = _e => {
+            if (!isSwiping || window.innerWidth > 768) {
+                return;
+            }
 
             const deltaX = touchEndX - touchStartX;
             const deltaY = Math.abs(touchEndY - touchStartY);
@@ -1159,9 +1221,8 @@ class ChatApp {
                 // Swipe right from left edge - open sidebar
                 if (deltaX > 0 && touchStartX < 50) {
                     this.openSidebar();
-                }
-                // Swipe left - close sidebar
-                else if (deltaX < 0 && this.sidebar.classList.contains('open')) {
+                } else if (deltaX < 0 && this.sidebar.classList.contains('open')) {
+                    // Swipe left - close sidebar
                     this.closeSidebar();
                 }
             }
@@ -1262,10 +1323,18 @@ class ChatApp {
         const hours = Math.floor(diff / 3600000);
         const days = Math.floor(diff / 86400000);
 
-        if (minutes < 1) return 'just now';
-        if (minutes < 60) return `${minutes}m ago`;
-        if (hours < 24) return `${hours}h ago`;
-        if (days < 7) return `${days}d ago`;
+        if (minutes < 1) {
+            return 'just now';
+        }
+        if (minutes < 60) {
+            return `${minutes}m ago`;
+        }
+        if (hours < 24) {
+            return `${hours}h ago`;
+        }
+        if (days < 7) {
+            return `${days}d ago`;
+        }
 
         return date.toLocaleDateString();
     }
@@ -1313,9 +1382,9 @@ class ChatApp {
 
     createPerformanceBar(stats) {
         const total = stats.total_processing_time_ms || 1;
-        const retrieval = ((stats.retrieval_time_ms || 0) / total * 100).toFixed(0);
-        const websearch = ((stats.web_search_time_ms || 0) / total * 100).toFixed(0);
-        const synthesis = ((stats.synthesis_time_ms || 0) / total * 100).toFixed(0);
+        const retrieval = (((stats.retrieval_time_ms || 0) / total) * 100).toFixed(0);
+        const websearch = (((stats.web_search_time_ms || 0) / total) * 100).toFixed(0);
+        const synthesis = (((stats.synthesis_time_ms || 0) / total) * 100).toFixed(0);
 
         return `Retrieval: ${retrieval}% | Web Search: ${websearch}% | Synthesis: ${synthesis}%`;
     }
@@ -1395,21 +1464,23 @@ class ChatApp {
                 const elapsed = (Date.now() - this.streamStartTime) / 1000;
                 const elapsedTimeElement = document.getElementById('elapsed-time');
                 if (elapsedTimeElement) {
-                    elapsedTimeElement.textContent = elapsed.toFixed(1) + 's';
+                    elapsedTimeElement.textContent = `${elapsed.toFixed(1)}s`;
                 }
             }
         }, 100);
     }
 
     updateStreamingProgress(progress, stage, message, data = {}) {
-        if (!this.streamingProgressElement) return;
+        if (!this.streamingProgressElement) {
+            return;
+        }
 
         // Update progress bar
         const progressFill = this.streamingProgressElement.querySelector('.progress-fill');
         const progressPercentage = this.streamingProgressElement.querySelector('.progress-percentage');
         if (progressFill && progressPercentage) {
-            progressFill.style.width = progress + '%';
-            progressPercentage.textContent = progress + '%';
+            progressFill.style.width = `${progress}%`;
+            progressPercentage.textContent = `${progress}%`;
         }
 
         // Update current stage
@@ -1472,7 +1543,7 @@ class ChatApp {
             console.log('SSE connection opened');
         };
 
-        this.currentEventSource.onmessage = (event) => {
+        this.currentEventSource.onmessage = event => {
             try {
                 const eventData = JSON.parse(event.data);
                 this.handleStreamEvent(eventData);
@@ -1481,7 +1552,7 @@ class ChatApp {
             }
         };
 
-        this.currentEventSource.onerror = (error) => {
+        this.currentEventSource.onerror = error => {
             console.error('SSE connection error:', error);
 
             if (this.currentEventSource.readyState === EventSource.CLOSED) {
@@ -1617,7 +1688,7 @@ class ChatApp {
         // Listen for system theme changes
         if (window.matchMedia) {
             const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-            mediaQuery.addEventListener('change', (e) => {
+            mediaQuery.addEventListener('change', e => {
                 // Only auto-switch if user hasn't manually set a preference
                 if (!localStorage.getItem('ai-sa-assistant-theme')) {
                     this.setTheme(e.matches ? 'dark' : 'light');

@@ -65,11 +65,39 @@ Docker: All services must have a minimal, multi-stage Dockerfile.
 
 Docker Compose: v2.x syntax.
 
+**Frontend/JavaScript Standards**:
+
+We enforce strict JavaScript/frontend code quality standards for the Web UI component.
+
+Node.js 18+: Required for running frontend tooling and development dependencies.
+
+JavaScript Tooling Stack:
+
+- ESLint v9.16.0: Modern flat config format with comprehensive linting rules
+- Prettier v3.4.2: Code formatting with 4-space indentation matching Go style
+- Husky v9.1.7: Git hooks for automated code quality checks
+- lint-staged v15.2.10: Run linters on staged files only
+
+**Frontend File Structure**:
+
+- `cmd/webui/static/app.js`: Main frontend application (1600+ lines)
+- `cmd/webui/static/sw.js`: Service worker for PWA functionality
+- `cmd/webui/static/libs/`: Third-party libraries (Mermaid.js, Prism.js)
+
+**Code Quality Commands**:
+
+- `npm run lint`: Run ESLint with zero warnings policy
+- `npm run format`: Auto-fix code formatting with Prettier
+- `npm run validate`: Run both format check and linting
+- Pre-commit hooks: Automatically format and lint JS files before commit
+
+**CI Integration**: JavaScript linting and formatting checks are integrated into the GitHub Actions CI pipeline alongside Go linting.
+
 4. Testing Strategy
 
 Our testing strategy is designed to ensure each component is reliable before integration.
 
-Pre-commit: Local hooks run gofmt and golangci-lint v2.2.1 --fast.
+Pre-commit: Local hooks run gofmt, golangci-lint v2.2.1 --fast, Prettier formatting, and ESLint for JavaScript files.
 
 Unit Tests (CI): On every Pull Request, a suite of unit tests is run for each Go service, validating internal logic (e.g., chunking, prompt templating, API handlers).
 
@@ -84,6 +112,8 @@ Quality Gates: Pull Requests cannot be merged unless they pass all Unit and Inte
 All contributors must have these tools installed locally for a consistent development experience.
 
 Go 1.23.5: To test: go test ./... in each service directory.
+
+Node.js 18+: Required for frontend development. Install JavaScript dependencies: npm install. Run frontend validation: npm run validate.
 
 Docker & Docker Compose: Required for running the full application stack. To launch: docker-compose up.
 

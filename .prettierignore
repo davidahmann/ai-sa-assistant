@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Vendor libraries (minified)
+cmd/webui/static/libs/**/*.min.js
+cmd/webui/static/libs/**/*.min.css
+
+# Go files (handled by gofmt)
+**/*.go
+
+# Documentation
+*.md
+
+# Configuration files
+*.yaml
+*.yml
+*.json
+
+# Logs
+*.log
+
+# Database files
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/

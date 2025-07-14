@@ -1,0 +1,50 @@
+{
+  "name": "ai-sa-assistant",
+  "version": "1.0.0",
+  "description": "AI-Powered Cloud Solutions Architect Assistant - Frontend Tooling",
+  "private": true,
+  "scripts": {
+    "lint": "eslint \"cmd/webui/static/**/*.js\" --max-warnings=0",
+    "lint:fix": "eslint \"cmd/webui/static/**/*.js\" --fix",
+    "format": "prettier --write \"cmd/webui/static/**/*.js\"",
+    "format:check": "prettier --check \"cmd/webui/static/**/*.js\"",
+    "validate": "npm run format:check && npm run lint",
+    "prepare": "node -e \"try { require('husky') } catch (e) { console.log('Husky not available, skipping install') }\""
+  },
+  "keywords": [
+    "ai",
+    "solutions-architect",
+    "cloud",
+    "rag",
+    "assistant",
+    "frontend"
+  ],
+  "author": "AI SA Assistant Team",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@eslint/js": "^9.16.0",
+    "eslint": "^9.16.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.12.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.4.2"
+  },
+  "lint-staged": {
+    "cmd/webui/static/**/*.js": [
+      "prettier --write",
+      "eslint --fix"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/ai-sa-assistant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/ai-sa-assistant/issues"
+  }
+}

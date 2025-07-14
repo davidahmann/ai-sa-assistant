@@ -66,6 +66,22 @@ jobs:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           args: --timeout=5m --config=.golangci.yml
 
+      # JavaScript/Frontend Code Quality
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Check JavaScript formatting
+        run: npm run format:check
+
+      - name: Run JavaScript linting
+        run: npm run lint
+
   # Unit Tests
   test:
     name: Unit Tests
