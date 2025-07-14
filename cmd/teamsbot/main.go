@@ -627,7 +627,8 @@ type RegenerationRequest struct {
 // ClarificationRequest represents a request for clarification handling
 type ClarificationRequest struct {
 	OriginalQuery string `json:"original_query"`
-	Action        string `json:"action"` // "quick_select", "provide_details", "use_template", "apply_template", "show_templates", "back_to_clarification"
+	Action        string `json:"action"` // "quick_select", "provide_details", "use_template",
+	// "apply_template", "show_templates", "back_to_clarification"
 	Clarification string `json:"clarification,omitempty"`
 	Template      string `json:"template,omitempty"`
 	Timestamp     string `json:"timestamp,omitempty"`
@@ -677,7 +678,13 @@ func handleFeedback(c *gin.Context, _ *config.Config, feedbackLogger *feedback.L
 }
 
 // handleRegeneration handles regeneration requests
-func handleRegeneration(c *gin.Context, cfg *config.Config, orchestrator *teams.Orchestrator, feedbackLogger *feedback.Logger, logger *zap.Logger) {
+func handleRegeneration(
+	c *gin.Context,
+	cfg *config.Config,
+	orchestrator *teams.Orchestrator,
+	feedbackLogger *feedback.Logger,
+	logger *zap.Logger,
+) {
 	var regenRequest RegenerationRequest
 	if err := c.ShouldBindJSON(&regenRequest); err != nil {
 		logger.Error("Failed to parse regeneration request", zap.Error(err))
@@ -694,7 +701,11 @@ func handleRegeneration(c *gin.Context, cfg *config.Config, orchestrator *teams.
 	switch regenRequest.Action {
 	case "show_options":
 		// Generate and send regeneration options card
-		optionsCard, err := teams.GenerateRegenerationOptionsCard(regenRequest.Query, regenRequest.ResponseID, regenRequest.PreviousResponse)
+		optionsCard, err := teams.GenerateRegenerationOptionsCard(
+			regenRequest.Query,
+			regenRequest.ResponseID,
+			regenRequest.PreviousResponse,
+		)
 		if err != nil {
 			logger.Error("Failed to generate regeneration options card", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate options"})
@@ -719,7 +730,12 @@ func handleRegeneration(c *gin.Context, cfg *config.Config, orchestrator *teams.
 		}
 
 		// Call orchestrator to perform regeneration
-		result, err := orchestrator.ProcessRegenerationQuery(context.Background(), regenRequest.Query, regenRequest.Preset, regenRequest.PreviousResponse)
+		result, err := orchestrator.ProcessRegenerationQuery(
+			context.Background(),
+			regenRequest.Query,
+			regenRequest.Preset,
+			regenRequest.PreviousResponse,
+		)
 		if err != nil {
 			logger.Error("Failed to process regeneration", zap.Error(err))
 			sendErrorCardToTeams(cfg, regenRequest.Query, fmt.Sprintf("Regeneration failed: %v", err), logger)
@@ -728,7 +744,12 @@ func handleRegeneration(c *gin.Context, cfg *config.Config, orchestrator *teams.
 		}
 
 		// Generate comparison card with original and regenerated responses
-		comparisonCard, err := teams.GenerateComparisonCard(regenRequest.Query, regenRequest.PreviousResponse, result.Response.MainText, regenRequest.Preset)
+		comparisonCard, err := teams.GenerateComparisonCard(
+			regenRequest.Query,
+			regenRequest.PreviousResponse,
+			result.Response.MainText,
+			regenRequest.Preset,
+		)
 		if err != nil {
 			logger.Error("Failed to generate comparison card", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate comparison"})
@@ -848,7 +869,7 @@ func extractUserIDFromRequest(c *gin.Context) string {
 }
 
 // handleClarification handles clarification requests
-func handleClarification(c *gin.Context, cfg *config.Config, orchestrator *teams.Orchestrator, feedbackLogger *feedback.Logger, logger *zap.Logger) {
+func handleClarification(c *gin.Context, cfg *config.Config, orchestrator *teams.Orchestrator, _ *feedback.Logger, logger *zap.Logger) {
 	var clarifyRequest ClarificationRequest
 	if err := c.ShouldBindJSON(&clarifyRequest); err != nil {
 		logger.Error("Failed to parse clarification request", zap.Error(err))
@@ -891,9 +912,16 @@ func handleClarification(c *gin.Context, cfg *config.Config, orchestrator *teams
 
 	case "provide_details":
 		// Show guidance for providing more details
+		detailsMessage := "Please add more specific information to your question:\n\n" +
+			"• Include specific technologies, versions, or tools\n" +
+			"• Mention your environment (production, development, etc.)\n" +
+			"• Specify requirements, constraints, or goals\n" +
+			"• Add context about current setup or challenges\n\n" +
+			"Then send your updated question as a new message."
+
 		detailsCard, err := teams.GenerateSimpleCard(
 			"📝 Provide More Details",
-			"Please add more specific information to your question:\n\n• Include specific technologies, versions, or tools\n• Mention your environment (production, development, etc.)\n• Specify requirements, constraints, or goals\n• Add context about current setup or challenges\n\nThen send your updated question as a new message.",
+			detailsMessage,
 		)
 		if err != nil {
 			logger.Error("Failed to generate details card", zap.Error(err))

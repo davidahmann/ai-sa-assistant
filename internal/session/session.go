@@ -66,19 +66,19 @@ type Session struct {
 	Messages   []Message         `json:"messages"`
 	Metadata   map[string]string `json:"metadata"`
 	TokenCount int               `json:"token_count"`
-	Status     SessionStatus     `json:"status"`
+	Status     Status            `json:"status"`
 }
 
-// SessionStatus represents the status of a session
-type SessionStatus string
+// Status represents the status of a session
+type Status string
 
 const (
 	// SessionActive indicates an active session
-	SessionActive SessionStatus = "active"
+	SessionActive Status = "active"
 	// SessionExpired indicates an expired session
-	SessionExpired SessionStatus = "expired"
+	SessionExpired Status = "expired"
 	// SessionClosed indicates a closed session
-	SessionClosed SessionStatus = "closed"
+	SessionClosed Status = "closed"
 )
 
 // Message represents a single message in a conversation

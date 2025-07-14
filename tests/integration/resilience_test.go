@@ -443,7 +443,7 @@ func TestExternalServiceFailureSimulation(t *testing.T) {
 // TestTeamsWebhookFailure tests Teams webhook delivery failure handling
 func TestTeamsWebhookFailure(t *testing.T) {
 	// Create a test server that simulates Teams webhook failures
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Simulate webhook failure
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("Bad Gateway"))

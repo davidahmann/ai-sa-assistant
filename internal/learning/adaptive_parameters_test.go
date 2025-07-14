@@ -121,7 +121,7 @@ func TestCalculateAdaptiveParameters(t *testing.T) {
 	apm := NewAdaptiveParameterManager(analytics, logger)
 
 	// Test with declining quality trend
-	decliningInsights := &LearningInsights{
+	decliningInsights := &Insights{
 		QueryPatterns: map[string]float64{
 			"migration": 0.3, // Low satisfaction
 			"security":  0.4,
@@ -143,7 +143,7 @@ func TestCalculateAdaptiveParameters(t *testing.T) {
 	assert.Less(t, params.WebSearchThreshold, defaultParams.WebSearchThreshold)
 
 	// Test with improving quality trend
-	improvingInsights := &LearningInsights{
+	improvingInsights := &Insights{
 		QueryPatterns: map[string]float64{
 			"migration": 0.9, // High satisfaction
 			"security":  0.8,

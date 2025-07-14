@@ -25,8 +25,8 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/synth"
 )
 
-// ContextDisplayConfig controls how context information is displayed
-type ContextDisplayConfig struct {
+// DisplayConfig controls how context information is displayed
+type DisplayConfig struct {
 	ShowConfidenceScores  bool
 	ShowTokenUsage        bool
 	ShowProcessingTime    bool
@@ -36,8 +36,8 @@ type ContextDisplayConfig struct {
 }
 
 // DefaultDisplayConfig returns default configuration for context display
-func DefaultDisplayConfig() ContextDisplayConfig {
-	return ContextDisplayConfig{
+func DefaultDisplayConfig() DisplayConfig {
+	return DisplayConfig{
 		ShowConfidenceScores:  true,
 		ShowTokenUsage:        true,
 		ShowProcessingTime:    true,
@@ -61,8 +61,8 @@ type PipelineVisibility struct {
 	Markdown string `json:"markdown"`
 }
 
-// ContextDisplayResult contains all formatted context information
-type ContextDisplayResult struct {
+// DisplayResult contains all formatted context information
+type DisplayResult struct {
 	SourceSummary      SourceSummary       `json:"source_summary"`
 	PipelineVisibility PipelineVisibility  `json:"pipeline_visibility"`
 	ProcessingStats    ProcessingStatsView `json:"processing_stats"`
@@ -88,8 +88,8 @@ type TrustIndicators struct {
 }
 
 // FormatContextDisplay creates comprehensive formatted context display
-func FormatContextDisplay(response synth.SynthesisResponse, config ContextDisplayConfig) ContextDisplayResult {
-	return ContextDisplayResult{
+func FormatContextDisplay(response synth.SynthesisResponse, config DisplayConfig) DisplayResult {
+	return DisplayResult{
 		SourceSummary:      formatSourceSummary(response, config),
 		PipelineVisibility: formatPipelineVisibility(response, config),
 		ProcessingStats:    formatProcessingStats(response.ProcessingStats, config),
@@ -98,7 +98,7 @@ func FormatContextDisplay(response synth.SynthesisResponse, config ContextDispla
 }
 
 // formatSourceSummary creates formatted source citation summary
-func formatSourceSummary(response synth.SynthesisResponse, config ContextDisplayConfig) SourceSummary {
+func formatSourceSummary(response synth.SynthesisResponse, config DisplayConfig) SourceSummary {
 	var htmlBuilder, textBuilder, markdownBuilder strings.Builder
 
 	// Count sources by type
@@ -163,7 +163,7 @@ func formatSourceSummary(response synth.SynthesisResponse, config ContextDisplay
 }
 
 // formatInternalSourcesHTML formats internal document sources as HTML
-func formatInternalSourcesHTML(sources []synth.ContextSourceInfo, config ContextDisplayConfig) string {
+func formatInternalSourcesHTML(sources []synth.ContextSourceInfo, config DisplayConfig) string {
 	var builder strings.Builder
 
 	builder.WriteString(`<div class="internal-sources">`)
@@ -196,7 +196,11 @@ func formatInternalSourcesHTML(sources []synth.ContextSourceInfo, config Context
 		}
 
 		if config.ShowTokenUsage {
-			builder.WriteString(fmt.Sprintf(`<div class="source-meta">%d tokens • %s</div>`, source.TokenCount, source.SourceType))
+			builder.WriteString(fmt.Sprintf(
+				`<div class="source-meta">%d tokens • %s</div>`,
+				source.TokenCount,
+				source.SourceType,
+			))
 		}
 
 		builder.WriteString(`</li>`)
@@ -207,7 +211,7 @@ func formatInternalSourcesHTML(sources []synth.ContextSourceInfo, config Context
 }
 
 // formatWebSourcesHTML formats web search sources as HTML
-func formatWebSourcesHTML(sources []synth.WebSourceInfo, config ContextDisplayConfig) string {
+func formatWebSourcesHTML(sources []synth.WebSourceInfo, config DisplayConfig) string {
 	var builder strings.Builder
 
 	builder.WriteString(`<div class="web-sources">`)
@@ -223,7 +227,12 @@ func formatWebSourcesHTML(sources []synth.WebSourceInfo, config ContextDisplayCo
 		}
 
 		builder.WriteString(fmt.Sprintf(`<li class="source-item %s">`, usedClass))
-		builder.WriteString(fmt.Sprintf(`<div class="source-info">%s <a href="%s" target="_blank">%s</a>`, usedIcon, source.URL, source.Title))
+		builder.WriteString(fmt.Sprintf(
+			`<div class="source-info">%s <a href="%s" target="_blank">%s</a>`,
+			usedIcon,
+			source.URL,
+			source.Title,
+		))
 
 		if config.ShowConfidenceScores {
 			builder.WriteString(fmt.Sprintf(` (confidence: %.2f)`, source.Confidence))
@@ -262,7 +271,7 @@ func formatLLMSynthesisHTML(stats synth.ProcessingStats) string {
 }
 
 // formatInternalSourcesText formats internal document sources as plain text
-func formatInternalSourcesText(sources []synth.ContextSourceInfo, config ContextDisplayConfig) string {
+func formatInternalSourcesText(sources []synth.ContextSourceInfo, config DisplayConfig) string {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("┌─ Internal Documents (%d chunks)\n", len(sources)))
@@ -286,7 +295,7 @@ func formatInternalSourcesText(sources []synth.ContextSourceInfo, config Context
 }
 
 // formatWebSourcesText formats web search sources as plain text
-func formatWebSourcesText(sources []synth.WebSourceInfo, config ContextDisplayConfig) string {
+func formatWebSourcesText(sources []synth.WebSourceInfo, _ DisplayConfig) string {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("├─ Web Search Results (%d articles)\n", len(sources)))
@@ -310,7 +319,7 @@ func formatLLMSynthesisText(stats synth.ProcessingStats) string {
 }
 
 // formatInternalSourcesMarkdown formats internal document sources as Markdown
-func formatInternalSourcesMarkdown(sources []synth.ContextSourceInfo, config ContextDisplayConfig) string {
+func formatInternalSourcesMarkdown(sources []synth.ContextSourceInfo, config DisplayConfig) string {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("### 📄 Internal Documents (%d chunks)\n\n", len(sources)))
@@ -335,7 +344,7 @@ func formatInternalSourcesMarkdown(sources []synth.ContextSourceInfo, config Con
 }
 
 // formatWebSourcesMarkdown formats web search sources as Markdown
-func formatWebSourcesMarkdown(sources []synth.WebSourceInfo, config ContextDisplayConfig) string {
+func formatWebSourcesMarkdown(sources []synth.WebSourceInfo, config DisplayConfig) string {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("### 🌐 Web Search Results (%d articles)\n\n", len(sources)))
@@ -361,12 +370,17 @@ func formatWebSourcesMarkdown(sources []synth.WebSourceInfo, config ContextDispl
 
 // formatLLMSynthesisMarkdown formats LLM synthesis information as Markdown
 func formatLLMSynthesisMarkdown(stats synth.ProcessingStats) string {
-	return fmt.Sprintf("### 🤖 LLM Synthesis\n\n- **Model**: %s\n- **Tokens**: %d input / %d output\n- **Temperature**: %.1f\n\n",
-		stats.ModelUsed, stats.InputTokens, stats.OutputTokens, stats.Temperature)
+	return fmt.Sprintf(
+		"### 🤖 LLM Synthesis\n\n- **Model**: %s\n- **Tokens**: %d input / %d output\n- **Temperature**: %.1f\n\n",
+		stats.ModelUsed,
+		stats.InputTokens,
+		stats.OutputTokens,
+		stats.Temperature,
+	)
 }
 
 // formatPipelineVisibility creates formatted pipeline decision information
-func formatPipelineVisibility(response synth.SynthesisResponse, config ContextDisplayConfig) PipelineVisibility {
+func formatPipelineVisibility(response synth.SynthesisResponse, config DisplayConfig) PipelineVisibility {
 	if !config.ShowPipelineDecisions {
 		return PipelineVisibility{}
 	}
@@ -452,7 +466,7 @@ func formatPipelineVisibility(response synth.SynthesisResponse, config ContextDi
 }
 
 // formatProcessingStats creates formatted processing statistics
-func formatProcessingStats(stats synth.ProcessingStats, config ContextDisplayConfig) ProcessingStatsView {
+func formatProcessingStats(stats synth.ProcessingStats, config DisplayConfig) ProcessingStatsView {
 	if !config.ShowProcessingTime && !config.ShowTokenUsage {
 		return ProcessingStatsView{}
 	}

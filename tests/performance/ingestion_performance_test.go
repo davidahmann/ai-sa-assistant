@@ -485,7 +485,7 @@ type ProcessingStats struct {
 	MemoryUsed          uint64
 }
 
-func createTestConfig(t *testing.T) *config.Config {
+func createTestConfig(_ *testing.T) *config.Config {
 	return &config.Config{
 		OpenAI: config.OpenAIConfig{
 			APIKey: os.Getenv("OPENAI_API_KEY"),
@@ -513,7 +513,7 @@ func createLargeTestDocument(t *testing.T, sizeBytes int) string {
 	// Create content
 	content := generateLargeMarkdownContent(sizeBytes)
 
-	err := os.WriteFile(filename, []byte(content), 0644)
+	err := os.WriteFile(filename, []byte(content), 0600)
 	require.NoError(t, err, "Failed to create large test document")
 
 	return filename
@@ -561,11 +561,16 @@ This subsection covers operational aspects:
 	return content.String()
 }
 
-func processLargeDocument(t *testing.T, cfg *config.Config, filePath string, logger *zap.Logger) (*ProcessingStats, error) {
+func processLargeDocument(_ *testing.T, cfg *config.Config, filePath string, logger *zap.Logger) (*ProcessingStats, error) {
 	ctx := context.Background()
 
 	// Read document
-	content, err := os.ReadFile(filePath)
+	// Validate file path to prevent path traversal attacks
+	if !filepath.IsAbs(filePath) {
+		return nil, fmt.Errorf("file path must be absolute: %s", filePath)
+	}
+	cleanPath := filepath.Clean(filePath)
+	content, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read document: %w", err)
 	}

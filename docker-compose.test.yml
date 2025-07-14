@@ -1,26 +1,24 @@
-version: '3.8'
-
 services:
   chromadb-test:
-    image: chromadb/chroma:0.4.15
+    image: chromadb/chroma:0.5.0
     container_name: chromadb-test
     ports:
       - "8001:8000"  # Use different port to avoid conflicts
     environment:
-      - CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER=chromadb.auth.token_authn
-      - CHROMA_SERVER_AUTH_CREDENTIALS=test-token
-      - CHROMA_SERVER_AUTH_PROVIDER=chromadb.auth.basic_authn
       - ANONYMIZED_TELEMETRY=false
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+      - PERSIST_DIRECTORY=/chroma/chroma
     volumes:
       - chromadb-test-data:/chroma/chroma
     networks:
       - test-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   retrieve-test:
     build:

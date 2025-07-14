@@ -34,6 +34,61 @@ const (
 	testFeedbackString = "positive"
 )
 
+// sensitiveDataTestCase represents a test case for sensitive data detection
+type sensitiveDataTestCase struct {
+	name                  string
+	originalQuery         string
+	sanitizedQuery        string
+	shouldContainRedacted bool
+	description           string
+}
+
+// runSensitiveDataDetectionTests runs a set of sensitive data detection tests
+func runSensitiveDataDetectionTests(t *testing.T, tests []sensitiveDataTestCase) {
+	logger := zaptest.NewLogger(t)
+	tempDir := t.TempDir()
+
+	config := Config{
+		StorageType: "sqlite",
+		DBPath:      filepath.Join(tempDir, "test_feedback.db"),
+	}
+
+	feedbackLogger, err := NewLogger(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create feedback logger: %v", err)
+	}
+	defer func() { _ = feedbackLogger.Close() }()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := feedbackLogger.LogFeedback(tt.sanitizedQuery, testFeedbackString)
+			if err != nil {
+				t.Fatalf("Failed to log feedback: %v", err)
+			}
+
+			feedbacks, err := feedbackLogger.GetFeedback(1)
+			if err != nil {
+				t.Fatalf("Failed to get feedback: %v", err)
+			}
+
+			if len(feedbacks) != 1 {
+				t.Fatalf("Expected 1 feedback record, got %d", len(feedbacks))
+			}
+
+			storedQuery := feedbacks[0].Query
+			if tt.shouldContainRedacted {
+				if !strings.Contains(storedQuery, "[REDACTED]") {
+					t.Errorf("%s: Expected stored query to contain [REDACTED], got: %s", tt.description, storedQuery)
+				}
+			} else {
+				if strings.Contains(storedQuery, "[REDACTED]") {
+					t.Errorf("%s: Safe query should not be redacted, got: %s", tt.description, storedQuery)
+				}
+			}
+		})
+	}
+}
+
 func TestNewLogger_FileStorage(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	tempDir := t.TempDir()
@@ -558,27 +613,7 @@ func TestSensitiveDataDetection_APIKeys(t *testing.T) {
 }
 
 func TestSensitiveDataDetection_Passwords(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	tempDir := t.TempDir()
-
-	config := Config{
-		StorageType: "sqlite",
-		DBPath:      filepath.Join(tempDir, "test_feedback.db"),
-	}
-
-	feedbackLogger, err := NewLogger(config, logger)
-	if err != nil {
-		t.Fatalf("Failed to create feedback logger: %v", err)
-	}
-	defer func() { _ = feedbackLogger.Close() }()
-
-	tests := []struct {
-		name                  string
-		originalQuery         string
-		sanitizedQuery        string
-		shouldContainRedacted bool
-		description           string
-	}{
+	tests := []sensitiveDataTestCase{
 		{
 			name:                  "explicit_password",
 			originalQuery:         "Use password: MySecretPass123! for database",
@@ -616,34 +651,7 @@ func TestSensitiveDataDetection_Passwords(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := feedbackLogger.LogFeedback(tt.sanitizedQuery, testFeedbackString)
-			if err != nil {
-				t.Fatalf("Failed to log feedback: %v", err)
-			}
-
-			feedbacks, err := feedbackLogger.GetFeedback(1)
-			if err != nil {
-				t.Fatalf("Failed to get feedback: %v", err)
-			}
-
-			if len(feedbacks) != 1 {
-				t.Fatalf("Expected 1 feedback record, got %d", len(feedbacks))
-			}
-
-			storedQuery := feedbacks[0].Query
-			if tt.shouldContainRedacted {
-				if !strings.Contains(storedQuery, "[REDACTED]") {
-					t.Errorf("%s: Expected stored query to contain [REDACTED], got: %s", tt.description, storedQuery)
-				}
-			} else {
-				if strings.Contains(storedQuery, "[REDACTED]") {
-					t.Errorf("%s: Safe query should not be redacted, got: %s", tt.description, storedQuery)
-				}
-			}
-		})
-	}
+	runSensitiveDataDetectionTests(t, tests)
 }
 
 func TestSensitiveDataDetection_SecretTokens(t *testing.T) {
@@ -743,27 +751,7 @@ func TestSensitiveDataDetection_SecretTokens(t *testing.T) {
 }
 
 func TestSensitiveDataDetection_Base64EncodedData(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	tempDir := t.TempDir()
-
-	config := Config{
-		StorageType: "sqlite",
-		DBPath:      filepath.Join(tempDir, "test_feedback.db"),
-	}
-
-	feedbackLogger, err := NewLogger(config, logger)
-	if err != nil {
-		t.Fatalf("Failed to create feedback logger: %v", err)
-	}
-	defer func() { _ = feedbackLogger.Close() }()
-
-	tests := []struct {
-		name                  string
-		originalQuery         string
-		sanitizedQuery        string
-		shouldContainRedacted bool
-		description           string
-	}{
+	tests := []sensitiveDataTestCase{
 		{
 			name:                  "long_base64_string",
 			originalQuery:         "Use encoded data: dGhpc0lzQVZlcnlMb25nQmFzZTY0RW5jb2RlZFN0cmluZ1RoYXRDb3VsZEJlU2Vuc2l0aXZl for processing",
@@ -801,34 +789,7 @@ func TestSensitiveDataDetection_Base64EncodedData(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := feedbackLogger.LogFeedback(tt.sanitizedQuery, testFeedbackString)
-			if err != nil {
-				t.Fatalf("Failed to log feedback: %v", err)
-			}
-
-			feedbacks, err := feedbackLogger.GetFeedback(1)
-			if err != nil {
-				t.Fatalf("Failed to get feedback: %v", err)
-			}
-
-			if len(feedbacks) != 1 {
-				t.Fatalf("Expected 1 feedback record, got %d", len(feedbacks))
-			}
-
-			storedQuery := feedbacks[0].Query
-			if tt.shouldContainRedacted {
-				if !strings.Contains(storedQuery, "[REDACTED]") {
-					t.Errorf("%s: Expected stored query to contain [REDACTED], got: %s", tt.description, storedQuery)
-				}
-			} else {
-				if strings.Contains(storedQuery, "[REDACTED]") {
-					t.Errorf("%s: Safe query should not be redacted, got: %s", tt.description, storedQuery)
-				}
-			}
-		})
-	}
+	runSensitiveDataDetectionTests(t, tests)
 }
 
 func TestSensitiveDataDetection_PIIData(t *testing.T) {
@@ -918,27 +879,7 @@ func TestSensitiveDataDetection_PIIData(t *testing.T) {
 }
 
 func TestSensitiveDataDetection_HexStrings(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	tempDir := t.TempDir()
-
-	config := Config{
-		StorageType: "sqlite",
-		DBPath:      filepath.Join(tempDir, "test_feedback.db"),
-	}
-
-	feedbackLogger, err := NewLogger(config, logger)
-	if err != nil {
-		t.Fatalf("Failed to create feedback logger: %v", err)
-	}
-	defer func() { _ = feedbackLogger.Close() }()
-
-	tests := []struct {
-		name                  string
-		originalQuery         string
-		sanitizedQuery        string
-		shouldContainRedacted bool
-		description           string
-	}{
+	tests := []sensitiveDataTestCase{
 		{
 			name:                  "long_hex_string_key",
 			originalQuery:         "Use encryption key: 1234567890abcdef1234567890abcdef1234567890abcdef",
@@ -976,34 +917,7 @@ func TestSensitiveDataDetection_HexStrings(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := feedbackLogger.LogFeedback(tt.sanitizedQuery, testFeedbackString)
-			if err != nil {
-				t.Fatalf("Failed to log feedback: %v", err)
-			}
-
-			feedbacks, err := feedbackLogger.GetFeedback(1)
-			if err != nil {
-				t.Fatalf("Failed to get feedback: %v", err)
-			}
-
-			if len(feedbacks) != 1 {
-				t.Fatalf("Expected 1 feedback record, got %d", len(feedbacks))
-			}
-
-			storedQuery := feedbacks[0].Query
-			if tt.shouldContainRedacted {
-				if !strings.Contains(storedQuery, "[REDACTED]") {
-					t.Errorf("%s: Expected stored query to contain [REDACTED], got: %s", tt.description, storedQuery)
-				}
-			} else {
-				if strings.Contains(storedQuery, "[REDACTED]") {
-					t.Errorf("%s: Safe query should not be redacted, got: %s", tt.description, storedQuery)
-				}
-			}
-		})
-	}
+	runSensitiveDataDetectionTests(t, tests)
 }
 
 func TestFeedbackLogger_QuerySizeLimits(t *testing.T) {

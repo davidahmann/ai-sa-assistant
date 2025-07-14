@@ -439,33 +439,6 @@ func validateActionWithURL(t *testing.T, action interface{}, index int,
 	}
 }
 
-func validateAction(t *testing.T, action interface{}, index int,
-	expectedActions []struct{ title, feedback string }, query string) {
-	actionMap, ok := action.(map[string]interface{})
-	if !ok {
-		t.Errorf("Expected action %d to be a map", index)
-		return
-	}
-
-	if actionMap["type"] != "Action.Http" {
-		t.Errorf("Expected action %d type to be 'Action.Http', got %v", index, actionMap["type"])
-	}
-
-	if actionMap["method"] != "POST" {
-		t.Errorf("Expected action %d method to be 'POST', got %v", index, actionMap["method"])
-	}
-
-	if actionMap["url"] != "/teams-feedback" {
-		t.Errorf("Expected action %d url to be '/teams-feedback', got %v", index, actionMap["url"])
-	}
-
-	// Validate action title and body
-	if index < len(expectedActions) {
-		validateActionTitle(t, actionMap, index, expectedActions[index].title)
-		validateActionBody(t, actionMap, index, expectedActions[index].feedback, query)
-	}
-}
-
 func validateActionTitle(t *testing.T, actionMap map[string]interface{}, index int, expectedTitle string) {
 	if actionMap["title"] != expectedTitle {
 		t.Errorf("Expected action %d title to be '%s', got %v", index, expectedTitle, actionMap["title"])

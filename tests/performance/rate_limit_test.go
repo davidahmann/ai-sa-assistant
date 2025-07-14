@@ -185,7 +185,7 @@ func TestBatchRequestOptimization(t *testing.T) {
 	}
 }
 
-func testBatchOptimization(t *testing.T, client *openai.Client, texts []string, batchSize int, logger *zap.Logger) {
+func testBatchOptimization(t *testing.T, client *openai.Client, texts []string, batchSize int, _ *zap.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -543,7 +543,7 @@ func (qm *MockQueueManager) SubmitRequest(fn func() QueueResult) QueueResult {
 	return result
 }
 
-func testSingleAPIRequest(client *openai.Client, requestID int, logger *zap.Logger) RateLimitResult {
+func testSingleAPIRequest(client *openai.Client, requestID int, _ *zap.Logger) RateLimitResult {
 	result := RateLimitResult{
 		RequestID:     requestID,
 		BackoffDelays: make([]time.Duration, 0),
@@ -594,7 +594,7 @@ func testSingleAPIRequest(client *openai.Client, requestID int, logger *zap.Logg
 	return result
 }
 
-func testQueuedAPIRequest(client *openai.Client, requestID int, logger *zap.Logger) QueueResult {
+func testQueuedAPIRequest(client *openai.Client, requestID int, _ *zap.Logger) QueueResult {
 	start := time.Now()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -718,7 +718,7 @@ func analyzeQueueResults(results <-chan QueueResult) *QueueStats {
 	return stats
 }
 
-func triggerRateLimits(t *testing.T, client *openai.Client, logger *zap.Logger) {
+func triggerRateLimits(t *testing.T, client *openai.Client, _ *zap.Logger) {
 	// Make rapid requests to trigger rate limits
 	for i := 0; i < 20; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -731,7 +731,7 @@ func triggerRateLimits(t *testing.T, client *openai.Client, logger *zap.Logger) 
 	}
 }
 
-func testRecovery(t *testing.T, client *openai.Client, logger *zap.Logger) *RecoveryStats {
+func testRecovery(_ *testing.T, client *openai.Client, _ *zap.Logger) *RecoveryStats {
 	stats := &RecoveryStats{}
 
 	// Test moderate request rate after recovery

@@ -291,7 +291,11 @@ func (s *WebUIServer) handleGetConversations(c *gin.Context) {
 	userID := s.getUserID(c) // Default user for demo
 
 	// Get conversation list from conversation manager
-	conversationList, err := s.conversationManager.ListConversations(ctx, userID, 1, 50)
+	const (
+		defaultPage     = 1
+		defaultPageSize = 50
+	)
+	conversationList, err := s.conversationManager.ListConversations(ctx, userID, defaultPage, defaultPageSize)
 	if err != nil {
 		s.logger.Error("Failed to list conversations", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load conversations"})
@@ -591,7 +595,8 @@ func (s *WebUIServer) handleSSE(c *gin.Context) {
 	c.Header("Access-Control-Allow-Headers", "Cache-Control")
 
 	// Create a channel to receive events
-	eventChan := make(chan streaming.Event, 100)
+	const eventChannelBuffer = 100
+	eventChan := make(chan streaming.Event, eventChannelBuffer)
 
 	// Add callback to stream
 	callback := func(event streaming.Event) {
@@ -646,8 +651,9 @@ func (s *WebUIServer) handleSSE(c *gin.Context) {
 				}
 
 				// Schedule cleanup after a delay to allow client to receive final events
+				const cleanupDelaySeconds = 5
 				go func() {
-					time.Sleep(5 * time.Second)
+					time.Sleep(cleanupDelaySeconds * time.Second)
 					s.streamManager.CloseStream(streamID)
 				}()
 				return
@@ -668,14 +674,23 @@ func (s *WebUIServer) handleSSE(c *gin.Context) {
 }
 
 // processStreamingQuery processes a query with streaming progress updates
-func (s *WebUIServer) processStreamingQuery(ctx context.Context, query, userID, sessionID string, eventStream *streaming.EventStream) {
+func (s *WebUIServer) processStreamingQuery(
+	ctx context.Context,
+	query, userID, sessionID string,
+	eventStream *streaming.EventStream,
+) {
 	startTime := time.Now()
 
 	// Emit initial progress
-	eventStream.EmitProgress(streaming.StageQueryAnalysis, "🔍 Analyzing query for metadata filters...", 5, map[string]interface{}{
-		"query":   query,
-		"user_id": userID,
-	})
+	eventStream.EmitProgress(
+		streaming.StageQueryAnalysis,
+		"🔍 Analyzing query for metadata filters...",
+		5,
+		map[string]interface{}{
+			"query":   query,
+			"user_id": userID,
+		},
+	)
 
 	// Create a streaming-aware orchestrator that will emit progress events
 	result := s.processQueryWithProgress(ctx, query, userID, eventStream)
@@ -714,9 +729,18 @@ func (s *WebUIServer) processStreamingQuery(ctx context.Context, query, userID, 
 }
 
 // processQueryWithProgress processes a query while emitting progress events
-func (s *WebUIServer) processQueryWithProgress(ctx context.Context, query, userID string, eventStream *streaming.EventStream) *teams.OrchestrationResult {
+func (s *WebUIServer) processQueryWithProgress(
+	ctx context.Context,
+	query, userID string,
+	eventStream *streaming.EventStream,
+) *teams.OrchestrationResult {
 	// Use the streaming-aware orchestrator method
-	return s.orchestrator.ProcessQueryWithStreaming(ctx, query, userID, eventStream)
+	return s.orchestrator.ProcessQueryWithStreaming(
+		ctx,
+		query,
+		userID,
+		eventStream,
+	)
 }
 
 // storeAssistantResponse stores the assistant response in the session

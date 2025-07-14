@@ -68,9 +68,7 @@ func (m *MemoryStorage) Set(_ context.Context, session *Session, ttl time.Durati
 
 	// Check if we need to evict sessions
 	if len(m.sessions) >= m.maxSessions {
-		if err := m.evictOldestSession(); err != nil {
-			return fmt.Errorf("failed to evict session: %w", err)
-		}
+		m.evictOldestSession()
 	}
 
 	// Store a copy to prevent external modification
@@ -243,9 +241,9 @@ func (m *MemoryStorage) removeFromUserIndex(userID, sessionID string) {
 }
 
 // evictOldestSession removes the least recently used session
-func (m *MemoryStorage) evictOldestSession() error {
+func (m *MemoryStorage) evictOldestSession() {
 	if len(m.sessions) == 0 {
-		return nil
+		return
 	}
 
 	var oldestSessionID string
@@ -267,8 +265,6 @@ func (m *MemoryStorage) evictOldestSession() error {
 			delete(m.accessTime, oldestSessionID)
 		}
 	}
-
-	return nil
 }
 
 // GetStats returns storage statistics

@@ -369,11 +369,10 @@ func TestMultipleUsersIsolation(t *testing.T) {
 
 	// Test that users can't access each other's conversations
 	_, err = manager.GetConversation(ctx, conv2.ID)
-	if err != nil {
-		// This is expected behavior - the conversation exists but access control
-		// should be handled at the API layer, not the manager layer
-		// The manager layer focuses on session management, not authorization
-	}
+	// This is expected behavior - the conversation exists but access control
+	// should be handled at the API layer, not the manager layer
+	// The manager layer focuses on session management, not authorization
+	_ = err
 
 	// Clean up
 	_ = manager.DeleteConversation(ctx, conv1.ID)

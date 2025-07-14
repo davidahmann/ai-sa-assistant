@@ -33,12 +33,6 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/metadata"
 )
 
-const (
-	maxMemoryUsagePercentage = 80.0 // 80% of available memory
-	maxGoroutines            = 1000 // Maximum expected goroutines
-	maxOpenFiles             = 500  // Maximum expected open files
-	gcThresholdMB            = 100  // GC should trigger before 100MB allocation
-)
 
 // ResourceUsageStats tracks resource usage metrics
 type ResourceUsageStats struct {
@@ -141,6 +135,9 @@ func TestVectorSearchMemoryUsage(t *testing.T) {
 		"Memory usage should be less than 500MB")
 
 	// Memory growth should be reasonable relative to work done
+	if totalRequests <= 0 {
+		t.Fatal("Invalid total requests count")
+	}
 	avgMemoryPerRequest := memoryGrowth / uint64(totalRequests)
 	assert.Less(t, avgMemoryPerRequest, uint64(10*1024*1024),
 		"Average memory per request should be less than 10MB")
@@ -201,7 +198,9 @@ func TestGarbageCollectionBehavior(t *testing.T) {
 				buffer := make([]byte, 1024)
 				for {
 					n, err := resp.Body.Read(buffer)
-					totalResponseSize += uint64(n)
+					if n >= 0 {
+						totalResponseSize += uint64(n)
+					}
 					if err != nil {
 						break
 					}
@@ -235,7 +234,20 @@ func TestGarbageCollectionBehavior(t *testing.T) {
 	// Calculate GC statistics
 	gcCycles := gcAfter.NumGC - gcBefore.NumGC
 	totalGCPause := gcAfter.PauseTotalNs - gcBefore.PauseTotalNs
-	avgGCPause := time.Duration(totalGCPause / uint64(gcCycles))
+	if gcCycles == 0 {
+		t.Fatal("No GC cycles observed")
+	}
+	var avgGCPause time.Duration
+	if gcCycles > 0 && totalGCPause <= uint64(1<<63-1) {
+		pausePerCycle := totalGCPause / uint64(gcCycles)
+		if pausePerCycle <= uint64(1<<63-1) {
+			avgGCPause = time.Duration(pausePerCycle)
+		} else {
+			avgGCPause = time.Duration(0)
+		}
+	} else {
+		avgGCPause = time.Duration(0)
+	}
 
 	// Assertions
 	assert.Greater(t, gcCycles, uint32(5),
@@ -250,7 +262,11 @@ func TestGarbageCollectionBehavior(t *testing.T) {
 	t.Logf("  Total requests: %d", totalRequests)
 	t.Logf("  Total response size: %.2f MB", float64(totalResponseSize)/1024/1024)
 	t.Logf("  GC cycles triggered: %d", gcCycles)
-	t.Logf("  Total GC pause time: %v", time.Duration(totalGCPause))
+	if totalGCPause <= uint64(1<<63-1) {
+		t.Logf("  Total GC pause time: %v", time.Duration(totalGCPause))
+	} else {
+		t.Logf("  Total GC pause time: %d ns (overflow)", totalGCPause)
+	}
 	t.Logf("  Average GC pause: %v", avgGCPause)
 	t.Logf("  Final heap size: %.2f MB", float64(gcAfter.HeapAlloc)/1024/1024)
 	t.Logf("  Memory freed: %.2f MB", float64(gcAfter.TotalAlloc-gcBefore.TotalAlloc)/1024/1024)
@@ -328,7 +344,18 @@ func TestDiskIOPerformance(t *testing.T) {
 	writeBytes := diskIOAfter.WriteBytes - diskIOBefore.WriteBytes
 
 	// Assertions
-	assert.Greater(t, writeOps, uint64(entryCount/10),
+	if entryCount <= 0 {
+		t.Fatal("Invalid entry count")
+	}
+	var minWriteOps uint64
+	if entryCount > 0 {
+		// Safe conversion to avoid integer overflow
+		expectedOps := entryCount / 10
+		if expectedOps >= 0 {
+			minWriteOps = uint64(expectedOps)
+		}
+	}
+	assert.Greater(t, writeOps, minWriteOps,
 		"Should have performed significant write operations")
 	assert.Greater(t, readOps, uint64(0),
 		"Should have performed read operations")
@@ -591,8 +618,10 @@ func getDiskIOStats(dbPath string) DiskIOStats {
 	stats := DiskIOStats{}
 
 	if fileInfo, err := os.Stat(dbPath); err == nil {
-		stats.WriteBytes = uint64(fileInfo.Size())
-		stats.WriteOps = 1
+		if size := fileInfo.Size(); size >= 0 {
+			stats.WriteBytes = uint64(size)
+			stats.WriteOps = 1
+		}
 	}
 
 	return stats
@@ -616,14 +645,14 @@ func maxUint64(values []uint64) uint64 {
 		return 0
 	}
 
-	max := values[0]
+	maxVal := values[0]
 	for _, v := range values {
-		if v > max {
-			max = v
+		if v > maxVal {
+			maxVal = v
 		}
 	}
 
-	return max
+	return maxVal
 }
 
 func minUint64(values []uint64) uint64 {
@@ -631,12 +660,12 @@ func minUint64(values []uint64) uint64 {
 		return 0
 	}
 
-	min := values[0]
+	minVal := values[0]
 	for _, v := range values {
-		if v < min {
-			min = v
+		if v < minVal {
+			minVal = v
 		}
 	}
 
-	return min
+	return minVal
 }

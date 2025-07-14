@@ -30,9 +30,13 @@ import (
 type FeedbackCategory int
 
 const (
+	// CategoryAccuracy represents feedback about response accuracy
 	CategoryAccuracy FeedbackCategory = iota
+	// CategoryCompleteness represents feedback about response completeness
 	CategoryCompleteness
+	// CategoryRelevance represents feedback about response relevance
 	CategoryRelevance
+	// CategoryOverall represents overall feedback
 	CategoryOverall
 )
 
@@ -40,8 +44,11 @@ const (
 type FeedbackType int
 
 const (
+	// FeedbackNegative represents negative feedback
 	FeedbackNegative FeedbackType = iota
+	// FeedbackPositive represents positive feedback
 	FeedbackPositive
+	// FeedbackNeutral represents neutral feedback
 	FeedbackNeutral
 )
 
@@ -82,8 +89,8 @@ type SynthesisMetrics struct {
 	CodeGenerated    bool    `json:"code_generated"`
 }
 
-// LearningInsights contains insights derived from feedback analysis
-type LearningInsights struct {
+// Insights contains insights derived from feedback analysis
+type Insights struct {
 	QueryPatterns        map[string]float64 `json:"query_patterns"`
 	KnowledgeGaps        []KnowledgeGap     `json:"knowledge_gaps"`
 	OptimalParameters    Parameters         `json:"optimal_parameters"`
@@ -123,7 +130,7 @@ func NewAnalytics(db *sql.DB, logger *zap.Logger) *Analytics {
 }
 
 // AnalyzeFeedbackPatterns analyzes feedback patterns to generate insights
-func (a *Analytics) AnalyzeFeedbackPatterns(days int) (*LearningInsights, error) {
+func (a *Analytics) AnalyzeFeedbackPatterns(days int) (*Insights, error) {
 	// Get feedback from the last N days
 	feedback, err := a.getRecentFeedback(days)
 	if err != nil {
@@ -131,7 +138,7 @@ func (a *Analytics) AnalyzeFeedbackPatterns(days int) (*LearningInsights, error)
 	}
 
 	if len(feedback) == 0 {
-		return &LearningInsights{
+		return &Insights{
 			QueryPatterns:        make(map[string]float64),
 			KnowledgeGaps:        []KnowledgeGap{},
 			OptimalParameters:    a.getDefaultParameters(),
@@ -140,7 +147,7 @@ func (a *Analytics) AnalyzeFeedbackPatterns(days int) (*LearningInsights, error)
 		}, nil
 	}
 
-	insights := &LearningInsights{
+	insights := &Insights{
 		QueryPatterns:        a.analyzeQueryPatterns(feedback),
 		KnowledgeGaps:        a.identifyKnowledgeGaps(feedback),
 		OptimalParameters:    a.optimizeParameters(feedback),
@@ -421,8 +428,8 @@ func generateSuggestedActions(topic string) []string {
 	}
 }
 
-// StoreLearningInsights stores learning insights in the database
-func (a *Analytics) StoreLearningInsights(insights *LearningInsights) error {
+// StoreInsights stores learning insights in the database
+func (a *Analytics) StoreInsights(insights *Insights) error {
 	insightsJSON, err := json.Marshal(insights)
 	if err != nil {
 		return fmt.Errorf("failed to marshal insights: %w", err)
@@ -442,8 +449,8 @@ func (a *Analytics) StoreLearningInsights(insights *LearningInsights) error {
 	return nil
 }
 
-// GetLearningInsights retrieves the latest learning insights
-func (a *Analytics) GetLearningInsights() (*LearningInsights, error) {
+// GetInsights retrieves the latest learning insights
+func (a *Analytics) GetInsights() (*Insights, error) {
 	query := `
 		SELECT insights, updated_at
 		FROM learning_insights
@@ -457,7 +464,7 @@ func (a *Analytics) GetLearningInsights() (*LearningInsights, error) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// Return default insights if none found
-			return &LearningInsights{
+			return &Insights{
 				QueryPatterns:        make(map[string]float64),
 				KnowledgeGaps:        []KnowledgeGap{},
 				OptimalParameters:    a.getDefaultParameters(),
@@ -468,7 +475,7 @@ func (a *Analytics) GetLearningInsights() (*LearningInsights, error) {
 		return nil, fmt.Errorf("failed to query learning insights: %w", err)
 	}
 
-	var insights LearningInsights
+	var insights Insights
 	err = json.Unmarshal([]byte(insightsJSON), &insights)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal insights: %w", err)

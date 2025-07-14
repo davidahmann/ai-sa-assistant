@@ -247,36 +247,6 @@ func (o *Orchestrator) ProcessQueryWithStreaming(ctx context.Context, query stri
 	return result
 }
 
-// validateServiceHealth checks the health of required services
-func (o *Orchestrator) validateServiceHealth(ctx context.Context, result *OrchestrationResult) bool {
-	requiredServices := []string{"retrieve", "synthesize"}
-	healthyServices := 0
-
-	for _, serviceName := range requiredServices {
-		result.ServicesTested = append(result.ServicesTested, serviceName)
-
-		if o.isServiceHealthy(ctx, serviceName) {
-			healthyServices++
-			o.logger.Debug("Service health check passed",
-				zap.String("service", serviceName))
-		} else {
-			o.logger.Warn("Service health check failed",
-				zap.String("service", serviceName))
-		}
-	}
-
-	// Check websearch service health (optional)
-	result.ServicesTested = append(result.ServicesTested, "websearch")
-	if o.isServiceHealthy(ctx, "websearch") {
-		o.logger.Debug("Web search service health check passed")
-	} else {
-		o.logger.Warn("Web search service health check failed")
-	}
-
-	result.HealthChecksPassed = healthyServices == len(requiredServices)
-	return result.HealthChecksPassed
-}
-
 // isServiceHealthy checks if a specific service is healthy
 func (o *Orchestrator) isServiceHealthy(ctx context.Context, serviceName string) bool {
 	var url string
@@ -653,66 +623,6 @@ func (o *Orchestrator) callWebSearchServiceWithFallbackStreaming(
 	return webResponse.Results
 }
 
-// callSynthesizeServiceWithFallback calls the synthesize service with fallback logic
-func (o *Orchestrator) callSynthesizeServiceWithFallback(
-	ctx context.Context,
-	query string,
-	retrieveResponse *RetrieveResponse,
-	webResults []string,
-	conversationHistory []session.Message,
-	result *OrchestrationResult,
-) (*synth.SynthesisResponse, error) {
-	o.logger.Info("Calling synthesize service", zap.String("query", query))
-
-	// Convert retrieve chunks to synthesis format
-	contextItems := o.convertRetrieveChunksToContextItems(retrieveResponse.Chunks)
-	synthesizeRequest := o.createSynthesizeRequest(query, contextItems, webResults, conversationHistory)
-
-	jsonBody, err := json.Marshal(synthesizeRequest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal synthesize request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		"POST",
-		o.config.Services.SynthesizeURL+"/synthesize",
-		bytes.NewBuffer(jsonBody),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create synthesize request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := o.httpClient.Do(req)
-	if err != nil {
-		o.logger.Error("Synthesize service request failed", zap.Error(err))
-		return o.fallbackSynthesizeResponse(query, retrieveResponse, conversationHistory, result), nil
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		o.logger.Error("Synthesize service returned error",
-			zap.Int("status_code", resp.StatusCode),
-			zap.String("response_body", string(body)))
-		return o.fallbackSynthesizeResponse(query, retrieveResponse, conversationHistory, result), nil
-	}
-
-	var synthesizeResponse synth.SynthesisResponse
-	if err := json.NewDecoder(resp.Body).Decode(&synthesizeResponse); err != nil {
-		o.logger.Error("Failed to decode synthesize response", zap.Error(err))
-		return o.fallbackSynthesizeResponse(query, retrieveResponse, conversationHistory, result), nil
-	}
-
-	result.ServicesUsed = append(result.ServicesUsed, "synthesize")
-	o.logger.Info("Synthesize service call successful",
-		zap.String("query", query),
-		zap.Int("main_text_length", len(synthesizeResponse.MainText)))
-
-	return &synthesizeResponse, nil
-}
-
 // callSynthesizeServiceWithFallbackStreaming calls the synthesize service with fallback logic and streaming progress
 func (o *Orchestrator) callSynthesizeServiceWithFallbackStreaming(
 	ctx context.Context,
@@ -853,32 +763,6 @@ func (o *Orchestrator) fallbackSynthesizeResponse(
 		Sources:      sources,
 		DiagramURL:   "",
 	}
-}
-
-// renderDiagramWithFallback renders diagrams with fallback logic
-func (o *Orchestrator) renderDiagramWithFallback(
-	ctx context.Context,
-	response *synth.SynthesisResponse,
-	result *OrchestrationResult,
-) {
-	o.logger.Info("Rendering diagram", zap.String("diagram_code_length", fmt.Sprintf("%d", len(response.DiagramCode))))
-
-	diagramURL, fallbackText, err := o.diagramRenderer.RenderDiagramWithFallback(ctx, response.DiagramCode)
-	if err != nil {
-		o.logger.Warn("Failed to render diagram", zap.Error(err))
-		result.FallbackUsed = true
-	}
-
-	if fallbackText != "" {
-		response.MainText += "\n\n" + fallbackText
-		response.DiagramCode = ""
-		result.FallbackUsed = true
-	}
-
-	response.DiagramURL = diagramURL
-	o.logger.Info("Diagram rendering completed",
-		zap.String("diagram_url", diagramURL),
-		zap.Bool("fallback_used", fallbackText != ""))
 }
 
 // renderDiagramWithFallbackStreaming renders diagrams with fallback logic and streaming progress
@@ -1209,7 +1093,7 @@ func (o *Orchestrator) ProcessRegenerationQuery(ctx context.Context, query, pres
 }
 
 // callRegenerationService calls the synthesis service with regeneration parameters
-func (o *Orchestrator) callRegenerationService(ctx context.Context, query, preset, previousResponse string, retrieveResp *RetrieveResponse, webResults []string, result *OrchestrationResult) (*synth.SynthesisResponse, error) {
+func (o *Orchestrator) callRegenerationService(_ context.Context, query, preset, previousResponse string, retrieveResp *RetrieveResponse, webResults []string, result *OrchestrationResult) (*synth.SynthesisResponse, error) {
 	// Build regeneration request
 	regenRequest := map[string]interface{}{
 		"query":                query,
@@ -1250,8 +1134,18 @@ func (o *Orchestrator) callRegenerationService(ctx context.Context, query, prese
 
 	regenerateURL := fmt.Sprintf("%s/regenerate", strings.TrimSuffix(o.config.Services.SynthesizeURL, "/"))
 
+	// Validate URL before making request to prevent SSRF
+	if !strings.HasPrefix(regenerateURL, "http://") && !strings.HasPrefix(regenerateURL, "https://") {
+		return nil, fmt.Errorf("invalid URL scheme for regeneration service: %s", regenerateURL)
+	}
+
 	startTime := time.Now()
-	resp, err := http.Post(regenerateURL, "application/json", bytes.NewBuffer(reqBody))
+
+	// Create HTTP client with timeout for security
+	client := &http.Client{
+		Timeout: DefaultHTTPTimeout,
+	}
+	resp, err := client.Post(regenerateURL, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to call regeneration service: %w", err)
 	}

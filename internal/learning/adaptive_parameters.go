@@ -69,7 +69,7 @@ func (apm *AdaptiveParameterManager) updateParameters() {
 	apm.mu.Lock()
 	defer apm.mu.Unlock()
 
-	insights, err := apm.analytics.GetLearningInsights()
+	insights, err := apm.analytics.GetInsights()
 	if err != nil {
 		apm.logger.Error("Failed to get learning insights", zap.Error(err))
 		return
@@ -91,7 +91,7 @@ func (apm *AdaptiveParameterManager) updateParameters() {
 }
 
 // calculateAdaptiveParameters calculates new parameters based on insights
-func (apm *AdaptiveParameterManager) calculateAdaptiveParameters(insights *LearningInsights) Parameters {
+func (apm *AdaptiveParameterManager) calculateAdaptiveParameters(insights *Insights) Parameters {
 	params := apm.analytics.getDefaultParameters()
 
 	// Adjust retrieval threshold based on overall quality trend

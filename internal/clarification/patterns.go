@@ -194,7 +194,7 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "migration") && contains(analysis.MissingContext, "source_environment")
 			},
-			Generator: func(analysis QueryAnalysis) []Area {
+			Generator: func(_ QueryAnalysis) []Area {
 				return []Area{
 					{
 						Area: "source_environment",
@@ -217,7 +217,7 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "migration") && contains(analysis.MissingContext, "target_cloud")
 			},
-			Generator: func(analysis QueryAnalysis) []Area {
+			Generator: func(_ QueryAnalysis) []Area {
 				return []Area{
 					{
 						Area: "target_cloud",
@@ -240,7 +240,7 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "security") && contains(analysis.MissingContext, "compliance_standards")
 			},
-			Generator: func(analysis QueryAnalysis) []Area {
+			Generator: func(_ QueryAnalysis) []Area {
 				return []Area{
 					{
 						Area: "compliance",
@@ -263,7 +263,7 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "architecture") && contains(analysis.MissingContext, "scale")
 			},
-			Generator: func(analysis QueryAnalysis) []Area {
+			Generator: func(_ QueryAnalysis) []Area {
 				return []Area{
 					{
 						Area: "scale",
@@ -286,7 +286,7 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "disaster_recovery") && contains(analysis.MissingContext, "rto")
 			},
-			Generator: func(analysis QueryAnalysis) []Area {
+			Generator: func(_ QueryAnalysis) []Area {
 				return []Area{
 					{
 						Area: "recovery_objectives",
@@ -309,7 +309,7 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return contains(analysis.DetectedIntents, "cost_optimization") && contains(analysis.MissingContext, "current_spend")
 			},
-			Generator: func(analysis QueryAnalysis) []Area {
+			Generator: func(_ QueryAnalysis) []Area {
 				return []Area{
 					{
 						Area: "current_costs",
@@ -332,7 +332,7 @@ func buildClarificationRules() []clarificationRule {
 			Trigger: func(analysis QueryAnalysis) bool {
 				return analysis.IsAmbiguous && len(analysis.DetectedIntents) == 0
 			},
-			Generator: func(analysis QueryAnalysis) []Area {
+			Generator: func(_ QueryAnalysis) []Area {
 				return []Area{
 					{
 						Area: "intent",
@@ -361,7 +361,7 @@ func buildClarificationRules() []clarificationRule {
 				return (wordCount <= 3 && len(analysis.DetectedIntents) == 0) ||
 					(isGeneralHelp && len(analysis.DetectedIntents) == 0)
 			},
-			Generator: func(analysis QueryAnalysis) []Area {
+			Generator: func(_ QueryAnalysis) []Area {
 				return []Area{
 					{
 						Area: "context",
@@ -404,7 +404,7 @@ func buildFollowupDetectors() []followupDetector {
 			Pattern:     regexp.MustCompile(`(?i)\b(more|additional|further|expand|elaborate|detail)\b`),
 			Type:        "expansion",
 			Description: "Detects requests for more information",
-			Resolver: func(query string, history []session.Message) *FollowupContext {
+			Resolver: func(_ string, history []session.Message) *FollowupContext {
 				return &FollowupContext{
 					ReferencesFound:    []string{"expansion_request"},
 					ContextElements:    extractContextElements(history),
@@ -416,7 +416,7 @@ func buildFollowupDetectors() []followupDetector {
 			Pattern:     regexp.MustCompile(`(?i)\b(different|alternative|another|instead|other)\b`),
 			Type:        "alternative",
 			Description: "Detects requests for alternatives",
-			Resolver: func(query string, history []session.Message) *FollowupContext {
+			Resolver: func(_ string, history []session.Message) *FollowupContext {
 				return &FollowupContext{
 					ReferencesFound:    []string{"alternative_request"},
 					ContextElements:    extractContextElements(history),
@@ -428,7 +428,7 @@ func buildFollowupDetectors() []followupDetector {
 			Pattern:     regexp.MustCompile(`(?i)\b(cost|price|pricing|budget|expensive|cheap)\b`),
 			Type:        "cost_inquiry",
 			Description: "Detects cost-related follow-up questions",
-			Resolver: func(query string, history []session.Message) *FollowupContext {
+			Resolver: func(_ string, history []session.Message) *FollowupContext {
 				return &FollowupContext{
 					ReferencesFound:    []string{"cost_inquiry"},
 					ContextElements:    extractContextElements(history),
@@ -440,7 +440,7 @@ func buildFollowupDetectors() []followupDetector {
 			Pattern:     regexp.MustCompile(`(?i)\b(security|secure|compliance|audit|risk)\b`),
 			Type:        "security_inquiry",
 			Description: "Detects security-related follow-up questions",
-			Resolver: func(query string, history []session.Message) *FollowupContext {
+			Resolver: func(_ string, history []session.Message) *FollowupContext {
 				return &FollowupContext{
 					ReferencesFound:    []string{"security_inquiry"},
 					ContextElements:    extractContextElements(history),
@@ -452,7 +452,7 @@ func buildFollowupDetectors() []followupDetector {
 			Pattern:     regexp.MustCompile(`(?i)\b(that|this|the)\s+(diagram|chart|visual|architecture|design)\b`),
 			Type:        "diagram_inquiry",
 			Description: "Detects diagram-related follow-up questions",
-			Resolver: func(query string, history []session.Message) *FollowupContext {
+			Resolver: func(_ string, history []session.Message) *FollowupContext {
 				return &FollowupContext{
 					ReferencesFound:    []string{"diagram_inquiry"},
 					ContextElements:    extractContextElements(history),

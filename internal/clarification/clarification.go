@@ -1,3 +1,5 @@
+// Package clarification provides query analysis and clarification request generation
+// for the AI-powered Solutions Architect assistant.
 package clarification
 
 import (
@@ -133,7 +135,7 @@ func NewAnalyzer() *Analyzer {
 }
 
 // AnalyzeQuery analyzes a query for ambiguity and completeness
-func (a *Analyzer) AnalyzeQuery(ctx context.Context, query string, conversationHistory []session.Message) (*QueryAnalysis, error) {
+func (a *Analyzer) AnalyzeQuery(_ context.Context, query string, conversationHistory []session.Message) (*QueryAnalysis, error) {
 	analysis := &QueryAnalysis{
 		Query:               query,
 		DetectedIntents:     []string{},
@@ -147,12 +149,14 @@ func (a *Analyzer) AnalyzeQuery(ctx context.Context, query string, conversationH
 	}
 
 	// Analyze ambiguity
+	const ambiguityThreshold = 0.5
 	analysis.AmbiguityScore = a.calculateAmbiguityScore(query)
-	analysis.IsAmbiguous = analysis.AmbiguityScore > 0.5
+	analysis.IsAmbiguous = analysis.AmbiguityScore > ambiguityThreshold
 
 	// Analyze completeness
+	const completenessThreshold = 0.5
 	analysis.CompletenessScore = a.calculateCompletenessScore(query)
-	analysis.IsIncomplete = analysis.CompletenessScore < 0.5
+	analysis.IsIncomplete = analysis.CompletenessScore < completenessThreshold
 
 	// Detect intents
 	analysis.DetectedIntents = a.detectIntents(query)
@@ -170,7 +174,7 @@ func (a *Analyzer) AnalyzeQuery(ctx context.Context, query string, conversationH
 }
 
 // GenerateClarificationRequest generates a clarification request
-func (a *Analyzer) GenerateClarificationRequest(ctx context.Context, analysis *QueryAnalysis) (*Request, error) {
+func (a *Analyzer) GenerateClarificationRequest(_ context.Context, analysis *QueryAnalysis) (*Request, error) {
 	request := &Request{
 		OriginalQuery:   analysis.Query,
 		Analysis:        *analysis,
@@ -216,27 +220,35 @@ func (a *Analyzer) calculateAmbiguityScore(query string) float64 {
 	}
 
 	// Check for lack of specificity
+	const (
+		minWordCountThreshold    = 3
+		mediumWordCountThreshold = 5
+		veryShortQueryPenalty    = 0.5
+		shortQueryPenalty        = 0.2
+		questionWordPenalty      = 0.3
+	)
 	wordCount := len(strings.Fields(query))
-	if wordCount < 3 {
-		score += 0.5
-	} else if wordCount < 5 {
-		score += 0.2
+	if wordCount < minWordCountThreshold {
+		score += veryShortQueryPenalty
+	} else if wordCount < mediumWordCountThreshold {
+		score += shortQueryPenalty
 	}
 
 	// Check for question words without specific context
 	questionWords := []string{"help", "how", "what", "which", "when", "where", "why"}
 	for _, word := range questionWords {
 		if strings.Contains(queryLower, word) && !a.hasSpecificContext(queryLower) {
-			score += 0.3
+			score += questionWordPenalty
 		}
 	}
 
-	return min(score, 1.0)
+	const maxScore = 1.0
+	return minFloat64(score, maxScore)
 }
 
 // calculateCompletenessScore calculates how complete a query is
 func (a *Analyzer) calculateCompletenessScore(query string) float64 {
-	var score float64 = 1.0
+	score := 1.0
 	queryLower := strings.ToLower(query)
 
 	// Apply incompleteness rules
@@ -261,7 +273,7 @@ func (a *Analyzer) calculateCompletenessScore(query string) float64 {
 		score += 0.2
 	}
 
-	return min(max(score, 0.0), 1.0)
+	return minFloat64(maxFloat64(score, 0.0), 1.0)
 }
 
 // detectIntents detects the intents in a query
@@ -540,14 +552,14 @@ func (a *Analyzer) generateGuidedTemplates(analysis *QueryAnalysis) []GuidedTemp
 }
 
 // Helper functions
-func min(a, b float64) float64 {
+func minFloat64(a, b float64) float64 {
 	if a < b {
 		return a
 	}
 	return b
 }
 
-func max(a, b float64) float64 {
+func maxFloat64(a, b float64) float64 {
 	if a > b {
 		return a
 	}

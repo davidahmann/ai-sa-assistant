@@ -110,7 +110,7 @@ func (ls *LearningService) runLearningAnalysis() error {
 	}
 
 	// Store insights
-	if err := ls.analytics.StoreLearningInsights(insights); err != nil {
+	if err := ls.analytics.StoreInsights(insights); err != nil {
 		return fmt.Errorf("failed to store learning insights: %w", err)
 	}
 

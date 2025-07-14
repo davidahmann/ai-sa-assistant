@@ -1920,14 +1920,6 @@ func buildCodeSecurityRequirements() string {
 }
 
 // formatConversationHistory formats conversation history for inclusion in prompts with token-aware truncation
-func formatConversationHistory(conversationHistory []session.Message) string {
-	if len(conversationHistory) == 0 {
-		return ""
-	}
-
-	// Use token-aware conversation history management
-	return formatConversationHistoryWithTokenLimit(conversationHistory, DefaultMaxHistoryTokens)
-}
 
 // formatConversationHistoryWithTokenLimit formats conversation history with a specific token limit
 func formatConversationHistoryWithTokenLimit(conversationHistory []session.Message, maxTokens int) string {
@@ -1964,11 +1956,8 @@ func formatConversationHistoryWithTokenLimit(conversationHistory []session.Messa
 			remainingTokens := maxTokens - currentTokens - EstimateTokens(fmt.Sprintf("%s [%s]: \n\n", roleDisplay, timestamp))
 
 			if remainingTokens > 100 { // Only include if we have reasonable space
-				truncatedContent := truncateMessageContentToTokens(message.Content, remainingTokens)
-				formattedMessage = fmt.Sprintf("%s [%s]: %s\n\n", roleDisplay, timestamp, truncatedContent)
+				truncateMessageContentToTokens(message.Content, remainingTokens)
 				includedMessages = append([]session.Message{message}, includedMessages...)
-				currentTokens += EstimateTokens(formattedMessage)
-				remainingTokens -= EstimateTokens(formattedMessage)
 			}
 
 			// Set truncation notice if we're excluding messages

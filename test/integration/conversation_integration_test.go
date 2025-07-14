@@ -251,7 +251,7 @@ func TestMultiTurnConversationFlow(t *testing.T) {
 
 	var searchResults struct {
 		Query         string                             `json:"query"`
-		Conversations []conversation.ConversationSummary `json:"conversations"`
+		Conversations []conversation.Summary `json:"conversations"`
 		Count         int                                `json:"count"`
 	}
 	if err := json.NewDecoder(searchResp.Body).Decode(&searchResults); err != nil {

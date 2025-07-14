@@ -38,8 +38,9 @@ func TestAnalyzer_AnalyzeQuery(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "Specific architecture request",
-			query:    "Design a scalable web application architecture for 100,000 users on AWS with high availability and HIPAA compliance",
+			name: "Specific architecture request",
+			query: "Design a scalable web application architecture for 100,000 users on AWS " +
+				"with high availability and HIPAA compliance",
 			expected: false,
 		},
 		{
@@ -190,8 +191,9 @@ func TestAnalyzer_CompletenessScore(t *testing.T) {
 		maxScore float64
 	}{
 		{
-			name:     "Very complete query",
-			query:    "Design a HIPAA-compliant web application architecture for 100,000 concurrent users on AWS with high availability and disaster recovery",
+			name: "Very complete query",
+			query: "Design a HIPAA-compliant web application architecture for 100,000 concurrent users " +
+				"on AWS with high availability and disaster recovery",
 			minScore: 0.7,
 			maxScore: 1.0,
 		},

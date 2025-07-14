@@ -270,7 +270,7 @@ func TestCalculateQualityTrend(t *testing.T) {
 	assert.Less(t, trend, 0.0, "Should show declining trend")
 }
 
-func TestStoreLearningInsights(t *testing.T) {
+func TestStoreInsights(t *testing.T) {
 	db := setupTestDB(t)
 	logger := zap.NewNop()
 	analytics := NewAnalytics(db, logger)
@@ -278,7 +278,7 @@ func TestStoreLearningInsights(t *testing.T) {
 	err := analytics.InitializeLearningTables()
 	require.NoError(t, err)
 
-	insights := &LearningInsights{
+	insights := &Insights{
 		QueryPatterns: map[string]float64{
 			"migration": 0.8,
 			"security":  0.4,
@@ -296,18 +296,18 @@ func TestStoreLearningInsights(t *testing.T) {
 		UpdatedAt:            time.Now(),
 	}
 
-	err = analytics.StoreLearningInsights(insights)
+	err = analytics.StoreInsights(insights)
 	require.NoError(t, err)
 
 	// Retrieve and verify
-	retrieved, err := analytics.GetLearningInsights()
+	retrieved, err := analytics.GetInsights()
 	require.NoError(t, err)
 	assert.Equal(t, insights.QueryPatterns, retrieved.QueryPatterns)
 	assert.Equal(t, len(insights.KnowledgeGaps), len(retrieved.KnowledgeGaps))
 	assert.Equal(t, insights.ResponseQualityTrend, retrieved.ResponseQualityTrend)
 }
 
-func TestGetLearningInsights_NoData(t *testing.T) {
+func TestGetInsights_NoData(t *testing.T) {
 	db := setupTestDB(t)
 	logger := zap.NewNop()
 	analytics := NewAnalytics(db, logger)
@@ -316,7 +316,7 @@ func TestGetLearningInsights_NoData(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return default insights when none exist
-	insights, err := analytics.GetLearningInsights()
+	insights, err := analytics.GetInsights()
 	require.NoError(t, err)
 	assert.NotNil(t, insights)
 	assert.Empty(t, insights.QueryPatterns)

@@ -1153,7 +1153,7 @@ func TestChromaDB_TimeoutAndDoSPrevention(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create server that delays responses
 			server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
-				"POST:/api/v1/collections/test-collection/query": func(w http.ResponseWriter, r *http.Request) {
+				"POST:/api/v1/collections/test-collection/query": func(w http.ResponseWriter, _ *http.Request) {
 					time.Sleep(tt.serverDelay)
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
@@ -1252,7 +1252,7 @@ func TestChromaDB_InputValidationAndInjection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
-				"POST:/api/v1/collections/" + tt.collectionName + "/add": func(w http.ResponseWriter, r *http.Request) {
+				"POST:/api/v1/collections/" + tt.collectionName + "/add": func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(createMockAddResponse()))
@@ -1346,7 +1346,7 @@ func TestChromaDB_DataSizeAndDoSPrevention(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
-				"POST:/api/v1/collections/test-collection/add": func(w http.ResponseWriter, r *http.Request) {
+				"POST:/api/v1/collections/test-collection/add": func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(createMockAddResponse()))
@@ -1406,7 +1406,7 @@ func TestChromaDB_ErrorHandlingAndInformationLeakage(t *testing.T) {
 	}{
 		{
 			name: "normal_error_response",
-			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+			serverResponse: func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write([]byte(`{"detail": "Invalid request", "type": "bad_request"}`))
@@ -1416,7 +1416,7 @@ func TestChromaDB_ErrorHandlingAndInformationLeakage(t *testing.T) {
 		},
 		{
 			name: "error_with_sensitive_info",
-			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+			serverResponse: func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = w.Write([]byte(`{"detail": "Database connection failed: host=db-internal.company.com user=admin password=secret123", "type": "internal_error"}`))
@@ -1426,7 +1426,7 @@ func TestChromaDB_ErrorHandlingAndInformationLeakage(t *testing.T) {
 		},
 		{
 			name: "stack_trace_leakage",
-			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+			serverResponse: func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = w.Write([]byte(`{"detail": "Error in /usr/local/app/chroma/db.py line 123: connect() failed", "type": "internal_error", "stack_trace": "Full stack trace with file paths"}`))
@@ -1436,7 +1436,7 @@ func TestChromaDB_ErrorHandlingAndInformationLeakage(t *testing.T) {
 		},
 		{
 			name: "authentication_error",
-			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+			serverResponse: func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte(`{"detail": "Authentication failed", "type": "auth_error"}`))
@@ -1503,7 +1503,7 @@ func TestChromaDB_CircuitBreakerSecurity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			failureCount := 0
 			server := mockChromaServer(t, map[string]func(w http.ResponseWriter, r *http.Request){
-				"POST:/api/v1/collections/test-collection/query": func(w http.ResponseWriter, r *http.Request) {
+				"POST:/api/v1/collections/test-collection/query": func(w http.ResponseWriter, _ *http.Request) {
 					failureCount++
 					if failureCount <= tt.failureCount {
 						w.WriteHeader(http.StatusInternalServerError)

@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -351,10 +350,3 @@ func (r *RedisStorage) cleanupUserIndex(ctx context.Context, userKey string) err
 }
 
 // extractUserIDFromKey extracts user ID from a user index key
-func (r *RedisStorage) extractUserIDFromKey(key string) string {
-	prefix := r.userIndexKey("")
-	if strings.HasPrefix(key, prefix) {
-		return strings.TrimPrefix(key, prefix)
-	}
-	return ""
-}

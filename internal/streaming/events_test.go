@@ -47,7 +47,7 @@ func TestEventStream_AddCallback(t *testing.T) {
 	stream := NewEventStream("test-stream")
 	callbackCalled := false
 
-	callback := func(event Event) {
+	callback := func(_ Event) {
 		callbackCalled = true
 	}
 
@@ -212,7 +212,7 @@ func TestEventStream_EmitComplete(t *testing.T) {
 func TestEventStream_Close(t *testing.T) {
 	stream := NewEventStream("test-stream")
 
-	callback := func(event Event) {}
+	callback := func(_ Event) {}
 	stream.AddCallback(callback)
 
 	stream.Close()
@@ -371,7 +371,7 @@ func TestConcurrentEventEmission(t *testing.T) {
 	var eventCount int
 	var mutex sync.Mutex
 
-	callback := func(event Event) {
+	callback := func(_ Event) {
 		mutex.Lock()
 		eventCount++
 		mutex.Unlock()
@@ -386,7 +386,7 @@ func TestConcurrentEventEmission(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
-		go func(routineID int) {
+		go func(_ int) {
 			defer wg.Done()
 			for j := 0; j < eventsPerGoroutine; j++ {
 				stream.EmitProgress(StageVectorSearch, "Concurrent event", j*20, nil)

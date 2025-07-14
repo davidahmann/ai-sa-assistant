@@ -19,6 +19,7 @@ package integration
 import (
 	"context"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 )
@@ -71,8 +72,18 @@ func servicesAvailable() bool {
 		}
 	}
 
-	// Need ChromaDB (either port) and at least 3 other services
-	return chromaAvailable && servicesAvailable >= 3
+	// For basic integration tests, we need at least ChromaDB
+	// For full integration tests, we need ChromaDB and at least 3 other services
+	if chromaAvailable && servicesAvailable >= 3 {
+		return true // Full integration test environment
+	}
+	
+	// Allow ChromaDB-only tests if CHROMADB_ONLY_TESTS is set
+	if chromaAvailable && os.Getenv("CHROMADB_ONLY_TESTS") == "true" {
+		return true
+	}
+	
+	return false
 }
 
 // getChromaURL returns the appropriate ChromaDB URL based on what's available

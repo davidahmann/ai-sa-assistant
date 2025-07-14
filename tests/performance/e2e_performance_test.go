@@ -385,7 +385,7 @@ func TestPerformanceDegradationGracefully(t *testing.T) {
 	analyzeDegradation(t, performanceMetrics)
 }
 
-func testLoadLevel(t *testing.T, client *http.Client, scenarios []DemoScenario, concurrency, iterations int) *E2EPerformanceStats {
+func testLoadLevel(_ *testing.T, client *http.Client, scenarios []DemoScenario, concurrency, iterations int) *E2EPerformanceStats {
 	var wg sync.WaitGroup
 	results := make(chan DemoResult, concurrency*iterations*len(scenarios))
 

@@ -846,7 +846,7 @@ func TestTLSCertificateValidation(t *testing.T) {
 			name: "valid_tls_certificate",
 			serverSetup: func() *httptest.Server {
 				// Create server with valid TLS
-				server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(createMockEmbeddingResponse(1)))
@@ -860,13 +860,14 @@ func TestTLSCertificateValidation(t *testing.T) {
 			name: "self_signed_certificate",
 			serverSetup: func() *httptest.Server {
 				// Create server with self-signed certificate
-				server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(createMockEmbeddingResponse(1)))
 				}))
 				server.TLS = &tls.Config{
 					InsecureSkipVerify: false, // This will cause validation to fail for self-signed certs
+					MinVersion:         tls.VersionTLS12,
 				}
 				server.StartTLS()
 				return server
@@ -891,6 +892,7 @@ func TestTLSCertificateValidation(t *testing.T) {
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{
 						InsecureSkipVerify: false, // Always validate certificates
+						MinVersion:         tls.VersionTLS12,
 					},
 				},
 			}
@@ -946,13 +948,13 @@ func TestRequestResponseEncryption(t *testing.T) {
 			var server *httptest.Server
 
 			if tt.useHTTPS {
-				server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(createMockEmbeddingResponse(1)))
 				}))
 			} else {
-				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(createMockEmbeddingResponse(1)))
@@ -964,14 +966,19 @@ func TestRequestResponseEncryption(t *testing.T) {
 			config := openai.DefaultConfig("sk-test1234567890abcdef")
 			config.BaseURL = server.URL + "/v1"
 
-			// For HTTPS testing, skip certificate verification in test environment
+			// For HTTPS testing, configure TLS for test environment
 			if tt.useHTTPS {
-				config.HTTPClient = &http.Client{
-					Transport: &http.Transport{
-						TLSClientConfig: &tls.Config{
-							InsecureSkipVerify: true, // Only for testing
-						},
-					},
+				// Use httptest server's certificate for testing
+				config.HTTPClient = server.Client()
+				// Ensure minimum TLS version for security
+				if transport, ok := config.HTTPClient.Transport.(*http.Transport); ok {
+					if transport.TLSClientConfig == nil {
+						transport.TLSClientConfig = &tls.Config{
+							MinVersion: tls.VersionTLS12,
+						}
+					} else {
+						transport.TLSClientConfig.MinVersion = tls.VersionTLS12
+					}
 				}
 			}
 
@@ -1035,7 +1042,7 @@ func TestTimeoutEnforcement(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create server that delays responses
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				time.Sleep(tt.serverDelay)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
@@ -1110,7 +1117,7 @@ func TestResponseSizeLimits(t *testing.T) {
 			// Create large response
 			largeResponse := createLargeResponse(tt.responseSize)
 
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(largeResponse))

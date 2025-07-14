@@ -28,8 +28,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// ConversationMetadata represents the metadata for a conversation
-type ConversationMetadata struct {
+// Metadata represents the metadata for a conversation
+type Metadata struct {
 	ID           string    `json:"id"`
 	Title        string    `json:"title"`
 	UserID       string    `json:"user_id"`
@@ -42,22 +42,22 @@ type ConversationMetadata struct {
 	Tags         []string  `json:"tags,omitempty"`
 }
 
-// ConversationSummary provides a brief summary of conversation content
-type ConversationSummary struct {
-	Metadata     ConversationMetadata `json:"metadata"`
-	FirstMessage string               `json:"first_message,omitempty"`
-	LastMessage  string               `json:"last_message,omitempty"`
-	MessageCount int                  `json:"message_count"`
-	Duration     string               `json:"duration"`
+// Summary provides a brief summary of conversation content
+type Summary struct {
+	Metadata     Metadata `json:"metadata"`
+	FirstMessage string   `json:"first_message,omitempty"`
+	LastMessage  string   `json:"last_message,omitempty"`
+	MessageCount int      `json:"message_count"`
+	Duration     string   `json:"duration"`
 }
 
-// ConversationList represents a paginated list of conversations
-type ConversationList struct {
-	Conversations []ConversationSummary `json:"conversations"`
-	Total         int                   `json:"total"`
-	Page          int                   `json:"page"`
-	PageSize      int                   `json:"page_size"`
-	HasMore       bool                  `json:"has_more"`
+// List represents a paginated list of conversations
+type List struct {
+	Conversations []Summary `json:"conversations"`
+	Total         int       `json:"total"`
+	Page          int       `json:"page"`
+	PageSize      int       `json:"page_size"`
+	HasMore       bool      `json:"has_more"`
 }
 
 // Manager handles conversation metadata operations
@@ -75,13 +75,13 @@ func NewManager(sessionManager *session.Manager, logger *zap.Logger) *Manager {
 }
 
 // CreateConversation creates a new conversation session
-func (m *Manager) CreateConversation(ctx context.Context, userID string) (*ConversationMetadata, error) {
+func (m *Manager) CreateConversation(ctx context.Context, userID string) (*Metadata, error) {
 	sess, err := m.sessionManager.CreateSession(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
-	metadata := &ConversationMetadata{
+	metadata := &Metadata{
 		ID:           sess.ID,
 		Title:        sess.Title,
 		UserID:       sess.UserID,
@@ -102,7 +102,7 @@ func (m *Manager) CreateConversation(ctx context.Context, userID string) (*Conve
 }
 
 // GetConversation retrieves conversation metadata by ID
-func (m *Manager) GetConversation(ctx context.Context, conversationID string) (*ConversationMetadata, error) {
+func (m *Manager) GetConversation(ctx context.Context, conversationID string) (*Metadata, error) {
 	sess, err := m.sessionManager.GetSession(ctx, conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session: %w", err)
@@ -114,7 +114,7 @@ func (m *Manager) GetConversation(ctx context.Context, conversationID string) (*
 		lastActivity = lastMessage.Timestamp
 	}
 
-	metadata := &ConversationMetadata{
+	metadata := &Metadata{
 		ID:           sess.ID,
 		Title:        sess.Title,
 		UserID:       sess.UserID,
@@ -131,7 +131,7 @@ func (m *Manager) GetConversation(ctx context.Context, conversationID string) (*
 }
 
 // ListConversations returns a paginated list of conversations for a user
-func (m *Manager) ListConversations(ctx context.Context, userID string, page, pageSize int) (*ConversationList, error) {
+func (m *Manager) ListConversations(ctx context.Context, userID string, page, pageSize int) (*List, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -145,9 +145,9 @@ func (m *Manager) ListConversations(ctx context.Context, userID string, page, pa
 	}
 
 	// Convert sessions to conversation summaries
-	var summaries []ConversationSummary
+	var summaries []Summary
 	for _, sess := range sessions {
-		summary := m.createConversationSummary(sess)
+		summary := m.createSummary(sess)
 		summaries = append(summaries, summary)
 	}
 
@@ -162,8 +162,8 @@ func (m *Manager) ListConversations(ctx context.Context, userID string, page, pa
 	endIdx := startIdx + pageSize
 
 	if startIdx >= total {
-		return &ConversationList{
-			Conversations: []ConversationSummary{},
+		return &List{
+			Conversations: []Summary{},
 			Total:         total,
 			Page:          page,
 			PageSize:      pageSize,
@@ -178,7 +178,7 @@ func (m *Manager) ListConversations(ctx context.Context, userID string, page, pa
 	paginatedSummaries := summaries[startIdx:endIdx]
 	hasMore := endIdx < total
 
-	return &ConversationList{
+	return &List{
 		Conversations: paginatedSummaries,
 		Total:         total,
 		Page:          page,
@@ -262,7 +262,7 @@ func (m *Manager) SearchConversations(
 	ctx context.Context,
 	userID, query string,
 	limit int,
-) ([]ConversationSummary, error) {
+) ([]Summary, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -272,13 +272,13 @@ func (m *Manager) SearchConversations(
 		return nil, fmt.Errorf("failed to list user sessions: %w", err)
 	}
 
-	var matchingSummaries []ConversationSummary
+	var matchingSummaries []Summary
 	queryLower := strings.ToLower(query)
 
 	for _, sess := range sessions {
 		// Check if title matches
 		if strings.Contains(strings.ToLower(sess.Title), queryLower) {
-			summary := m.createConversationSummary(sess)
+			summary := m.createSummary(sess)
 			matchingSummaries = append(matchingSummaries, summary)
 			continue
 		}
@@ -286,7 +286,7 @@ func (m *Manager) SearchConversations(
 		// Check if any message content matches
 		for _, message := range sess.Messages {
 			if strings.Contains(strings.ToLower(message.Content), queryLower) {
-				summary := m.createConversationSummary(sess)
+				summary := m.createSummary(sess)
 				matchingSummaries = append(matchingSummaries, summary)
 				break
 			}
@@ -374,8 +374,8 @@ func (m *Manager) GetConversationStats(ctx context.Context, userID string) (map[
 	return stats, nil
 }
 
-// createConversationSummary creates a conversation summary from a session
-func (m *Manager) createConversationSummary(sess *session.Session) ConversationSummary {
+// createSummary creates a conversation summary from a session
+func (m *Manager) createSummary(sess *session.Session) Summary {
 	lastActivity := sess.UpdatedAt
 	var firstMessage, lastMessage string
 
@@ -388,7 +388,7 @@ func (m *Manager) createConversationSummary(sess *session.Session) ConversationS
 
 	duration := time.Since(sess.CreatedAt).String()
 
-	metadata := ConversationMetadata{
+	metadata := Metadata{
 		ID:           sess.ID,
 		Title:        sess.Title,
 		UserID:       sess.UserID,
@@ -401,7 +401,7 @@ func (m *Manager) createConversationSummary(sess *session.Session) ConversationS
 		Tags:         extractTagsFromMetadata(sess.Metadata),
 	}
 
-	return ConversationSummary{
+	return Summary{
 		Metadata:     metadata,
 		FirstMessage: firstMessage,
 		LastMessage:  lastMessage,

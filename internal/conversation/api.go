@@ -277,73 +277,7 @@ type AddMessageRequest struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// addMessage handles POST /api/v1/conversations/:id/messages
-func (h *APIHandler) addMessage(c *gin.Context) {
-	conversationID := c.Param("id")
-	if !session.ValidateSessionID(conversationID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid conversation ID format"})
-		return
-	}
 
-	var req AddMessageRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format", "details": err.Error()})
-		return
-	}
-
-	// Validate role
-	var role session.MessageRole
-	switch strings.ToLower(req.Role) {
-	case "user":
-		role = session.UserRole
-	case "assistant":
-		role = session.AssistantRole
-	case "system":
-		role = session.SystemRole
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role. Must be 'user', 'assistant', or 'system'"})
-		return
-	}
-
-	// Sanitize content
-	content := session.SanitizeUserInput(req.Content)
-	if content == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Message content cannot be empty"})
-		return
-	}
-
-	ctx := c.Request.Context()
-	if err := h.manager.AddMessageToConversation(ctx, conversationID, role, content, req.Metadata); err != nil {
-		h.logger.Error("Failed to add message to conversation",
-			zap.String("id", conversationID), zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add message"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{"message": "Message added successfully"})
-}
-
-// HealthCheckResponse represents the health check response
-type HealthCheckResponse struct {
-	Status  string                 `json:"status"`
-	Service string                 `json:"service"`
-	Version string                 `json:"version"`
-	Details map[string]interface{} `json:"details,omitempty"`
-}
-
-// healthCheck handles GET /api/v1/conversations/health
-func (h *APIHandler) healthCheck(c *gin.Context) {
-	response := HealthCheckResponse{
-		Status:  "healthy",
-		Service: "conversation-api",
-		Version: "1.0.0",
-		Details: map[string]interface{}{
-			"timestamp": c.Request.Header.Get("X-Request-Time"),
-		},
-	}
-
-	c.JSON(http.StatusOK, response)
-}
 
 // ErrorResponse represents a standard error response
 type ErrorResponse struct {
@@ -352,25 +286,8 @@ type ErrorResponse struct {
 	Details map[string]interface{} `json:"details,omitempty"`
 }
 
-// writeErrorResponse writes a standardized error response
-func (h *APIHandler) writeErrorResponse(c *gin.Context, statusCode int, message string, details map[string]interface{}) {
-	response := ErrorResponse{
-		Error:   message,
-		Details: details,
-	}
 
-	// Add request ID if available
-	if requestID := c.GetHeader("X-Request-ID"); requestID != "" {
-		if response.Details == nil {
-			response.Details = make(map[string]interface{})
-		}
-		response.Details["request_id"] = requestID
-	}
-
-	c.JSON(statusCode, response)
-}
-
-// Middleware for request logging and error handling
+// RequestLoggingMiddleware provides middleware for request logging and error handling
 func (h *APIHandler) RequestLoggingMiddleware() gin.HandlerFunc {
 	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
 		var statusColor, methodColor, resetColor string
@@ -393,7 +310,7 @@ func (h *APIHandler) RequestLoggingMiddleware() gin.HandlerFunc {
 	})
 }
 
-// CORS middleware for conversation API
+// CORSMiddleware provides CORS middleware for conversation API
 func (h *APIHandler) CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")

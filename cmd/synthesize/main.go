@@ -80,41 +80,56 @@ type ParameterPreset struct {
 	Description string
 }
 
+// Parameter preset constants
+const (
+	CreativeTemperature = 0.8
+	BalancedTemperature = 0.4
+	FocusedTemperature  = 0.1
+	DetailedTemperature = 0.3
+	ConciseTemperature  = 0.2
+
+	CreativeMaxTokens = 3000
+	BalancedMaxTokens = 2000
+	FocusedMaxTokens  = 2000
+	DetailedMaxTokens = 4000
+	ConciseMaxTokens  = 1000
+)
+
 // getParameterPresets returns available parameter presets
 func getParameterPresets() map[string]ParameterPreset {
 	return map[string]ParameterPreset{
 		"creative": {
 			Name:        "creative",
-			Temperature: 0.8,
-			MaxTokens:   3000,
+			Temperature: CreativeTemperature,
+			MaxTokens:   CreativeMaxTokens,
 			Model:       "gpt-4o",
 			Description: "More creative and varied responses with higher temperature",
 		},
 		"balanced": {
 			Name:        "balanced",
-			Temperature: 0.4,
-			MaxTokens:   2000,
+			Temperature: BalancedTemperature,
+			MaxTokens:   BalancedMaxTokens,
 			Model:       "gpt-4o",
 			Description: "Balanced approach between creativity and focus",
 		},
 		"focused": {
 			Name:        "focused",
-			Temperature: 0.1,
-			MaxTokens:   2000,
+			Temperature: FocusedTemperature,
+			MaxTokens:   FocusedMaxTokens,
 			Model:       "gpt-4o",
 			Description: "More focused and deterministic responses",
 		},
 		"detailed": {
 			Name:        "detailed",
-			Temperature: 0.3,
-			MaxTokens:   4000,
+			Temperature: DetailedTemperature,
+			MaxTokens:   DetailedMaxTokens,
 			Model:       "gpt-4o",
 			Description: "Comprehensive and detailed responses",
 		},
 		"concise": {
 			Name:        "concise",
-			Temperature: 0.2,
-			MaxTokens:   1000,
+			Temperature: ConciseTemperature,
+			MaxTokens:   ConciseMaxTokens,
 			Model:       "gpt-4o-mini",
 			Description: "Brief and to-the-point responses",
 		},
@@ -312,11 +327,11 @@ func setupServices(cfg *config.Config, logger *zap.Logger) *internalopenai.Clien
 	if testMode {
 		logger.Info("Skipping OpenAI client initialization in test mode")
 		return nil // Return nil in test mode
-	} else {
-		openaiClient, err = internalopenai.NewClient(cfg.OpenAI.APIKey, logger)
-		if err != nil {
-			logger.Fatal("Failed to initialize OpenAI client", zap.Error(err))
-		}
+	}
+
+	openaiClient, err = internalopenai.NewClient(cfg.OpenAI.APIKey, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize OpenAI client", zap.Error(err))
 	}
 
 	// Log configuration with masked sensitive values
@@ -626,7 +641,13 @@ func processRegenerationRequest(
 	}
 
 	// Build enhanced prompt for regeneration
-	prompt := buildRegenerationPrompt(req.Query, contextItems, webResultStrings, req.ConversationHistory, req.PreviousResponse)
+	prompt := buildRegenerationPrompt(
+		req.Query,
+		contextItems,
+		webResultStrings,
+		req.ConversationHistory,
+		req.PreviousResponse,
+	)
 
 	// Call OpenAI Chat Completion API with custom parameters
 	ctx, cancel := context.WithTimeout(context.Background(), SynthesisRequestTimeout)
@@ -653,7 +674,13 @@ func processRegenerationRequest(
 }
 
 // buildRegenerationPrompt builds a specialized prompt for regeneration requests
-func buildRegenerationPrompt(query string, contextItems []synth.ContextItem, webResultStrings []string, conversationHistory []session.Message, previousResponse *string) string {
+func buildRegenerationPrompt(
+	query string,
+	contextItems []synth.ContextItem,
+	webResultStrings []string,
+	conversationHistory []session.Message,
+	previousResponse *string,
+) string {
 	// Start with the base prompt
 	prompt := synth.BuildPromptWithConversation(query, contextItems, webResultStrings, conversationHistory)
 
