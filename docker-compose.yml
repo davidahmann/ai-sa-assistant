@@ -16,7 +16,7 @@ services:
       - "8081:8081"
     volumes:
       - ./configs:/app/configs
-      - ./metadata.db:/app/metadata.db
+      - metadata_data:/app/data
     depends_on:
       - chromadb
     env_file:
@@ -92,13 +92,17 @@ services:
     volumes:
       - ./configs:/app/configs
       - ./docs:/app/docs
-      - ./metadata.db:/app/metadata.db
+      - metadata_data:/app/data
     depends_on:
       - chromadb
+    env_file:
+      - .env
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
     profiles:
       - ingest
+    command: ["./ingest", "-d", "/app/docs", "-c", "/app/configs/config.yaml"]
 
 volumes:
   chromadb_data:
+  metadata_data:

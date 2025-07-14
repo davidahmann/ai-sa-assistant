@@ -46,6 +46,7 @@ const (
 type Client struct {
 	baseURL        string
 	collection     string
+	collectionID   string
 	httpClient     *http.Client
 	logger         *zap.Logger
 	circuitBreaker *resilience.CircuitBreaker
@@ -246,7 +247,12 @@ func (c *Client) AddDocuments(ctx context.Context, documents []Document, embeddi
 		zap.Int("embedding_count", len(embeddings)))
 
 	return c.executeWithResilience(ctx, func(ctx context.Context) error {
-		url := fmt.Sprintf("%s/api/v1/collections/%s/add", c.baseURL, c.collection)
+		collectionID, err := c.getCollectionUUID(ctx, c.collection)
+		if err != nil {
+			return err
+		}
+
+		url := fmt.Sprintf("%s/api/v1/collections/%s/add", c.baseURL, collectionID)
 
 		// Prepare request payload
 		var metadatas []map[string]string
@@ -353,7 +359,12 @@ func (c *Client) buildSearchRequest(queryEmbedding []float32, nResults int, docI
 
 // executeSearchRequest executes the search request and returns the response
 func (c *Client) executeSearchRequest(ctx context.Context, searchReq SearchRequest) (SearchResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/collections/%s/query", c.baseURL, c.collection)
+	collectionID, err := c.getCollectionUUID(ctx, c.collection)
+	if err != nil {
+		return SearchResponse{}, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/collections/%s/query", c.baseURL, collectionID)
 
 	jsonPayload, err := json.Marshal(searchReq)
 	if err != nil {
@@ -496,7 +507,12 @@ func (c *Client) DeleteCollection(ctx context.Context, name string) error {
 	c.logger.Info("Deleting collection", zap.String("collection_name", name))
 
 	return c.executeWithResilience(ctx, func(ctx context.Context) error {
-		url := fmt.Sprintf("%s/api/v1/collections/%s", c.baseURL, name)
+		collectionID, err := c.getCollectionUUID(ctx, name)
+		if err != nil {
+			return err
+		}
+
+		url := fmt.Sprintf("%s/api/v1/collections/%s", c.baseURL, collectionID)
 
 		req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 		if err != nil {
@@ -516,6 +532,50 @@ func (c *Client) DeleteCollection(ctx context.Context, name string) error {
 		c.logger.Info("Collection deleted successfully", zap.String("collection_name", name))
 		return nil
 	}, "DeleteCollection")
+}
+
+// getCollectionUUID retrieves the UUID for a collection by name
+func (c *Client) getCollectionUUID(ctx context.Context, name string) (string, error) {
+	if c.collectionID != "" {
+		return c.collectionID, nil
+	}
+
+	c.logger.Info("Retrieving collection UUID", zap.String("collection_name", name))
+
+	var collectionID string
+	err := c.executeWithResilience(ctx, func(ctx context.Context) error {
+		url := fmt.Sprintf("%s/api/v1/collections/%s", c.baseURL, name)
+
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return resilience.NewInternalError("failed to create get request", err)
+		}
+
+		resp, err := c.makeRequest(req)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close response body", zap.Error(err))
+			}
+		}()
+
+		var collection Collection
+		if err := json.NewDecoder(resp.Body).Decode(&collection); err != nil {
+			return resilience.NewInternalError("failed to decode collection response", err)
+		}
+
+		collectionID = collection.ID
+		c.collectionID = collectionID
+
+		c.logger.Info("Collection UUID retrieved successfully",
+			zap.String("collection_name", name),
+			zap.String("collection_id", collectionID))
+		return nil
+	}, "GetCollectionUUID")
+
+	return collectionID, err
 }
 
 // GetCollection retrieves collection information from ChromaDB

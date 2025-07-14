@@ -41,8 +41,8 @@ const (
 	MaxQueryLength = 10000
 	// HealthCheckTimeout defines the timeout for health checks
 	HealthCheckTimeout = 5 * time.Second
-	// SynthesisRequestTimeout defines the timeout for synthesis requests
-	SynthesisRequestTimeout = 30 * time.Second
+	// DefaultSynthesisRequestTimeout defines the default timeout for synthesis requests
+	DefaultSynthesisRequestTimeout = 30 * time.Second
 )
 
 // SynthesisRequest represents the incoming synthesis request
@@ -136,6 +136,14 @@ func getParameterPresets() map[string]ParameterPreset {
 	}
 }
 
+// getConfiguredTimeout returns the configured timeout duration for synthesis requests
+func getConfiguredTimeout(cfg *config.Config) time.Duration {
+	if cfg != nil && cfg.Synthesis.TimeoutSeconds > 0 {
+		return time.Duration(cfg.Synthesis.TimeoutSeconds) * time.Second
+	}
+	return DefaultSynthesisRequestTimeout
+}
+
 // ChunkItem represents a document chunk with metadata
 type ChunkItem struct {
 	Text     string `json:"text" binding:"required"`
@@ -160,8 +168,12 @@ func validateSynthesisRequest(req SynthesisRequest) error {
 		return fmt.Errorf("query is too long (max %d characters)", MaxQueryLength)
 	}
 
+	// In test mode, allow empty chunks and web results for demo purposes
 	if len(req.Chunks) == 0 && len(req.WebResults) == 0 {
-		return fmt.Errorf("at least one chunk or web result must be provided")
+		if os.Getenv("TEST_MODE") != "true" {
+			return fmt.Errorf("at least one chunk or web result must be provided")
+		}
+		// In test mode, we'll provide fallback content
 	}
 
 	// Validate chunks
@@ -604,8 +616,22 @@ func processSynthesisRequest(
 	prompt := synth.BuildPromptWithConversation(req.Query, contextItems, webResultStrings, req.ConversationHistory)
 
 	// Call OpenAI Chat Completion API
-	ctx, cancel := context.WithTimeout(context.Background(), SynthesisRequestTimeout)
+	timeoutDuration := getConfiguredTimeout(cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 	defer cancel()
+
+	// Handle test mode with mock response
+	if openaiClient == nil {
+		logger.Info("Using mock OpenAI response for test mode")
+		return &internalopenai.ChatCompletionResponse{
+			Content: generateMockSynthesisResponse(req.Query, contextItems),
+			Usage: openai.Usage{
+				PromptTokens:     100,
+				CompletionTokens: 200,
+				TotalTokens:      300,
+			},
+		}, nil
+	}
 
 	return openaiClient.CreateChatCompletion(ctx, internalopenai.ChatCompletionRequest{
 		Model:       cfg.Synthesis.Model,
@@ -623,7 +649,7 @@ func processSynthesisRequest(
 // processRegenerationRequest handles the core regeneration logic with custom parameters
 func processRegenerationRequest(
 	req RegenerationRequest,
-	_ *config.Config,
+	cfg *config.Config,
 	logger *zap.Logger,
 	openaiClient *internalopenai.Client,
 ) (*internalopenai.ChatCompletionResponse, error) {
@@ -650,7 +676,8 @@ func processRegenerationRequest(
 	)
 
 	// Call OpenAI Chat Completion API with custom parameters
-	ctx, cancel := context.WithTimeout(context.Background(), SynthesisRequestTimeout)
+	timeoutDuration := getConfiguredTimeout(cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 	defer cancel()
 
 	logger.Info("Regenerating with custom parameters",
@@ -659,6 +686,19 @@ func processRegenerationRequest(
 		zap.Float64("temperature", float64(req.Parameters.Temperature)),
 		zap.Int("max_tokens", req.Parameters.MaxTokens),
 	)
+
+	// Handle test mode with mock response
+	if openaiClient == nil {
+		logger.Info("Using mock OpenAI response for regeneration in test mode")
+		return &internalopenai.ChatCompletionResponse{
+			Content: generateMockSynthesisResponse(req.Query, contextItems),
+			Usage: openai.Usage{
+				PromptTokens:     120,
+				CompletionTokens: 250,
+				TotalTokens:      370,
+			},
+		}, nil
+	}
 
 	return openaiClient.CreateChatCompletion(ctx, internalopenai.ChatCompletionRequest{
 		Model:       req.Parameters.Model,
@@ -999,4 +1039,98 @@ func initializeLogger(cfg *config.Config) (*zap.Logger, error) {
 	}
 
 	return zapConfig.Build()
+}
+
+// generateMockSynthesisResponse generates a mock AI response for test mode
+func generateMockSynthesisResponse(query string, contextItems []synth.ContextItem) string {
+	// Create a realistic mock response based on the query and context
+	response := fmt.Sprintf("## Mock AI Response for Query: %s\n\n", query)
+
+	// Add context-aware content
+	if len(contextItems) > 0 {
+		response += "Based on the provided context, here's a comprehensive response:\n\n"
+
+		// Extract key themes from context
+		for i, item := range contextItems {
+			if i >= 3 { // Limit to first 3 context items
+				break
+			}
+			response += fmt.Sprintf("• **Key Point %d**: Referenced from %s - %s\n",
+				i+1, item.SourceID,
+				truncateString(item.Content, 100))
+		}
+		response += "\n"
+	} else {
+		response += "**Demo Mode**: Generating response based on query analysis without external context.\n\n"
+	}
+
+	// Add query-specific mock content
+	if strings.Contains(strings.ToLower(query), "aws") {
+		response += `### AWS Migration Strategy
+
+**Phase 1: Assessment & Planning**
+- Infrastructure discovery and mapping
+- Application dependency analysis
+- Cost optimization recommendations
+
+**Phase 2: Migration Execution**
+- AWS Application Migration Service (MGN) setup
+- Pilot migration of non-critical workloads
+- Production workload migration
+
+**Phase 3: Optimization**
+- Performance tuning and cost optimization
+- Security and compliance validation
+- Monitoring and alerting setup
+
+### Architecture Recommendations
+- Use AWS VPC for network isolation
+- Implement AWS Well-Architected Framework principles
+- Consider AWS Landing Zone for multi-account strategy
+
+**Note**: This is a mock response generated for demonstration purposes.`
+	} else if strings.Contains(strings.ToLower(query), "azure") {
+		response += `### Azure Migration Strategy
+
+**Assessment Phase**
+- Azure Migrate assessment tools
+- Application portfolio analysis
+- Security and compliance review
+
+**Migration Approach**
+- Azure Site Recovery for lift-and-shift
+- Azure Database Migration Service
+- Azure App Service for application modernization
+
+**Post-Migration**
+- Azure Monitor implementation
+- Cost management and optimization
+- Azure Security Center configuration
+
+**Note**: This is a mock response generated for demonstration purposes.`
+	} else {
+		response += `### Cloud Architecture Guidance
+
+Based on your query, here are key recommendations:
+
+1. **Assessment**: Evaluate current infrastructure and applications
+2. **Strategy**: Define migration approach (lift-and-shift, re-platform, or refactor)
+3. **Security**: Implement cloud security best practices
+4. **Monitoring**: Set up comprehensive monitoring and alerting
+5. **Optimization**: Continuously optimize for cost and performance
+
+This response demonstrates the AI assistant's capability to provide structured, actionable guidance for cloud architecture and migration scenarios.
+
+**Note**: This is a mock response generated for demonstration purposes.`
+	}
+
+	return response
+}
+
+// truncateString truncates a string to specified length with ellipsis
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }

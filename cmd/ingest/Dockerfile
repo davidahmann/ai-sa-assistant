@@ -10,13 +10,19 @@ COPY . .
 WORKDIR /app/cmd/ingest
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o /app/ingest .
 
-FROM gcr.io/distroless/base-debian12:nonroot
+FROM alpine:3.18
+
+RUN apk --no-cache add ca-certificates=20240705-r0 sqlite=3.46.1-r0 && \
+    adduser -D -s /bin/sh appuser
 
 WORKDIR /app
 
-COPY --from=builder --chown=nonroot:nonroot /app/ingest ./
-COPY --from=builder --chown=nonroot:nonroot /app/configs/ ./configs/
+COPY --from=builder --chown=appuser:appuser /app/ingest ./ingest
+COPY --from=builder --chown=appuser:appuser /app/configs/ ./configs/
 
-USER nonroot
+# Create data directory with correct ownership for the volume mount
+RUN mkdir -p /app/data && chown appuser:appuser /app/data
+
+USER appuser
 
 CMD ["./ingest"]

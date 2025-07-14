@@ -15,13 +15,16 @@ RUN ls -la /app/retrieve
 
 FROM alpine:3.18
 
-RUN apk --no-cache add ca-certificates sqlite
-RUN adduser -D -s /bin/sh appuser
+RUN apk --no-cache add ca-certificates=20240705-r0 sqlite=3.46.1-r0 && \
+    adduser -D -s /bin/sh appuser
 
 WORKDIR /app
 
 COPY --from=builder --chown=appuser:appuser /app/retrieve ./retrieve
 COPY --from=builder --chown=appuser:appuser /app/configs/ ./configs/
+
+# Create data directory with correct ownership for the volume mount
+RUN mkdir -p /app/data && chown appuser:appuser /app/data
 
 USER appuser
 

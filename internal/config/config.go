@@ -126,9 +126,12 @@ type WebSearchConfig struct {
 
 // SynthesisConfig contains synthesis service configuration
 type SynthesisConfig struct {
-	Model       string  `mapstructure:"model"`
-	MaxTokens   int     `mapstructure:"max_tokens"`
-	Temperature float64 `mapstructure:"temperature"`
+	Model             string  `mapstructure:"model"`
+	MaxTokens         int     `mapstructure:"max_tokens"`
+	Temperature       float64 `mapstructure:"temperature"`
+	TimeoutSeconds    int     `mapstructure:"timeout_seconds"`
+	MaxRetries        int     `mapstructure:"max_retries"`
+	BackoffMultiplier float64 `mapstructure:"backoff_multiplier"`
 }
 
 // DiagramConfig contains diagram rendering configuration

@@ -56,7 +56,7 @@ chroma:
 metadata:
   # SQLite database path for metadata storage
   # Environment variable: METADATA_DB_PATH or SA_ASSISTANT_METADATA_DB_PATH
-  db_path: "./metadata.db"
+  db_path: "/app/data/metadata.db"
 
 # Retrieval Engine Configuration
 # Environment variables: SA_ASSISTANT_RETRIEVAL_*

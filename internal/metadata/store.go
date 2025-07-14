@@ -72,6 +72,20 @@ func NewStore(dbPath string, logger *zap.Logger) (*Store, error) {
 
 	// Test database connection
 	if err := db.Ping(); err != nil {
+		// Check for common permission-related errors
+		if strings.Contains(err.Error(), "no such file or directory") {
+			logger.Error("Database directory may not exist or be accessible",
+				zap.String("db_path", dbPath),
+				zap.String("directory", filepath.Dir(dbPath)),
+				zap.Error(err))
+			return nil, errorHandler.WrapError(err, "database directory not accessible - check volume mounting and permissions")
+		}
+		if strings.Contains(err.Error(), "readonly database") || strings.Contains(err.Error(), "permission denied") {
+			logger.Error("Database permission error detected",
+				zap.String("db_path", dbPath),
+				zap.Error(err))
+			return nil, errorHandler.WrapError(err, "database permission denied - check container user permissions")
+		}
 		return nil, errorHandler.WrapError(err, "pinging database")
 	}
 
