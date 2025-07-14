@@ -243,7 +243,6 @@ func generateMockEmbeddings(count int) [][]float32 {
 	return embeddings
 }
 
-
 // Helper function to check if OpenAI API key is available
 func hasOpenAIKey() bool {
 	return os.Getenv("OPENAI_API_KEY") != ""
