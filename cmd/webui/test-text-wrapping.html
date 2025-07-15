@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Wrapping Test</title>
+    <link rel="stylesheet" href="static/style.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #f9fafb;
+            padding: 20px;
+            border-radius: 12px;
+        }
+        .test-title {
+            text-align: center;
+            color: #374151;
+            margin-bottom: 30px;
+        }
+        .test-case {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .test-case h3 {
+            margin-top: 0;
+            color: #1f2937;
+            font-size: 18px;
+        }
+        .test-description {
+            color: #6b7280;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1 class="test-title">Chat Message Text Wrapping Test</h1>
+        
+        <div class="test-case">
+            <h3>Test Case 1: Long URL</h3>
+            <p class="test-description">Testing URLs that would typically cause horizontal overflow</p>
+            <div class="messages-container" style="max-width: 600px; border: 1px solid #e5e7eb;">
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <div class="message-bubble">
+                            <p>Here's a very long URL that should wrap properly without causing horizontal overflow:</p>
+                            <p><a href="#">https://aws-application-migration-service-us-west-2.s3.us-west-2.amazonaws.com/latest/linux/aws-replication-installer-init.py</a></p>
+                            <p>This URL should break at appropriate points and not extend beyond the container boundaries.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test Case 2: Code Snippet</h3>
+            <p class="test-description">Testing code blocks with long lines</p>
+            <div class="messages-container" style="max-width: 600px; border: 1px solid #e5e7eb;">
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <div class="message-bubble">
+                            <p>Here's a code snippet that should wrap properly:</p>
+                            <pre><code>wget -O ./aws-replication-installer-init.py https://aws-application-migration-service-us-west-2.s3.us-west-2.amazonaws.com/latest/linux/aws-replication-installer-init.py
+python3 aws-replication-installer-init.py --region us-west-2 --no-prompt
+aws mgn describe-source-servers --region us-west-2 --source-server-ids $SOURCE_SERVER_ID</code></pre>
+                            <p>The code should maintain readability while preventing horizontal overflow.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test Case 3: Long Technical Terms</h3>
+            <p class="test-description">Testing very long technical terms and unbreakable strings</p>
+            <div class="messages-container" style="max-width: 600px; border: 1px solid #e5e7eb;">
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <div class="message-bubble">
+                            <p>Configuration file: supercalifragilisticexpialidocious-configuration-file-with-extremely-long-filename.json</p>
+                            <p>Environment variable: SUPERCALIFRAGILISTICEXPIALIDOCIOUS_ENVIRONMENT_VARIABLE_WITH_EXTREMELY_LONG_NAME</p>
+                            <p>These long strings should break appropriately without causing layout issues.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test Case 4: Mixed Content</h3>
+            <p class="test-description">Testing comprehensive responses with mixed content types</p>
+            <div class="messages-container" style="max-width: 600px; border: 1px solid #e5e7eb;">
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <div class="message-bubble">
+                            <h4>AWS Migration Cost Analysis</h4>
+                            <p>For your 120 VM migration, here's the comprehensive cost breakdown:</p>
+                            <ul>
+                                <li>On-Demand Monthly: $40,680.00</li>
+                                <li>Reserved Monthly: $38,088.00</li>
+                                <li>Monthly Savings: $2,592.00 (6.4%)</li>
+                            </ul>
+                            <p>Reference documentation: <a href="#">https://docs.aws.amazon.com/application-migration-service/latest/userguide/what-is-application-migration-service.html</a></p>
+                            <p>Command to check status:</p>
+                            <code>aws mgn describe-source-servers --region us-west-2 --source-server-ids server-1234567890abcdef0 --output table</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test Case 5: User Message</h3>
+            <p class="test-description">Testing user messages with long content</p>
+            <div class="messages-container" style="max-width: 600px; border: 1px solid #e5e7eb;">
+                <div class="message user">
+                    <div class="message-avatar">U</div>
+                    <div class="message-content">
+                        <div class="message-bubble">
+                            <p>Generate a high-level lift-and-shift plan for migrating 120 on-prem Windows and Linux VMs to AWS, including EC2 instance recommendations, VPC/subnet topology, and the latest AWS MGN best practices from Q2 2025. Please include detailed cost analysis and optimization strategies.</p>
+                            <p>Additional context: <a href="#">https://our-internal-wiki.company.com/infrastructure/migration-requirements-and-specifications.html</a></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test Case 6: Mobile Simulation</h3>
+            <p class="test-description">Testing mobile viewport (320px width)</p>
+            <div class="messages-container" style="max-width: 320px; border: 1px solid #e5e7eb;">
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <div class="message-bubble">
+                            <p>Mobile test with URL: <a href="#">https://aws-application-migration-service-us-west-2.s3.us-west-2.amazonaws.com/latest/linux/aws-replication-installer-init.py</a></p>
+                            <pre><code>aws mgn describe-source-servers --region us-west-2</code></pre>
+                            <p>This should wrap correctly on mobile devices without horizontal scrolling.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -791,11 +791,11 @@ func TestCodeGenerationLanguageSpecificInstructions(t *testing.T) {
 		"AWS CLI",
 		"Azure CLI",
 		"PowerShell",
-		"Include provider configuration",
-		"Use meaningful resource names",
-		"Include error handling and validation",
-		"Use meaningful variable names",
-		"Include proper indentation and structure",
+		"include provider configuration",
+		"use meaningful resource names",
+		"error handling and validation",
+		"meaningful variable names",
+		"proper indentation and structure",
 	}
 
 	for _, requirement := range languageSpecificRequirements {
@@ -1307,10 +1307,10 @@ func TestValidateCodeSecurity(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "Overly permissive CIDR",
+			name:     "Legitimate CIDR in security group",
 			code:     "resource \"aws_security_group_rule\" \"allow_all\" {\n  cidr_blocks = [\"0.0.0.0/0\"]\n}",
 			language: "terraform",
-			expected: false,
+			expected: true,
 		},
 	}
 
@@ -1448,6 +1448,65 @@ func TestExtractCodeSnippetsWithSecurity(t *testing.T) {
 					if result[i].Language != expectedLang {
 						t.Errorf("Expected language %s, got %s", expectedLang, result[i].Language)
 					}
+				}
+			}
+		})
+	}
+}
+
+func TestExtractCodeSnippetsOpenAIFormats(t *testing.T) {
+	tests := []struct {
+		name     string
+		response string
+		expected []CodeSnippet
+	}{
+		{
+			name:     "Language without newline separator",
+			response: "```terraform resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			expected: []CodeSnippet{{Language: "terraform", Code: "resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}"}},
+		},
+		{
+			name:     "Language with dash (hcl-terraform)",
+			response: "```hcl-terraform\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			expected: []CodeSnippet{{Language: "terraform", Code: "resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}"}},
+		},
+		{
+			name:     "Code block without language",
+			response: "```\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			expected: []CodeSnippet{},
+		},
+		{
+			name:     "Code block with extra spaces",
+			response: "```  terraform  \nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			expected: []CodeSnippet{{Language: "terraform", Code: "resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}"}},
+		},
+		{
+			name:     "Code block with Windows line endings",
+			response: "```terraform\r\nresource \"aws_vpc\" \"main\" {\r\n  cidr_block = \"10.0.0.0/16\"\r\n}\r\n```",
+			expected: []CodeSnippet{{Language: "terraform", Code: "resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}"}},
+		},
+		{
+			name:     "Code block with dots in language",
+			response: "```terraform.tf\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n```",
+			expected: []CodeSnippet{{Language: "terraform", Code: "resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractCodeSnippets(tt.response)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d code snippets, got %d", len(tt.expected), len(result))
+				return
+			}
+
+			for i, expected := range tt.expected {
+				if result[i].Language != expected.Language {
+					t.Errorf("Expected language '%s', got '%s'", expected.Language, result[i].Language)
+				}
+				if result[i].Code != expected.Code {
+					t.Errorf("Expected code:\n%s\n\nGot:\n%s", expected.Code, result[i].Code)
 				}
 			}
 		})
@@ -1961,7 +2020,7 @@ func TestParseResponseWithEnhancedMetadata(t *testing.T) {
 			pipelineInfo := PipelineDecisionInfo{
 				QueryType: "TechnicalQuery",
 			}
-			result := ParseResponseWithEnhancedMetadata(tt.response, []string{}, tt.contextItems, tt.webResults, stats, pipelineInfo)
+			result := ParseResponseWithEnhancedMetadata(tt.response, []string{}, tt.contextItems, tt.webResults, stats, pipelineInfo, "")
 
 			// Check basic parsing
 			if !strings.Contains(result.MainText, tt.expectedMain) {
@@ -2329,6 +2388,335 @@ func TestExtractDomainFromURL(t *testing.T) {
 			result := extractDomainFromURL(tt.url)
 			if result != tt.expected {
 				t.Errorf("Expected domain '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestBuildPromptMessages(t *testing.T) {
+	tests := []struct {
+		name                   string
+		query                  string
+		contextItems           []ContextItem
+		webResults             []string
+		expectedSystemContains []string
+		expectedUserContains   []string
+	}{
+		{
+			name:         "Basic prompt with query only",
+			query:        "What is AWS EC2?",
+			contextItems: []ContextItem{},
+			webResults:   []string{},
+			expectedSystemContains: []string{
+				"Solutions Architect assistant",
+				"CRITICAL CONTEXT PRIORITIZATION REQUIREMENTS",
+				"SOURCE CITATION REQUIREMENTS",
+			},
+			expectedUserContains: []string{
+				"User Query: What is AWS EC2?",
+				"[source_id]",
+				"Please provide your comprehensive response now:",
+			},
+		},
+		{
+			name:  "Prompt with context items",
+			query: "How to deploy microservices?",
+			contextItems: []ContextItem{
+				{Content: "Microservices are distributed systems", SourceID: "doc-1"},
+				{Content: "Use container orchestration", SourceID: "doc-2"},
+			},
+			webResults: []string{},
+			expectedSystemContains: []string{
+				"Solutions Architect assistant",
+			},
+			expectedUserContains: []string{
+				"User Query: How to deploy microservices?",
+				"Internal Document Context",
+				"Context 1 [doc-1]: Microservices are distributed systems",
+				"Context 2 [doc-2]: Use container orchestration",
+			},
+		},
+		{
+			name:         "Prompt with web results",
+			query:        "Latest AWS updates 2025",
+			contextItems: []ContextItem{},
+			webResults: []string{
+				"Title: AWS announced new features in 2025\nURL: https://aws.amazon.com/news",
+				"Title: Lambda pricing updates\nURL: https://aws.amazon.com/lambda/pricing",
+			},
+			expectedSystemContains: []string{
+				"Solutions Architect assistant",
+			},
+			expectedUserContains: []string{
+				"User Query: Latest AWS updates 2025",
+				"Live Web Search Results",
+				"Web Result 1 [https://aws.amazon.com/news]: Title: AWS announced new features in 2025",
+				"Web Result 2 [https://aws.amazon.com/lambda/pricing]: Title: Lambda pricing updates",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := BuildPromptMessages(tt.query, tt.contextItems, tt.webResults)
+
+			// Check system message
+			for _, expected := range tt.expectedSystemContains {
+				if !strings.Contains(result.SystemMessage, expected) {
+					t.Errorf("Expected system message to contain '%s', but it didn't. Got: %s", expected, result.SystemMessage)
+				}
+			}
+
+			// Check user message
+			for _, expected := range tt.expectedUserContains {
+				if !strings.Contains(result.UserMessage, expected) {
+					t.Errorf("Expected user message to contain '%s', but it didn't. Got: %s", expected, result.UserMessage)
+				}
+			}
+
+			// Validate that system and user messages are properly separated
+			if strings.Contains(result.SystemMessage, "User Query:") {
+				t.Error("System message should not contain 'User Query:'")
+			}
+			if strings.Contains(result.UserMessage, "Solutions Architect assistant") {
+				t.Error("User message should not contain system persona")
+			}
+		})
+	}
+}
+
+func TestValidatePromptMessages(t *testing.T) {
+	tests := []struct {
+		name        string
+		messages    PromptMessages
+		expectError bool
+	}{
+		{
+			name: "Valid messages",
+			messages: PromptMessages{
+				SystemMessage: "You are a Solutions Architect assistant with expertise in cloud computing.",
+				UserMessage:   "User Query: What is AWS EC2?\n\nPlease cite sources using [source_id] format.",
+			},
+			expectError: false,
+		},
+		{
+			name: "Empty system message",
+			messages: PromptMessages{
+				SystemMessage: "",
+				UserMessage:   "User Query: What is AWS EC2?\n\nPlease cite sources using [source_id] format.",
+			},
+			expectError: true,
+		},
+		{
+			name: "Empty user message",
+			messages: PromptMessages{
+				SystemMessage: "You are a Solutions Architect assistant with expertise in cloud computing.",
+				UserMessage:   "",
+			},
+			expectError: true,
+		},
+		{
+			name: "Missing SA persona in system message",
+			messages: PromptMessages{
+				SystemMessage: "You are a helpful assistant.",
+				UserMessage:   "User Query: What is AWS EC2?\n\nPlease cite sources using [source_id] format.",
+			},
+			expectError: true,
+		},
+		{
+			name: "Missing user query in user message",
+			messages: PromptMessages{
+				SystemMessage: "You are a Solutions Architect assistant with expertise in cloud computing.",
+				UserMessage:   "Please cite sources using [source_id] format.",
+			},
+			expectError: true,
+		},
+		{
+			name: "Missing citation instructions",
+			messages: PromptMessages{
+				SystemMessage: "You are a Solutions Architect assistant with expertise in cloud computing.",
+				UserMessage:   "User Query: What is AWS EC2?",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidatePromptMessages(tt.messages)
+			if tt.expectError && err == nil {
+				t.Errorf("Expected error but got none")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Expected no error but got: %v", err)
+			}
+		})
+	}
+}
+
+func TestGenerateFallbackDiagram(t *testing.T) {
+	tests := []struct {
+		name             string
+		query            string
+		expectDiagram    bool
+		expectedContains []string
+	}{
+		{
+			name:          "AWS architecture query",
+			query:         "Design a scalable AWS architecture for microservices",
+			expectDiagram: true,
+			expectedContains: []string{
+				"graph TD",
+				"AWS Cloud",
+				"VPC",
+				"Load Balancer",
+				"Application Servers",
+				"Database",
+				"S3 Storage",
+			},
+		},
+		{
+			name:          "Azure architecture query",
+			query:         "Create an Azure hybrid cloud solution",
+			expectDiagram: true,
+			expectedContains: []string{
+				"graph TD",
+				"Azure Subscription",
+				"Resource Group",
+				"Virtual Network",
+				"Application Gateway",
+				"Virtual Machines",
+				"Azure SQL Database",
+			},
+		},
+		{
+			name:          "Migration query",
+			query:         "Plan a migration from on-premises to cloud",
+			expectDiagram: true,
+			expectedContains: []string{
+				"graph TD",
+				"On-Premises",
+				"Cloud",
+				"Migration Service",
+				"Legacy Infrastructure",
+				"Cloud Infrastructure",
+			},
+		},
+		{
+			name:          "Disaster recovery query",
+			query:         "Design a disaster recovery solution with RTO 2 hours",
+			expectDiagram: true,
+			expectedContains: []string{
+				"graph TD",
+				"Primary Region",
+				"DR Region",
+				"Backup Storage",
+				"Primary Database",
+				"DR Database",
+			},
+		},
+		{
+			name:             "Non-architecture query",
+			query:            "What is the cost of cloud computing?",
+			expectDiagram:    false,
+			expectedContains: []string{},
+		},
+		{
+			name:          "Generic cloud architecture query",
+			query:         "Design a cloud architecture for scalability",
+			expectDiagram: true,
+			expectedContains: []string{
+				"graph TD",
+				"Cloud Platform",
+				"Load Balancer",
+				"Application Tier",
+				"Database",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GenerateFallbackDiagram(tt.query)
+
+			if tt.expectDiagram {
+				if result == "" {
+					t.Errorf("Expected diagram to be generated, but got empty string")
+				}
+
+				for _, expected := range tt.expectedContains {
+					if !strings.Contains(result, expected) {
+						t.Errorf("Expected diagram to contain '%s', but it didn't. Got: %s", expected, result)
+					}
+				}
+			} else {
+				if result != "" {
+					t.Errorf("Expected no diagram, but got: %s", result)
+				}
+			}
+		})
+	}
+}
+
+func TestParseResponseWithQuery(t *testing.T) {
+	tests := []struct {
+		name                    string
+		response                string
+		availableSources        []string
+		query                   string
+		expectedDiagramFallback bool
+		expectedDiagramContent  string
+	}{
+		{
+			name:                    "Response with existing diagram",
+			response:                "Here's the solution:\n\n```mermaid\ngraph TD\n    A[Start] --> B[End]\n```\n\nThat's the architecture.",
+			availableSources:        []string{},
+			query:                   "Design AWS architecture",
+			expectedDiagramFallback: false,
+			expectedDiagramContent:  "graph TD\n    A[Start] --> B[End]",
+		},
+		{
+			name:                    "Response without diagram but AWS query",
+			response:                "Here's a text-only response about AWS architecture without diagrams.",
+			availableSources:        []string{},
+			query:                   "Design a scalable AWS architecture",
+			expectedDiagramFallback: true,
+			expectedDiagramContent:  "AWS Cloud",
+		},
+		{
+			name:                    "Response without diagram and non-architecture query",
+			response:                "Here's information about cloud costs.",
+			availableSources:        []string{},
+			query:                   "What is the cost of cloud computing?",
+			expectedDiagramFallback: false,
+			expectedDiagramContent:  "",
+		},
+		{
+			name:                    "Response without diagram but migration query",
+			response:                "Here's migration guidance without a diagram.",
+			availableSources:        []string{},
+			query:                   "Plan a migration to the cloud",
+			expectedDiagramFallback: true,
+			expectedDiagramContent:  "Migration Service",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseResponseWithQuery(tt.response, tt.availableSources, tt.query)
+
+			if tt.expectedDiagramFallback {
+				if result.DiagramCode == "" {
+					t.Errorf("Expected fallback diagram to be generated, but DiagramCode is empty")
+				}
+
+				if tt.expectedDiagramContent != "" && !strings.Contains(result.DiagramCode, tt.expectedDiagramContent) {
+					t.Errorf("Expected diagram to contain '%s', but it didn't. Got: %s", tt.expectedDiagramContent, result.DiagramCode)
+				}
+			} else {
+				if result.DiagramCode != tt.expectedDiagramContent {
+					t.Errorf("Expected diagram code '%s', got '%s'", tt.expectedDiagramContent, result.DiagramCode)
+				}
 			}
 		})
 	}

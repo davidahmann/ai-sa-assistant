@@ -49,6 +49,7 @@ func (h *APIHandler) RegisterRoutes(router *gin.Engine) {
 		api.PUT("/:id/title", h.updateConversationTitle)
 		api.DELETE("/:id", h.deleteConversation)
 		api.GET("/:id/history", h.getConversationHistory)
+		api.POST("/:id/messages", h.addMessage)
 		api.GET("/search", h.searchConversations)
 		api.GET("/stats", h.getConversationStats)
 	}
@@ -268,6 +269,62 @@ func (h *APIHandler) getConversationStats(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, stats)
+}
+
+// addMessage handles POST /api/v1/conversations/:id/messages
+func (h *APIHandler) addMessage(c *gin.Context) {
+	conversationID := c.Param("id")
+	if !session.ValidateSessionID(conversationID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid conversation ID format"})
+		return
+	}
+
+	var req SendMessageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format", "details": err.Error()})
+		return
+	}
+
+	if !session.ValidateUserID(req.UserID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
+	// Validate message content
+	message := strings.TrimSpace(req.Message)
+	if len(message) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Message content cannot be empty"})
+		return
+	}
+	if len(message) > 10000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Message content too long (max 10000 characters)"})
+		return
+	}
+
+	// Add user message to conversation
+	if err := h.manager.AddMessageToConversation(c.Request.Context(), conversationID, "user", message, nil); err != nil {
+		h.logger.Error("Failed to add message to conversation",
+			zap.String("id", conversationID), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add message"})
+		return
+	}
+
+	// For now, return success. In the future, this could trigger the orchestrator
+	// to process the message and generate a response
+	response := gin.H{
+		"message":         "Message added successfully",
+		"conversation_id": conversationID,
+		"streaming":       req.Streaming,
+	}
+
+	c.JSON(http.StatusCreated, response)
+}
+
+// SendMessageRequest represents a request to send a message to a conversation
+type SendMessageRequest struct {
+	Message   string `json:"message" binding:"required"`
+	UserID    string `json:"user_id" binding:"required"`
+	Streaming bool   `json:"streaming,omitempty"`
 }
 
 // AddMessageRequest represents a request to add a message to a conversation

@@ -39,7 +39,7 @@ import (
 
 const (
 	// DefaultHTTPTimeout is the default timeout for HTTP requests
-	DefaultHTTPTimeout = 30 * time.Second
+	DefaultHTTPTimeout = 300 * time.Second
 	// FallbackScore is the score assigned to fallback responses
 	FallbackScore = 0.5
 	// MaxFallbackChunks is the maximum number of chunks to include in fallback responses
@@ -148,6 +148,8 @@ func (o *Orchestrator) ProcessQueryWithStreaming(ctx context.Context, query stri
 	// Step 1: Validate service health
 	if eventStream != nil {
 		eventStream.EmitProgress(streaming.StageQueryAnalysis, "⚡ Validating service health...", 10, nil)
+		// Add realistic delay for UI feedback
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	if !o.validateServiceHealthWithStreaming(ctx, result, eventStream) {
@@ -162,6 +164,8 @@ func (o *Orchestrator) ProcessQueryWithStreaming(ctx context.Context, query stri
 	// Step 2: Call retrieve service with fallback
 	if eventStream != nil {
 		eventStream.EmitProgress(streaming.StageMetadataFilter, "📊 Searching metadata database...", 15, nil)
+		// Add realistic delay for UI feedback
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	retrieveResponse, err := o.callRetrieveServiceWithFallbackStreaming(ctx, query, result, eventStream)
@@ -182,12 +186,16 @@ func (o *Orchestrator) ProcessQueryWithStreaming(ctx context.Context, query stri
 			eventStream.EmitProgress(streaming.StageFreshnessDetection, "🌐 Freshness keywords detected, triggering web search...", 60, map[string]interface{}{
 				"freshness_detected": true,
 			})
+			// Add realistic delay for UI feedback
+			time.Sleep(800 * time.Millisecond)
 		}
 		webResults = o.callWebSearchServiceWithFallbackStreaming(ctx, query, result, eventStream)
 	} else if eventStream != nil {
 		eventStream.EmitProgress(streaming.StageFreshnessDetection, "✓ No freshness keywords detected", 60, map[string]interface{}{
 			"freshness_detected": false,
 		})
+		// Add realistic delay for UI feedback
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	// Step 4: Call synthesize service with fallback (including conversation context)
@@ -196,6 +204,8 @@ func (o *Orchestrator) ProcessQueryWithStreaming(ctx context.Context, query stri
 			"context_items": len(retrieveResponse.Chunks),
 			"web_results":   len(webResults),
 		})
+		// Add realistic delay for UI feedback
+		time.Sleep(1000 * time.Millisecond)
 	}
 
 	synthesizeResponse, err := o.callSynthesizeServiceWithFallbackStreaming(
@@ -214,6 +224,8 @@ func (o *Orchestrator) ProcessQueryWithStreaming(ctx context.Context, query stri
 	if synthesizeResponse.DiagramCode != "" {
 		if eventStream != nil {
 			eventStream.EmitProgress(streaming.StageDiagramRendering, "📊 Rendering architecture diagram...", 90, nil)
+			// Add realistic delay for UI feedback
+			time.Sleep(500 * time.Millisecond)
 		}
 		o.renderDiagramWithFallbackStreaming(ctx, synthesizeResponse, result, eventStream)
 	}
@@ -262,12 +274,15 @@ func (o *Orchestrator) isServiceHealthy(ctx context.Context, serviceName string)
 		return false
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// Use background context to prevent health checks from being cancelled by SSE disconnections
+	req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
 	if err != nil {
 		return false
 	}
 
-	resp, err := o.httpClient.Do(req)
+	// Use isolated HTTP client with proper timeout for health checks
+	isolatedClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := isolatedClient.Do(req)
 	if err != nil {
 		return false
 	}
@@ -340,13 +355,16 @@ func (o *Orchestrator) callRetrieveServiceWithFallback(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", o.config.Services.RetrieveURL+"/search", bytes.NewBuffer(jsonBody))
+	// Use background context to prevent retrieve service from being cancelled by SSE disconnections
+	req, err := http.NewRequestWithContext(context.Background(), "POST", o.config.Services.RetrieveURL+"/search", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := o.httpClient.Do(req)
+	// Use isolated HTTP client with proper timeout
+	isolatedClient := &http.Client{Timeout: 300 * time.Second}
+	resp, err := isolatedClient.Do(req)
 	if err != nil {
 		o.logger.Error("Retrieve service request failed", zap.Error(err))
 		return o.fallbackRetrieveResponse(query, result), nil
@@ -398,13 +416,16 @@ func (o *Orchestrator) callRetrieveServiceWithFallbackStreaming(
 		eventStream.EmitProgress(streaming.StageVectorSearch, "🔎 Vector search in ChromaDB...", 40, nil)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", o.config.Services.RetrieveURL+"/search", bytes.NewBuffer(jsonBody))
+	// TEMPORARY: Use background context to isolate from any cancellation issues
+	req, err := http.NewRequestWithContext(context.Background(), "POST", o.config.Services.RetrieveURL+"/search", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := o.httpClient.Do(req)
+	// TEMPORARY: Create a completely isolated HTTP client
+	isolatedClient := &http.Client{Timeout: 300 * time.Second}
+	resp, err := isolatedClient.Do(req)
 	if err != nil {
 		o.logger.Error("Retrieve service request failed", zap.Error(err))
 		if eventStream != nil {
@@ -497,8 +518,9 @@ func (o *Orchestrator) callWebSearchServiceWithFallback(
 		return []string{}
 	}
 
+	// Use background context to prevent web search from being cancelled by SSE disconnections
 	req, err := http.NewRequestWithContext(
-		ctx,
+		context.Background(),
 		"POST",
 		o.config.Services.WebSearchURL+"/search",
 		bytes.NewBuffer(jsonBody),
@@ -509,7 +531,9 @@ func (o *Orchestrator) callWebSearchServiceWithFallback(
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := o.httpClient.Do(req)
+	// TEMPORARY: Create a completely isolated HTTP client
+	isolatedClient := &http.Client{Timeout: 300 * time.Second}
+	resp, err := isolatedClient.Do(req)
 	if err != nil {
 		o.logger.Warn("Web search service request failed, continuing without web results", zap.Error(err))
 		return []string{}
@@ -565,8 +589,9 @@ func (o *Orchestrator) callWebSearchServiceWithFallbackStreaming(
 		return []string{}
 	}
 
+	// Use background context to prevent web search from being cancelled by SSE disconnections
 	req, err := http.NewRequestWithContext(
-		ctx,
+		context.Background(),
 		"POST",
 		o.config.Services.WebSearchURL+"/search",
 		bytes.NewBuffer(jsonBody),
@@ -582,7 +607,9 @@ func (o *Orchestrator) callWebSearchServiceWithFallbackStreaming(
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := o.httpClient.Do(req)
+	// TEMPORARY: Create a completely isolated HTTP client
+	isolatedClient := &http.Client{Timeout: 300 * time.Second}
+	resp, err := isolatedClient.Do(req)
 	if err != nil {
 		o.logger.Warn("Web search service request failed, continuing without web results", zap.Error(err))
 		if eventStream != nil {
@@ -666,8 +693,9 @@ func (o *Orchestrator) callSynthesizeServiceWithFallbackStreaming(
 		})
 	}
 
+	// TEMPORARY: Use background context to isolate from any cancellation issues
 	req, err := http.NewRequestWithContext(
-		ctx,
+		context.Background(),
 		"POST",
 		o.config.Services.SynthesizeURL+"/synthesize",
 		bytes.NewBuffer(jsonBody),
@@ -677,7 +705,9 @@ func (o *Orchestrator) callSynthesizeServiceWithFallbackStreaming(
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := o.httpClient.Do(req)
+	// TEMPORARY: Create a completely isolated HTTP client
+	isolatedClient := &http.Client{Timeout: 300 * time.Second}
+	resp, err := isolatedClient.Do(req)
 	if err != nil {
 		o.logger.Error("Synthesize service request failed", zap.Error(err))
 		if eventStream != nil {

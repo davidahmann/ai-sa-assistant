@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Test - From Web UI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        .debug-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .debug-section h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .test-btn {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .test-btn:hover {
+            background: #0056b3;
+        }
+        .test-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>Debug Test - From Web UI (No CORS Issues)</h1>
+    <p>Access this at: <a href="http://localhost:8084/static/debug-test.html">http://localhost:8084/static/debug-test.html</a></p>
+    
+    <div class="debug-section">
+        <h2>Test API Response</h2>
+        <button class="test-btn" onclick="testAPI()">Test API Call</button>
+        <div id="api-status"></div>
+        <pre id="api-response"></pre>
+    </div>
+
+    <div class="debug-section">
+        <h2>Extract Metadata</h2>
+        <div id="metadata-info"></div>
+        <pre id="metadata-content"></pre>
+    </div>
+
+    <div class="debug-section">
+        <h2>Test Specific Fields</h2>
+        <div id="field-tests"></div>
+    </div>
+
+    <script>
+        async function testAPI() {
+            const statusDiv = document.getElementById('api-status');
+            const responseDiv = document.getElementById('api-response');
+            const metadataDiv = document.getElementById('metadata-content');
+            const infoDiv = document.getElementById('metadata-info');
+            const fieldDiv = document.getElementById('field-tests');
+            
+            statusDiv.innerHTML = 'Testing API...';
+            responseDiv.textContent = '';
+            metadataDiv.textContent = '';
+            infoDiv.innerHTML = '';
+            fieldDiv.innerHTML = '';
+            
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: 'Create a simple AWS VPC with Terraform code and architecture diagram'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                statusDiv.innerHTML = '<span style="color: green;">✓ API call successful</span>';
+                responseDiv.textContent = JSON.stringify(data, null, 2);
+
+                // Extract and analyze metadata
+                if (data.message && data.message.metadata) {
+                    const metadata = data.message.metadata;
+                    
+                    infoDiv.innerHTML = `
+                        <p><strong>Metadata found:</strong> Yes</p>
+                        <p><strong>Keys in metadata:</strong> ${Object.keys(metadata).join(', ')}</p>
+                        <p><strong>Has diagram_code:</strong> ${metadata.diagram_code ? 'Yes' : 'No'}</p>
+                        <p><strong>Has code_snippets:</strong> ${metadata.code_snippets ? 'Yes' : 'No'}</p>
+                        <p><strong>Has context_sources:</strong> ${metadata.context_sources ? 'Yes' : 'No'}</p>
+                    `;
+                    
+                    metadataDiv.textContent = JSON.stringify(metadata, null, 2);
+                    
+                    // Test specific fields
+                    let fieldTests = '<h3>Field Tests:</h3>';
+                    
+                    if (metadata.diagram_code) {
+                        fieldTests += `<p><strong>Diagram Code Length:</strong> ${metadata.diagram_code.length} characters</p>`;
+                        fieldTests += `<p><strong>Diagram Code Preview:</strong> ${metadata.diagram_code.substring(0, 200)}...</p>`;
+                    }
+                    
+                    if (metadata.code_snippets && metadata.code_snippets.length > 0) {
+                        fieldTests += `<p><strong>Code Snippets Count:</strong> ${metadata.code_snippets.length}</p>`;
+                        metadata.code_snippets.forEach((snippet, index) => {
+                            fieldTests += `<p><strong>Snippet ${index + 1}:</strong> ${snippet.language} (${snippet.code.length} characters)</p>`;
+                            fieldTests += `<p><strong>Code Preview:</strong> ${snippet.code.substring(0, 100)}...</p>`;
+                        });
+                    }
+                    
+                    if (metadata.context_sources) {
+                        fieldTests += `<p><strong>Context Sources Count:</strong> ${metadata.context_sources.length}</p>`;
+                    }
+                    
+                    if (metadata.web_sources) {
+                        fieldTests += `<p><strong>Web Sources Count:</strong> ${metadata.web_sources.length}</p>`;
+                    }
+                    
+                    fieldDiv.innerHTML = fieldTests;
+                } else {
+                    infoDiv.innerHTML = '<p style="color: red;"><strong>No metadata found in response</strong></p>';
+                }
+
+            } catch (error) {
+                console.error('API test failed:', error);
+                statusDiv.innerHTML = `<span style="color: red;">✗ API call failed: ${error.message}</span>`;
+                responseDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

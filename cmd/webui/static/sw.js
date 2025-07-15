@@ -185,8 +185,6 @@ self.addEventListener('push', event => {
     let notificationData = {
         title: 'AI SA Assistant',
         body: 'Your query has been processed',
-        icon: '/static/icons/icon-192x192.png',
-        badge: '/static/icons/badge-72x72.png',
         data: {
             url: '/'
         }
@@ -204,8 +202,6 @@ self.addEventListener('push', event => {
     event.waitUntil(
         self.registration.showNotification(notificationData.title, {
             body: notificationData.body,
-            icon: notificationData.icon,
-            badge: notificationData.badge,
             data: notificationData.data,
             actions: [
                 {

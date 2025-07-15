@@ -135,11 +135,32 @@ synthesis:
 
   # Maximum tokens in generated response
   # Must be greater than 0
-  max_tokens: 2000
+  # Increased from 2000 to 4000 to support code generation and architecture diagrams
+  max_tokens: 4000
 
   # Temperature for response generation (creativity vs consistency)
   # Must be between 0 and 2 (0 = more deterministic, 2 = more creative)
   temperature: 0.3
+
+  # Request timeout in seconds for standard queries
+  # Must be greater than 0
+  timeout_seconds: 30
+
+  # Request timeout in seconds for complex queries (migration, architecture, etc.)
+  # Must be greater than 0
+  complex_timeout_seconds: 60
+
+  # Maximum retry attempts for failed requests
+  # Must be greater than 0
+  max_retries: 3
+
+  # Base delay for exponential backoff (in seconds)
+  # Must be greater than 0
+  base_delay: 1.0
+
+  # Multiplier for exponential backoff
+  # Must be greater than 1
+  backoff_multiplier: 2.0
 
 # Diagram Rendering Configuration
 # Environment variables: SA_ASSISTANT_DIAGRAM_*

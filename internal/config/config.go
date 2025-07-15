@@ -40,7 +40,8 @@ const (
 	// DefaultMaxWebSearchResults defines the default maximum number of web search results
 	DefaultMaxWebSearchResults = 3
 	// DefaultMaxTokens defines the default maximum number of tokens for responses
-	DefaultMaxTokens = 2000
+	// Increased from 2000 to 4000 to support code generation and architecture diagrams
+	DefaultMaxTokens = 4000
 	// DefaultTemperature defines the default temperature for LLM responses
 	DefaultTemperature = 0.3
 
@@ -126,12 +127,17 @@ type WebSearchConfig struct {
 
 // SynthesisConfig contains synthesis service configuration
 type SynthesisConfig struct {
-	Model             string  `mapstructure:"model"`
-	MaxTokens         int     `mapstructure:"max_tokens"`
-	Temperature       float64 `mapstructure:"temperature"`
-	TimeoutSeconds    int     `mapstructure:"timeout_seconds"`
-	MaxRetries        int     `mapstructure:"max_retries"`
-	BackoffMultiplier float64 `mapstructure:"backoff_multiplier"`
+	Model                    string  `mapstructure:"model"`
+	MaxTokens                int     `mapstructure:"max_tokens"`
+	Temperature              float64 `mapstructure:"temperature"`
+	TimeoutSeconds           int     `mapstructure:"timeout_seconds"`
+	ComplexTimeoutSeconds    int     `mapstructure:"complex_timeout_seconds"`
+	SimpleTimeoutSeconds     int     `mapstructure:"simple_timeout_seconds"`
+	MaxRetries               int     `mapstructure:"max_retries"`
+	BaseDelay                float64 `mapstructure:"base_delay"`
+	BackoffMultiplier        float64 `mapstructure:"backoff_multiplier"`
+	EnableAdaptiveTimeout    bool    `mapstructure:"enable_adaptive_timeout"`
+	EnablePromptOptimization bool    `mapstructure:"enable_prompt_optimization"`
 }
 
 // DiagramConfig contains diagram rendering configuration
@@ -278,6 +284,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("synthesis.model", "gpt-4o")
 	v.SetDefault("synthesis.max_tokens", DefaultMaxTokens)
 	v.SetDefault("synthesis.temperature", DefaultTemperature)
+	v.SetDefault("synthesis.timeout_seconds", 30)
+	v.SetDefault("synthesis.complex_timeout_seconds", 60)
+	v.SetDefault("synthesis.max_retries", 3)
+	v.SetDefault("synthesis.base_delay", 1.0)
+	v.SetDefault("synthesis.backoff_multiplier", 2.0)
+	v.SetDefault("synthesis.enable_adaptive_timeout", true)
+	v.SetDefault("synthesis.enable_prompt_optimization", true)
 
 	// Diagram defaults
 	v.SetDefault("diagram.mermaid_ink_url", "https://mermaid.ink/img")
@@ -426,6 +439,42 @@ func validateConfig(config *Config) error {
 		errors = append(errors, ValidationError{
 			Field:   "retrieval.fallback_score_threshold",
 			Message: "fallback_score_threshold must be between 0 and 1",
+		})
+	}
+
+	// Validate synthesis configuration
+	if config.Synthesis.TimeoutSeconds < 5 || config.Synthesis.TimeoutSeconds > 300 {
+		errors = append(errors, ValidationError{
+			Field:   "synthesis.timeout_seconds",
+			Message: "timeout_seconds must be between 5 and 300 seconds",
+		})
+	}
+
+	if config.Synthesis.ComplexTimeoutSeconds < 5 || config.Synthesis.ComplexTimeoutSeconds > 600 {
+		errors = append(errors, ValidationError{
+			Field:   "synthesis.complex_timeout_seconds",
+			Message: "complex_timeout_seconds must be between 5 and 600 seconds",
+		})
+	}
+
+	if config.Synthesis.MaxRetries < 0 || config.Synthesis.MaxRetries > 10 {
+		errors = append(errors, ValidationError{
+			Field:   "synthesis.max_retries",
+			Message: "max_retries must be between 0 and 10",
+		})
+	}
+
+	if config.Synthesis.BaseDelay < 0.1 || config.Synthesis.BaseDelay > 10.0 {
+		errors = append(errors, ValidationError{
+			Field:   "synthesis.base_delay",
+			Message: "base_delay must be between 0.1 and 10.0 seconds",
+		})
+	}
+
+	if config.Synthesis.BackoffMultiplier < 1.0 || config.Synthesis.BackoffMultiplier > 5.0 {
+		errors = append(errors, ValidationError{
+			Field:   "synthesis.backoff_multiplier",
+			Message: "backoff_multiplier must be between 1.0 and 5.0",
 		})
 	}
 

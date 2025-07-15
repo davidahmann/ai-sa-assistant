@@ -21,6 +21,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +88,11 @@ func (e *RetryableError) Error() string {
 
 // NewClient creates a new OpenAI client with enhanced functionality
 func NewClient(apiKey string, logger *zap.Logger) (*Client, error) {
+	return NewClientWithTimeout(apiKey, logger, resilience.DefaultTimeoutConfig())
+}
+
+// NewClientWithTimeout creates a new OpenAI client with custom timeout configuration
+func NewClientWithTimeout(apiKey string, logger *zap.Logger, timeoutConfig resilience.TimeoutConfig) (*Client, error) {
 	if apiKey == "" {
 		return nil, resilience.NewBadRequestError("API key is required", nil)
 	}
@@ -99,14 +106,21 @@ func NewClient(apiKey string, logger *zap.Logger) (*Client, error) {
 		return nil, resilience.NewBadRequestError("invalid API key format", nil)
 	}
 
-	// Initialize resilience components
+	// Initialize resilience components with optimized settings for synthesis service
 	cbConfig := resilience.DefaultCircuitBreakerConfig("openai")
 	cbConfig.MaxFailures = resilience.DefaultMaxRetries
 	cbConfig.ResetTimeout = resilience.DefaultResetTimeoutSeconds * time.Second
+
+	// Optimize circuit breaker for synthesis service - be more tolerant of transient failures
+	// since synthesis operations are high-value and users expect some delay
+	cbConfig.MaxFailures = 8                 // Allow more failures before opening circuit
+	cbConfig.ResetTimeout = 45 * time.Second // Shorter reset timeout for faster recovery
+	cbConfig.HalfOpenMaxRequests = 2         // Conservative half-open testing
+
 	circuitBreaker := resilience.NewCircuitBreaker(cbConfig, logger)
 
 	errorHandler := resilience.NewErrorHandler(logger)
-	timeoutManager := resilience.NewTimeoutManager(resilience.DefaultTimeoutConfig())
+	timeoutManager := resilience.NewTimeoutManager(timeoutConfig)
 
 	client := &Client{
 		client:         openai.NewClient(apiKey),
@@ -117,15 +131,31 @@ func NewClient(apiKey string, logger *zap.Logger) (*Client, error) {
 		timeoutManager: timeoutManager,
 	}
 
-	// Validate client connectivity
+	// Validate client connectivity with shorter timeout for validation
+	validationTimeout := resilience.TimeoutConfig{
+		DefaultTimeout: ValidationTimeout,
+		MaxTimeout:     ValidationTimeout,
+		Logger:         logger,
+	}
+	validationTM := resilience.NewTimeoutManager(validationTimeout)
+
+	// Temporarily replace timeout manager for validation
+	originalTM := client.timeoutManager
+	client.timeoutManager = validationTM
+
 	if err := client.validateConnection(); err != nil {
 		return nil, errorHandler.WrapError(err, "validating OpenAI connection")
 	}
+
+	// Restore original timeout manager
+	client.timeoutManager = originalTM
 
 	client.logger.Info("OpenAI client initialized successfully",
 		zap.String("model", EmbeddingModel),
 		zap.Int("expected_dimensions", ExpectedEmbeddingDimensions),
 		zap.Int("max_retries", MaxRetries),
+		zap.Duration("default_timeout", timeoutConfig.DefaultTimeout),
+		zap.Duration("max_timeout", timeoutConfig.MaxTimeout),
 	)
 
 	return client, nil
@@ -335,7 +365,31 @@ func (c *Client) handleAPIError(err error) error {
 		case http.StatusUnauthorized:
 			return resilience.NewUnauthorizedError("invalid API key or unauthorized access", err)
 		case http.StatusTooManyRequests:
-			return resilience.NewTooManyRequestsError("rate limit exceeded", err)
+			// Enhanced rate limit handling with retry-after detection
+			retryAfter := time.Duration(0)
+			if apiErr.Type == "rate_limit_exceeded" {
+				c.logger.Warn("OpenAI API rate limit exceeded",
+					zap.String("error_type", apiErr.Type),
+					zap.Any("error_code", apiErr.Code),
+					zap.String("message", apiErr.Message),
+				)
+
+				// Extract retry-after if available (OpenAI sometimes provides this)
+				if apiErr.Message != "" && strings.Contains(apiErr.Message, "retry after") {
+					// Try to parse retry-after from message
+					if retrySeconds := parseRetryAfterFromMessage(apiErr.Message); retrySeconds > 0 {
+						retryAfter = time.Duration(retrySeconds) * time.Second
+					}
+				}
+			}
+
+			rateLimitErr := resilience.NewTooManyRequestsError("rate limit exceeded", err)
+			if retryAfter > 0 {
+				c.logger.Info("Rate limit retry-after detected",
+					zap.Duration("retry_after", retryAfter),
+				)
+			}
+			return rateLimitErr
 		case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 			return resilience.NewServiceUnavailableError("OpenAI service temporarily unavailable", err)
 		case http.StatusBadRequest:
@@ -367,6 +421,66 @@ func truncateText(text string, maxLength int) string {
 		return text
 	}
 	return text[:maxLength] + "..."
+}
+
+// parseRetryAfterFromMessage attempts to parse retry-after seconds from error message
+func parseRetryAfterFromMessage(message string) int {
+	// Look for patterns like "retry after 20 seconds" or "retry after 20s"
+	re := regexp.MustCompile(`retry after (\d+)(?:\s*seconds?|s)?`)
+	matches := re.FindStringSubmatch(strings.ToLower(message))
+	if len(matches) > 1 {
+		if seconds, err := strconv.Atoi(matches[1]); err == nil {
+			return seconds
+		}
+	}
+	return 0
+}
+
+// isRateLimitError checks if an error is specifically a rate limit error
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "rate limit") || strings.Contains(errStr, "too many requests")
+}
+
+// createRateLimitAwareRetryConfig creates a retry configuration optimized for rate limits
+func createRateLimitAwareRetryConfig(baseConfig resilience.BackoffConfig) resilience.BackoffConfig {
+	rateLimitConfig := baseConfig
+
+	// Custom retry function that handles rate limits differently
+	rateLimitConfig.RetryOnFunc = func(err error) bool {
+		if err == nil {
+			return false
+		}
+
+		// Don't retry on context cancellation or deadline exceeded
+		if err == context.Canceled || err == context.DeadlineExceeded {
+			return false
+		}
+
+		// Always retry on rate limit errors
+		if isRateLimitError(err) {
+			return true
+		}
+
+		// Use default retry logic for other errors
+		return resilience.DefaultRetryOnFunc(err)
+	}
+
+	// Increase base delay for rate limit scenarios
+	if rateLimitConfig.BaseDelay < 2*time.Second {
+		rateLimitConfig.BaseDelay = 2 * time.Second
+	}
+
+	// Increase max delay for rate limits
+	if rateLimitConfig.MaxDelay < 120*time.Second {
+		rateLimitConfig.MaxDelay = 120 * time.Second
+	}
+
+	return rateLimitConfig
 }
 
 // Legacy methods for backward compatibility
@@ -404,6 +518,11 @@ type ChatCompletionResponse struct {
 
 // CreateChatCompletion creates a chat completion with retry logic
 func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+	return c.CreateChatCompletionWithRetry(ctx, req, resilience.DefaultBackoffConfig())
+}
+
+// CreateChatCompletionWithRetry creates a chat completion with custom retry configuration
+func (c *Client) CreateChatCompletionWithRetry(ctx context.Context, req ChatCompletionRequest, retryConfig resilience.BackoffConfig) (*ChatCompletionResponse, error) {
 	// Use configured model if not specified
 	if req.Model == "" {
 		req.Model = c.model
@@ -421,16 +540,27 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionReq
 		zap.Int("max_tokens", req.MaxTokens),
 		zap.Float64("temperature", float64(req.Temperature)),
 		zap.Int("message_count", len(req.Messages)),
+		zap.Int("max_retries", retryConfig.MaxRetries),
+		zap.Float64("backoff_multiplier", retryConfig.Multiplier),
+		zap.Duration("base_delay", retryConfig.BaseDelay),
 	)
 
 	var resp *ChatCompletionResponse
 
-	// Use circuit breaker and exponential backoff
+	// Use circuit breaker and exponential backoff with custom retry configuration
 	err := c.circuitBreaker.Execute(ctx, func(ctx context.Context) error {
 		return c.timeoutManager.Execute(ctx, func(ctx context.Context) error {
-			return resilience.SimpleRetry(ctx, c.logger, func(ctx context.Context) error {
+			return resilience.WithExponentialBackoff(ctx, c.logger, retryConfig, func(ctx context.Context) error {
+				start := time.Now()
 				openaiResp, err := c.client.CreateChatCompletion(ctx, openaiReq)
+				duration := time.Since(start)
+
 				if err != nil {
+					c.logger.Debug("Chat completion attempt failed",
+						zap.Error(err),
+						zap.Duration("duration", duration),
+						zap.String("model", req.Model),
+					)
 					return c.handleAPIError(err)
 				}
 
@@ -443,6 +573,7 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionReq
 					zap.Int("prompt_tokens", openaiResp.Usage.PromptTokens),
 					zap.Int("completion_tokens", openaiResp.Usage.CompletionTokens),
 					zap.Int("total_tokens", openaiResp.Usage.TotalTokens),
+					zap.Duration("duration", duration),
 				)
 
 				resp = &ChatCompletionResponse{

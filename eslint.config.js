@@ -14,6 +14,8 @@ module.exports = [
         // Frontend-specific globals
         mermaid: 'readonly',
         Prism: 'readonly',
+        marked: 'readonly',
+        DOMPurify: 'readonly',
         // Service Worker globals
         self: 'readonly',
         clients: 'readonly',
@@ -31,7 +33,8 @@ module.exports = [
       // Code Quality
       'no-unused-vars': ['error', {
         argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_'
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
       }],
       'no-console': ['warn', {
         allow: ['warn', 'error', 'log']

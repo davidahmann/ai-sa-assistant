@@ -15,7 +15,7 @@ RUN ls -la /app/retrieve
 
 FROM alpine:3.18
 
-RUN apk --no-cache add ca-certificates=20240705-r0 sqlite=3.46.1-r0 && \
+RUN apk --no-cache add ca-certificates sqlite && \
     adduser -D -s /bin/sh appuser
 
 WORKDIR /app

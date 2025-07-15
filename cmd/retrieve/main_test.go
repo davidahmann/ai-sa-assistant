@@ -32,6 +32,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/classifier"
 	"github.com/your-org/ai-sa-assistant/internal/config"
 	"github.com/your-org/ai-sa-assistant/internal/health"
+	"github.com/your-org/ai-sa-assistant/internal/websearch"
 )
 
 func TestConfigurationValidation(t *testing.T) {
@@ -544,4 +545,98 @@ func TestHealthCheckManagerSetup(t *testing.T) {
 	// Test that the manager can handle basic health checks
 	result := manager.Check(context.Background())
 	assert.NotNil(t, result)
+}
+
+// Test freshness detection functionality
+func TestFreshnessDetection(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	config := &config.Config{
+		WebSearch: config.WebSearchConfig{
+			FreshnessKeywords: []string{"latest", "recent", "2024", "Q1 2025"},
+		},
+	}
+
+	// Mock HTTP client for web search service
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/search" {
+			response := WebSearchResponse{
+				Results: []WebResult{
+					{
+						Title:     "Latest AWS MGN Best Practices",
+						Snippet:   "Recent updates to AWS Migration Hub best practices",
+						URL:       "https://aws.amazon.com/mgn/latest",
+						Timestamp: "2024-01-01",
+					},
+				},
+				Source:    "openai-web-search",
+				Timestamp: "2024-01-01T00:00:00Z",
+				Cached:    false,
+			}
+			if err := json.NewEncoder(w).Encode(response); err != nil {
+				http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+				return
+			}
+		}
+	}))
+	defer mockServer.Close()
+
+	// Update config with mock server URL
+	config.Services.WebSearchURL = mockServer.URL
+
+	deps := &ServiceDependencies{
+		Logger:          logger,
+		Config:          config,
+		HTTPClient:      &http.Client{Timeout: 30 * time.Second},
+		DetectionConfig: websearch.ConfigFromSlice(config.WebSearch.FreshnessKeywords),
+	}
+
+	tests := []struct {
+		name              string
+		query             string
+		expectedFreshness bool
+	}{
+		{
+			name:              "Query with latest keyword",
+			query:             "latest AWS MGN best practices",
+			expectedFreshness: true,
+		},
+		{
+			name:              "Query with recent keyword",
+			query:             "recent updates to cloud migration",
+			expectedFreshness: true,
+		},
+		{
+			name:              "Query with year keyword",
+			query:             "AWS migration strategies 2024",
+			expectedFreshness: true,
+		},
+		{
+			name:              "Query with quarterly keyword",
+			query:             "Q1 2025 cloud announcements",
+			expectedFreshness: true,
+		},
+		{
+			name:              "Query without freshness keywords",
+			query:             "AWS migration overview",
+			expectedFreshness: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Fix: Use websearch.ConfigFromSlice instead of passing slice directly
+			detectionConfig := websearch.ConfigFromSlice(deps.Config.WebSearch.FreshnessKeywords)
+			detected := detectFreshnessKeywords(tt.query, detectionConfig)
+			assert.Equal(t, tt.expectedFreshness, detected, "Freshness detection should match expected result")
+
+			// If freshness is expected, test web search call
+			if tt.expectedFreshness {
+				ctx := context.Background()
+				webResults, err := callWebSearchService(ctx, tt.query, deps)
+				assert.NoError(t, err, "Web search should not return error")
+				assert.NotEmpty(t, webResults, "Web search should return results")
+				assert.Equal(t, "Latest AWS MGN Best Practices", webResults[0].Title)
+			}
+		})
+	}
 }

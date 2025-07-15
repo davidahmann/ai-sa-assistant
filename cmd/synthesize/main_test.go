@@ -36,6 +36,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/health"
 	internalopenai "github.com/your-org/ai-sa-assistant/internal/openai"
 	"github.com/your-org/ai-sa-assistant/internal/synth"
+	"github.com/your-org/ai-sa-assistant/internal/synthesis"
 )
 
 // mockOpenAIServer creates a mock OpenAI server for testing
@@ -489,8 +490,11 @@ func TestSetupHealthChecks(t *testing.T) {
 	// Create health manager
 	manager := health.NewManager("synthesize", "1.0.0", logger)
 
+	// Create test metrics collector
+	testMetricsCollector := synthesis.NewMetricsCollector(logger, nil)
+
 	// Setup health checks
-	setupHealthChecks(manager, cfg, openaiClient)
+	setupHealthChecks(manager, cfg, openaiClient, testMetricsCollector)
 
 	// Test health check
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -514,8 +518,11 @@ func TestSynthesisHandler(t *testing.T) {
 	// Create OpenAI client with mock server
 	openaiClient := createTestOpenAIClient(mockServer.URL, logger)
 
+	// Create test metrics collector
+	testMetricsCollector := synthesis.NewMetricsCollector(logger, nil)
+
 	// Create handler
-	handler := createSynthesisHandler(cfg, logger, openaiClient)
+	handler := createSynthesisHandler(cfg, logger, openaiClient, testMetricsCollector)
 
 	// Set Gin to test mode
 	gin.SetMode(gin.TestMode)
@@ -621,8 +628,11 @@ func TestSynthesisHandlerWithWebResults(t *testing.T) {
 	// Create OpenAI client with mock server
 	openaiClient := createTestOpenAIClient(mockServer.URL, logger)
 
+	// Create test metrics collector
+	testMetricsCollector := synthesis.NewMetricsCollector(logger, nil)
+
 	// Create handler
-	handler := createSynthesisHandler(cfg, logger, openaiClient)
+	handler := createSynthesisHandler(cfg, logger, openaiClient, testMetricsCollector)
 
 	// Set Gin to test mode
 	gin.SetMode(gin.TestMode)
@@ -731,8 +741,11 @@ func TestErrorHandling(t *testing.T) {
 	// Create OpenAI client with mock server
 	openaiClient := createTestOpenAIClient(mockServer.URL, logger)
 
+	// Create test metrics collector
+	testMetricsCollector := synthesis.NewMetricsCollector(logger, nil)
+
 	// Create handler
-	handler := createSynthesisHandler(cfg, logger, openaiClient)
+	handler := createSynthesisHandler(cfg, logger, openaiClient, testMetricsCollector)
 
 	// Set Gin to test mode
 	gin.SetMode(gin.TestMode)
@@ -786,8 +799,11 @@ func TestInvalidJSON(t *testing.T) {
 	// Create OpenAI client with mock server
 	openaiClient := createTestOpenAIClient(mockServer.URL, logger)
 
+	// Create test metrics collector
+	testMetricsCollector := synthesis.NewMetricsCollector(logger, nil)
+
 	// Create handler
-	handler := createSynthesisHandler(cfg, logger, openaiClient)
+	handler := createSynthesisHandler(cfg, logger, openaiClient, testMetricsCollector)
 
 	// Set Gin to test mode
 	gin.SetMode(gin.TestMode)

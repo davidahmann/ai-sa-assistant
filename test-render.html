@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Render Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-terraform.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        .test-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-section h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        .mermaid {
+            margin: 20px 0;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Render Test - Bypassing Web UI</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Basic Mermaid Diagram</h2>
+        <div class="mermaid">
+            graph TD
+                A[Start] --> B[Process]
+                B --> C[End]
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: AWS Architecture Diagram (from API response)</h2>
+        <div class="mermaid">
+            graph TD
+                subgraph "AWS Cloud"
+                    subgraph "VPC: 10.0.0.0/16"
+                        subgraph "Public Subnet: 10.0.1.0/24"
+                            ALB[Application Load Balancer]
+                            NAT[NAT Gateway]
+                        end
+                        subgraph "Private Subnet: 10.0.2.0/24"
+                            EC2[EC2 Instances]
+                            RDS[RDS Database]
+                        end
+                        IGW[Internet Gateway]
+                    end
+                end
+                Users[Users] --> ALB
+                ALB --> EC2
+                EC2 --> RDS
+                EC2 --> IGW
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Terraform Code Block</h2>
+        <pre><code class="language-terraform">terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+  default     = "us-east-1"
+}
+
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "main-vpc"
+  }
+}</code></pre>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: Bash Code Block</h2>
+        <pre><code class="language-bash">#!/bin/bash
+
+# Set AWS region
+export AWS_REGION="us-west-2"
+
+# Create Application Migration Service replication settings
+aws mgn create-replication-configuration-template \
+  --associate-default-security-group \
+  --bandwidth-throttling 1000 \
+  --create-public-ip false \
+  --data-plane-routing "PRIVATE_IP" \
+  --default-large-staging-disk-type "GP2" \
+  --ebs-encryption "DEFAULT" \
+  --replication-server-instance-type "t3.medium" \
+  --staging-area-subnet-id "subnet-0123456789abcdef0" \
+  --tags Key=Name,Value=MigrationTemplate</code></pre>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 5: Dynamic Rendering Test</h2>
+        <p>This will test if we can dynamically render content like the web UI does:</p>
+        <div id="dynamic-diagram"></div>
+        <div id="dynamic-code"></div>
+    </div>
+
+    <script>
+        // Initialize Mermaid
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+
+        // Test dynamic rendering
+        function testDynamicRendering() {
+            console.log('Testing dynamic rendering...');
+            
+            // Test dynamic diagram
+            const diagramDiv = document.getElementById('dynamic-diagram');
+            const diagramCode = `graph TD
+                subgraph "On-Premises"
+                    OnPremVMs[120 VMs]
+                end
+                subgraph "AWS Cloud"
+                    subgraph "VPC: 10.0.0.0/16"
+                        subgraph "Public Subnet"
+                            ALB[Application Load Balancer]
+                            NAT[NAT Gateway]
+                        end
+                        subgraph "Private Subnet"
+                            EC2[EC2 Instances]
+                            RDS[RDS Database]
+                        end
+                    end
+                    S3[S3 Buckets]
+                end
+                OnPremVMs -->|AWS MGN| EC2
+                EC2 --> RDS
+                EC2 --> S3
+                Users[Users] --> ALB
+                ALB --> EC2`;
+            
+            diagramDiv.innerHTML = `<div class="mermaid">${diagramCode}</div>`;
+            
+            // Test dynamic code
+            const codeDiv = document.getElementById('dynamic-code');
+            codeDiv.innerHTML = `
+                <h3>Dynamically Added Code:</h3>
+                <pre><code class="language-terraform">resource "aws_instance" "example" {
+  ami           = "ami-0c55b159cbfafe1d0"
+  instance_type = "t3.micro"
+  
+  tags = {
+    Name = "example-instance"
+  }
+}</code></pre>
+            `;
+            
+            // Re-initialize Mermaid for dynamic content
+            mermaid.init(undefined, diagramDiv.querySelectorAll('.mermaid'));
+            
+            // Re-run Prism highlighting
+            Prism.highlightAllUnder(codeDiv);
+        }
+
+        // Run tests after page loads
+        window.addEventListener('load', function() {
+            console.log('Page loaded, running tests...');
+            
+            // Test if libraries are loaded
+            console.log('Mermaid loaded:', typeof mermaid !== 'undefined');
+            console.log('Prism loaded:', typeof Prism !== 'undefined');
+            
+            // Run dynamic rendering test after a short delay
+            setTimeout(testDynamicRendering, 1000);
+        });
+    </script>
+</body>
+</html>

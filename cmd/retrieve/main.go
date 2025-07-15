@@ -17,7 +17,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -31,6 +33,7 @@ import (
 	"github.com/your-org/ai-sa-assistant/internal/health"
 	"github.com/your-org/ai-sa-assistant/internal/metadata"
 	"github.com/your-org/ai-sa-assistant/internal/openai"
+	"github.com/your-org/ai-sa-assistant/internal/websearch"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -68,16 +71,41 @@ type SearchResponse struct {
 	Query             string        `json:"query"`
 	FallbackTriggered bool          `json:"fallback_triggered"`
 	FallbackReason    string        `json:"fallback_reason,omitempty"`
+	WebSearchUsed     bool          `json:"web_search_used"`
+	WebResults        []WebResult   `json:"web_results,omitempty"`
+}
+
+// WebResult represents a web search result
+type WebResult struct {
+	Title     string `json:"title"`
+	Snippet   string `json:"snippet"`
+	URL       string `json:"url"`
+	Timestamp string `json:"timestamp"`
+}
+
+// WebSearchRequest represents a request to the web search service
+type WebSearchRequest struct {
+	Query string `json:"query"`
+}
+
+// WebSearchResponse represents the response from the web search service
+type WebSearchResponse struct {
+	Results   []WebResult `json:"results"`
+	Source    string      `json:"source"`
+	Timestamp string      `json:"timestamp"`
+	Cached    bool        `json:"cached"`
 }
 
 // ServiceDependencies holds initialized service dependencies
 type ServiceDependencies struct {
-	MetadataStore *metadata.Store
-	ChromaClient  *chroma.Client
-	OpenAIClient  *openai.Client
-	Classifier    *classifier.QueryClassifier
-	Logger        *zap.Logger
-	Config        *config.Config
+	MetadataStore   *metadata.Store
+	ChromaClient    *chroma.Client
+	OpenAIClient    *openai.Client
+	Classifier      *classifier.QueryClassifier
+	Logger          *zap.Logger
+	Config          *config.Config
+	HTTPClient      *http.Client
+	DetectionConfig websearch.DetectionConfig
 }
 
 func main() {
@@ -239,15 +267,25 @@ func initializeDependencies(cfg *config.Config, logger *zap.Logger, testMode boo
 	// Initialize query classifier
 	queryClassifier := classifier.NewQueryClassifier()
 
+	// Initialize HTTP client for web search service
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	// Initialize freshness detection config
+	detectionConfig := websearch.ConfigFromSlice(cfg.WebSearch.FreshnessKeywords)
+
 	logger.Info("Service dependencies initialized successfully")
 
 	return &ServiceDependencies{
-		MetadataStore: metadataStore,
-		ChromaClient:  chromaClient,
-		OpenAIClient:  openaiClient,
-		Classifier:    queryClassifier,
-		Logger:        logger,
-		Config:        cfg,
+		MetadataStore:   metadataStore,
+		ChromaClient:    chromaClient,
+		OpenAIClient:    openaiClient,
+		Classifier:      queryClassifier,
+		Logger:          logger,
+		Config:          cfg,
+		HTTPClient:      httpClient,
+		DetectionConfig: detectionConfig,
 	}, nil
 }
 
@@ -484,12 +522,28 @@ func buildSearchResponse(
 	query string,
 	fallbackTriggered bool,
 	fallbackReason string,
+	webSearchUsed bool,
+	webResults []WebResult,
 	deps *ServiceDependencies,
 ) SearchResponse {
 	confidenceThreshold := deps.Config.Retrieval.ConfidenceThreshold
 	var filteredResults []chroma.SearchResult
-	for _, result := range searchResults {
+
+	// DEBUG: Log similarity scores to understand filtering
+	deps.Logger.Info("DEBUG: Similarity scores analysis",
+		zap.String("query", query),
+		zap.Float64("confidence_threshold", confidenceThreshold),
+		zap.Int("total_results", len(searchResults)))
+
+	for i, result := range searchResults {
 		similarity := 1.0 - result.Distance
+		deps.Logger.Info("DEBUG: Result similarity",
+			zap.Int("index", i),
+			zap.Float64("distance", result.Distance),
+			zap.Float64("similarity", similarity),
+			zap.Bool("passes_threshold", similarity >= confidenceThreshold),
+			zap.String("doc_id", result.ID))
+
 		if similarity >= confidenceThreshold {
 			filteredResults = append(filteredResults, result)
 		}
@@ -521,6 +575,8 @@ func buildSearchResponse(
 		Query:             query,
 		FallbackTriggered: fallbackTriggered,
 		FallbackReason:    fallbackReason,
+		WebSearchUsed:     webSearchUsed,
+		WebResults:        webResults,
 	}
 }
 
@@ -569,6 +625,68 @@ func getSourceIDForDocument(docID string, deps *ServiceDependencies) string {
 		return metadataEntry.Title
 	}
 	return docID
+}
+
+// detectFreshnessKeywords checks if the query contains keywords that indicate need for fresh information
+func detectFreshnessKeywords(query string, config websearch.DetectionConfig) bool {
+	result := websearch.DetectFreshnessNeeds(query, config)
+	return result.NeedsFreshInfo
+}
+
+// callWebSearchService makes a request to the web search service
+func callWebSearchService(ctx context.Context, query string, deps *ServiceDependencies) ([]WebResult, error) {
+	webSearchURL := deps.Config.Services.WebSearchURL
+	if webSearchURL == "" {
+		return nil, fmt.Errorf("web search service URL not configured")
+	}
+
+	// Create request payload
+	requestPayload := WebSearchRequest{
+		Query: query,
+	}
+
+	jsonPayload, err := json.Marshal(requestPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal web search request: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "POST", webSearchURL+"/search", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create web search request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Make the request
+	resp, err := deps.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call web search service: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			deps.Logger.Warn("Failed to close response body", zap.Error(err))
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("web search service returned status %d", resp.StatusCode)
+	}
+
+	// Parse response
+	var webSearchResp WebSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&webSearchResp); err != nil {
+		return nil, fmt.Errorf("failed to decode web search response: %w", err)
+	}
+
+	deps.Logger.Info("Web search completed",
+		zap.String("query", query),
+		zap.Int("results_count", len(webSearchResp.Results)),
+		zap.String("source", webSearchResp.Source),
+		zap.Bool("cached", webSearchResp.Cached),
+	)
+
+	return webSearchResp.Results, nil
 }
 
 // createSearchHandler creates the main search endpoint handler
@@ -649,8 +767,28 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Step 6: Filter results by confidence and format response
-		response := buildSearchResponse(searchResults, searchReq.Query, fallbackTriggered, fallbackReason, deps)
+		// Step 6: Check for freshness keywords and perform web search if needed
+		var webResults []WebResult
+		webSearchUsed := false
+
+		if detectFreshnessKeywords(searchReq.Query, deps.DetectionConfig) {
+			deps.Logger.Info("Freshness keywords detected, performing web search",
+				zap.String("query", searchReq.Query),
+			)
+
+			webSearchResults, webErr := callWebSearchService(ctx, searchReq.Query, deps)
+			if webErr != nil {
+				deps.Logger.Warn("Web search failed, continuing with vector search results only",
+					zap.Error(webErr),
+				)
+			} else {
+				webResults = webSearchResults
+				webSearchUsed = true
+			}
+		}
+
+		// Step 7: Filter results by confidence and format response
+		response := buildSearchResponse(searchResults, searchReq.Query, fallbackTriggered, fallbackReason, webSearchUsed, webResults, deps)
 
 		processingTime := time.Since(start)
 		deps.Logger.Info("Search completed successfully",
@@ -660,6 +798,8 @@ func createSearchHandler(deps *ServiceDependencies) gin.HandlerFunc {
 			zap.Float64("confidence_threshold", deps.Config.Retrieval.ConfidenceThreshold),
 			zap.Bool("fallback_triggered", fallbackTriggered),
 			zap.String("fallback_reason", fallbackReason),
+			zap.Bool("web_search_used", webSearchUsed),
+			zap.Int("web_results_count", len(webResults)),
 			zap.Duration("processing_time", processingTime),
 		)
 
