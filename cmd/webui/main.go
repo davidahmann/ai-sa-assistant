@@ -42,15 +42,16 @@ const (
 	// HealthCheckTimeout is the timeout for health check requests
 	HealthCheckTimeout = 10 * time.Second
 	// RequestTimeout is the timeout for API requests
-	RequestTimeout = 30 * time.Second
+	RequestTimeout = 180 * time.Second
 )
 
 // ChatMessage represents a chat message in the conversation
 type ChatMessage struct {
-	ID        string    `json:"id"`
-	Role      string    `json:"role"` // "user" or "assistant"
-	Content   string    `json:"content"`
-	Timestamp time.Time `json:"timestamp"`
+	ID        string                 `json:"id"`
+	Role      string                 `json:"role"` // "user" or "assistant"
+	Content   string                 `json:"content"`
+	Timestamp time.Time              `json:"timestamp"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // Conversation represents a conversation with metadata
@@ -213,7 +214,8 @@ func main() {
 // handleHomePage serves the main chat interface
 func (s *WebUIServer) handleHomePage(c *gin.Context) {
 	c.HTML(http.StatusOK, "chat.html", gin.H{
-		"title": "AI SA Assistant",
+		"title":     "AI SA Assistant",
+		"timestamp": time.Now().Unix(),
 	})
 }
 
@@ -244,14 +246,7 @@ func (s *WebUIServer) handleChat(c *gin.Context) {
 		return
 	}
 
-	// Add user message to session
-	if err := s.sessionManager.AddMessage(ctx, sess.ID, session.UserRole, req.Message, nil); err != nil {
-		s.logger.Error("Failed to add user message", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, ChatResponse{
-			Error: "Failed to save message",
-		})
-		return
-	}
+	// Note: User message will be added by the orchestrator, no need to add it here to avoid duplicates
 
 	// Process message through orchestrator (which handles session management internally)
 	result := s.orchestrator.ProcessQuery(ctx, req.Message, sess.UserID)
@@ -272,11 +267,34 @@ func (s *WebUIServer) handleChat(c *gin.Context) {
 	}
 
 	// Convert response to chat message format
+	metadata := make(map[string]interface{})
+
+	// Debug log the synthesis response fields
+	s.logger.Info("Synthesis response fields",
+		zap.String("diagram_code_length", fmt.Sprintf("%d", len(result.Response.DiagramCode))),
+		zap.String("diagram_url", result.Response.DiagramURL),
+		zap.Int("code_snippets_count", len(result.Response.CodeSnippets)),
+		zap.Int("sources_count", len(result.Response.Sources)))
+
+	if result.Response.DiagramCode != "" {
+		metadata["diagram_code"] = result.Response.DiagramCode
+	}
+	if result.Response.DiagramURL != "" {
+		metadata["diagram_url"] = result.Response.DiagramURL
+	}
+	if len(result.Response.CodeSnippets) > 0 {
+		metadata["code_snippets"] = result.Response.CodeSnippets
+	}
+	if len(result.Response.Sources) > 0 {
+		metadata["sources"] = result.Response.Sources
+	}
+
 	assistantMessage := ChatMessage{
 		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
 		Role:      "assistant",
 		Content:   result.Response.MainText,
 		Timestamp: time.Now(),
+		Metadata:  metadata,
 	}
 
 	c.JSON(http.StatusOK, ChatResponse{
@@ -554,20 +572,20 @@ func (s *WebUIServer) handleStreamingChat(c *gin.Context) {
 		return
 	}
 
-	// Add user message to session
-	if err := s.sessionManager.AddMessage(ctx, sess.ID, session.UserRole, req.Message, nil); err != nil {
-		s.logger.Error("Failed to add user message", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, StreamingChatResponse{
-			Error: "Failed to save message",
-		})
-		return
-	}
+	// Note: User message will be added by the orchestrator, no need to add it here to avoid duplicates
 
 	// Create event stream
 	eventStream := s.streamManager.CreateStream(streamID)
 
-	// Start processing in a goroutine
-	go s.processStreamingQuery(ctx, req.Message, sess.UserID, sess.ID, eventStream)
+	// Create a completely independent context that is not derived from the HTTP request
+	// This ensures the background processing cannot be affected by HTTP connection state
+	independentCtx, cancel := context.WithTimeout(context.Background(), RequestTimeout)
+
+	// Start processing in a goroutine with completely isolated context
+	go func() {
+		defer cancel() // Clean up context when processing completes
+		s.processStreamingQuery(independentCtx, req.Message, sess.UserID, sess.ID, eventStream)
+	}()
 
 	// Return stream ID immediately
 	c.JSON(http.StatusOK, StreamingChatResponse{
@@ -664,8 +682,8 @@ func (s *WebUIServer) handleSSE(c *gin.Context) {
 			s.streamManager.CloseStream(streamID)
 			return
 
-		case <-time.After(30 * time.Second):
-			// Timeout after 30 seconds of no events
+		case <-time.After(180 * time.Second):
+			// Timeout after 3 minutes of no events
 			s.logger.Info("SSE stream timeout", zap.String("stream_id", streamID))
 			s.streamManager.CloseStream(streamID)
 			return
@@ -707,10 +725,7 @@ func (s *WebUIServer) processStreamingQuery(
 		return
 	}
 
-	// Store response in session
-	if err := s.storeAssistantResponse(ctx, sessionID, result.Response); err != nil {
-		s.logger.Warn("Failed to store assistant response", zap.Error(err))
-	}
+	// Note: Assistant response is already stored by the orchestrator, no need to store it again
 
 	// Emit completion with final response
 	executionTime := time.Since(startTime).Milliseconds()
@@ -763,11 +778,15 @@ func (s *WebUIServer) storeAssistantResponse(ctx context.Context, sessionID stri
 
 	// Add metadata about the response
 	metadata := map[string]interface{}{
-		"has_diagram":   response.DiagramCode != "",
-		"has_code":      len(response.CodeSnippets) > 0,
-		"source_count":  len(response.Sources),
-		"timestamp":     time.Now(),
-		"response_type": "synthesis",
+		"has_diagram":     response.DiagramCode != "",
+		"has_code":        len(response.CodeSnippets) > 0,
+		"source_count":    len(response.Sources),
+		"timestamp":       time.Now(),
+		"response_type":   "synthesis",
+		"context_sources": response.Sources,
+		"web_sources":     []interface{}{}, // Will be populated if web sources are available
+		"diagram_code":    response.DiagramCode,
+		"code_snippets":   response.CodeSnippets,
 	}
 
 	// Store the assistant response

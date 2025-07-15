@@ -83,9 +83,23 @@ class ChatApp {
     }
 
     setupAutoResize() {
-        this.messageInput.addEventListener('input', () => {
+        const resetHeight = () => {
             this.messageInput.style.height = 'auto';
-            this.messageInput.style.height = `${Math.min(this.messageInput.scrollHeight, 120)}px`;
+            const scrollHeight = this.messageInput.scrollHeight;
+            const maxHeight = 96; // Maximum height in pixels
+            const minHeight = 32;  // Minimum height in pixels
+            
+            // Set height based on content, but within limits
+            this.messageInput.style.height = `${Math.min(Math.max(scrollHeight, minHeight), maxHeight)}px`;
+        };
+
+        this.messageInput.addEventListener('input', resetHeight);
+        
+        // Reset to minimum height when input is cleared
+        this.messageInput.addEventListener('blur', () => {
+            if (this.messageInput.value.trim() === '') {
+                this.messageInput.style.height = '32px';
+            }
         });
     }
 
@@ -106,6 +120,18 @@ class ChatApp {
         } catch (error) {
             console.error('Failed to load conversations:', error);
             this.showToast('Failed to load conversations', 'error');
+        }
+    }
+
+    async updateSidebar() {
+        try {
+            const response = await fetch('/conversations');
+            if (response.ok) {
+                const conversations = await response.json();
+                this.displayConversations(conversations);
+            }
+        } catch (error) {
+            console.error('Failed to update sidebar:', error);
         }
     }
 
@@ -222,15 +248,26 @@ class ChatApp {
     }
 
     addMessageToUI(message) {
+        console.log('=== addMessageToUI called ===');
+        console.log('Message:', message);
+        console.log('Message metadata:', message.metadata);
+
         const messageEl = document.createElement('div');
         messageEl.className = `message ${message.role}`;
 
         const avatarText = message.role === 'user' ? 'SA' : 'AI';
         const timeStr = this.formatTime(new Date(message.timestamp));
 
-        const messageContentHTML = this.formatMessageContent(message.content);
+        console.log('About to call formatMessageContent with:', {
+            content_length: message.content?.length,
+            metadata: message.metadata
+        });
+
+        const messageContentHTML = this.formatMessageContent(message.content, message.metadata);
         const sourcesHTML = this.formatMessageSources(message);
         const contextHTML = this.formatMessageContext(message);
+
+        console.log('Formatted content length:', messageContentHTML?.length);
 
         messageEl.innerHTML = `
             <div class="message-avatar">${avatarText}</div>
@@ -245,18 +282,94 @@ class ChatApp {
         `;
 
         this.messagesContainer.appendChild(messageEl);
+        console.log('=== addMessageToUI finished ===');
     }
 
-    formatMessageContent(content) {
-        // Enhanced text formatting with diagram and code block support
-        let formattedContent = this.escapeHtml(content);
+    formatMessageContent(content, metadata) {
+        console.log('=== formatMessageContent called ===');
+        console.log('Content:', `${content?.slice(0, 200) }...`);
+        console.log('Metadata:', metadata);
 
-        // Process code blocks first (including mermaid diagrams)
-        formattedContent = this.processCodeBlocks(formattedContent);
+        // Enhanced text formatting with basic markdown support
+        let formattedContent = content;
 
-        // Convert remaining newlines to <br>
-        formattedContent = formattedContent.replace(/\n/g, '<br>');
+        // Parse markdown to HTML if marked is available
+        if (typeof marked !== 'undefined') {
+            console.log('Using marked for markdown parsing');
+            try {
+                marked.setOptions({
+                    breaks: false,  // Don't convert single line breaks to <br>
+                    gfm: true,
+                    sanitize: false,
+                    pedantic: false,
+                    headerIds: false,
+                    mangle: false
+                });
+                formattedContent = marked.parse(content);
+                console.log('Markdown parsed successfully');
+            } catch (error) {
+                console.error('Markdown parsing error:', error);
+                formattedContent = this.escapeHtml(content).replace(/\n\n/g, '</p><p>').replace(/^/, '<p>').replace(/$/, '</p>');
+            }
+        } else {
+            console.log('marked not available, using fallback');
+            // Fallback: escape HTML and convert double newlines to paragraphs
+            formattedContent = this.escapeHtml(content);
+            formattedContent = formattedContent.replace(/\n\n/g, '</p><p>').replace(/^/, '<p>').replace(/$/, '</p>');
+        }
 
+        // Filter mermaid.ink URLs from content (they're handled via metadata)
+        formattedContent = this.convertUrlsToLinks(formattedContent);
+
+        // Add diagrams and code snippets from metadata with intelligent placement
+        if (metadata) {
+            console.log('Processing metadata for diagrams and code');
+
+            // Add diagram if present
+            if (metadata.diagram_code) {
+                console.log('Found diagram_code, rendering diagram:', metadata.diagram_code?.slice(0, 100));
+                try {
+                    const diagramHtml = this.renderMermaidDiagram(metadata.diagram_code, metadata.diagram_url);
+                    formattedContent = this.insertContentIntelligently(formattedContent, diagramHtml, ['Architecture Diagram', 'Diagram', 'Architecture']);
+                    console.log('Diagram rendered successfully');
+                } catch (error) {
+                    console.error('Diagram rendering error:', error);
+                }
+            } else {
+                console.log('No diagram_code in metadata');
+            }
+
+            // Add code snippets if present
+            if (metadata.code_snippets && metadata.code_snippets.length > 0) {
+                console.log('Found code snippets:', metadata.code_snippets);
+                try {
+                    metadata.code_snippets.forEach((snippet, index) => {
+                        console.log(`Rendering code snippet ${index}:`, snippet.language);
+                        const codeHtml = this.renderCodeBlock(snippet.code, snippet.language);
+                        
+                        // Different placement strategies based on language
+                        let searchTerms = ['Code', 'Implementation', 'Example'];
+                        if (snippet.language === 'terraform') {
+                            searchTerms = ['Terraform', 'Infrastructure', 'AWS Infrastructure', 'VPC Setup'];
+                        } else if (snippet.language === 'bash') {
+                            searchTerms = ['Script', 'Commands', 'Migration', 'Automation'];
+                        }
+                        
+                        formattedContent = this.insertContentIntelligently(formattedContent, codeHtml, searchTerms);
+                    });
+                    console.log('All code snippets rendered');
+                } catch (error) {
+                    console.error('Code snippet rendering error:', error);
+                }
+            } else {
+                console.log('No code snippets in metadata');
+            }
+        } else {
+            console.log('No metadata provided');
+        }
+
+        console.log('Final formatted content length:', formattedContent?.length);
+        console.log('=== formatMessageContent finished ===');
         return formattedContent;
     }
 
@@ -546,7 +659,7 @@ class ChatApp {
 
             // Check if it's a mermaid diagram
             if (lang === 'mermaid' || this.isMermaidDiagram(trimmedCode)) {
-                return this.renderMermaidDiagram(trimmedCode);
+                return this.renderMermaidDiagram(trimmedCode, null);
             }
 
             // Otherwise, render as syntax-highlighted code block
@@ -560,7 +673,7 @@ class ChatApp {
         return mermaidKeywords.some(keyword => code.includes(keyword));
     }
 
-    renderMermaidDiagram(mermaidCode) {
+    renderMermaidDiagram(mermaidCode, diagramUrl) {
         const diagramId = `diagram-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
         // Create container with loading state
@@ -588,12 +701,12 @@ class ChatApp {
         `;
 
         // Schedule diagram rendering after DOM update
-        setTimeout(() => this.renderMermaidAsync(diagramId, mermaidCode), 100);
+        setTimeout(() => this.renderMermaidAsync(diagramId, mermaidCode, diagramUrl), 100);
 
         return container;
     }
 
-    async renderMermaidAsync(diagramId, mermaidCode) {
+    async renderMermaidAsync(diagramId, mermaidCode, diagramUrl) {
         try {
             // Initialize mermaid if not already done
             if (typeof mermaid !== 'undefined' && !window.mermaidInitialized) {
@@ -615,27 +728,33 @@ class ChatApp {
             // Clear loading state
             element.innerHTML = '';
 
-            // Render the diagram
+            // Try to render the diagram using local Mermaid.js first
             if (typeof mermaid !== 'undefined') {
                 const { svg } = await mermaid.render(`${diagramId}-svg`, mermaidCode);
                 element.innerHTML = svg;
                 element.classList.add('diagram-rendered');
             } else {
-                throw new Error('Mermaid library not loaded');
+                // If local Mermaid.js isn't available, fall back to the backend-generated URL
+                if (diagramUrl) {
+                    element.innerHTML = `<img src="${diagramUrl}" alt="Architecture Diagram" class="diagram-image" style="max-width: 100%; height: auto;">`;
+                    element.classList.add('diagram-rendered');
+                } else {
+                    throw new Error('Mermaid library not loaded and no diagram URL provided');
+                }
             }
         } catch (error) {
             console.error('Failed to render mermaid diagram:', error);
-            this.renderDiagramFallback(diagramId, mermaidCode, error.message);
+            this.renderDiagramFallback(diagramId, mermaidCode, diagramUrl, error.message);
         }
     }
 
-    renderDiagramFallback(diagramId, mermaidCode, errorMessage) {
+    renderDiagramFallback(diagramId, mermaidCode, diagramUrl, errorMessage) {
         const element = document.getElementById(diagramId);
         if (!element) {
             return;
         }
 
-        element.innerHTML = `
+        let fallbackContent = `
             <div class="diagram-error">
                 <div class="error-icon">⚠️</div>
                 <div class="error-text">
@@ -643,11 +762,25 @@ class ChatApp {
                     <br><small>${this.escapeHtml(errorMessage)}</small>
                 </div>
             </div>
+        `;
+
+        // If we have a diagram URL, show it as a fallback
+        if (diagramUrl) {
+            fallbackContent += `
+                <div class="diagram-fallback">
+                    <p><strong>Fallback:</strong> <a href="${diagramUrl}" target="_blank" rel="noopener noreferrer">View Diagram</a></p>
+                </div>
+            `;
+        }
+
+        fallbackContent += `
             <details class="diagram-fallback">
                 <summary>View Diagram Code</summary>
                 <pre><code>${this.escapeHtml(mermaidCode)}</code></pre>
             </details>
         `;
+
+        element.innerHTML = fallbackContent;
     }
 
     renderCodeBlock(code, language) {
@@ -773,6 +906,7 @@ class ChatApp {
         this.isLoading = true;
         this.showLoading(true);
         this.messageInput.value = '';
+        this.messageInput.style.height = '32px'; // Reset to minimum height
         this.updateSendButton();
         this.updateCharacterCount();
 
@@ -816,8 +950,8 @@ class ChatApp {
                     this.addMessageToUI(data.message);
                     this.scrollToBottom();
 
-                    // Reload conversations to update sidebar
-                    this.loadConversations();
+                    // Update sidebar to reflect new message
+                    this.updateSidebar();
                 }
             } else {
                 this.showToast('Failed to send message', 'error');
@@ -838,6 +972,7 @@ class ChatApp {
 
         this.isStreaming = true;
         this.messageInput.value = '';
+        this.messageInput.style.height = '32px'; // Reset to minimum height
         this.updateSendButton();
         this.updateCharacterCount();
 
@@ -915,7 +1050,7 @@ class ChatApp {
                 // Update UI
                 this.conversationTitle.textContent = conversation.title;
                 this.showWelcomeMessage();
-                this.loadConversations();
+                this.updateSidebar();
                 this.closeSidebar();
             }
         } catch (error) {
@@ -942,7 +1077,7 @@ class ChatApp {
                 if (this.currentConversationId === conversationId) {
                     this.createNewConversation();
                 } else {
-                    this.loadConversations();
+                    this.updateSidebar();
                 }
 
                 this.showToast('Conversation deleted', 'success');
@@ -1345,6 +1480,52 @@ class ChatApp {
         return div.innerHTML;
     }
 
+    convertUrlsToLinks(text) {
+        // Filter out mermaid.ink URLs since they're handled via metadata
+        const filteredText = text.replace(/https?:\/\/mermaid\.ink\/img\/[^\s)]+/g, '');
+        
+        // Convert remaining URLs to clickable links
+        const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
+        return filteredText.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+    }
+
+    insertContentIntelligently(content, insertHtml, searchTerms) {
+        // Try to find appropriate section headers to insert content after
+        for (const term of searchTerms) {
+            // Look for headers containing the search term
+            const headerRegex = new RegExp(`(<h[1-6][^>]*>.*?${term}.*?</h[1-6]>)`, 'gi');
+            const headerMatch = content.match(headerRegex);
+            
+            if (headerMatch) {
+                // Insert after the matching header
+                const insertPosition = content.indexOf(headerMatch[0]) + headerMatch[0].length;
+                const before = content.substring(0, insertPosition);
+                const after = content.substring(insertPosition);
+                console.log(`Inserting content after header containing "${term}"`);
+                return before + '\n\n' + insertHtml + '\n\n' + after;
+            }
+        }
+        
+        // Fallback: look for paragraph mentions of the search terms
+        for (const term of searchTerms) {
+            const paragraphRegex = new RegExp(`(<p[^>]*>.*?${term}.*?</p>)`, 'gi');
+            const paragraphMatch = content.match(paragraphRegex);
+            
+            if (paragraphMatch) {
+                // Insert after the matching paragraph
+                const insertPosition = content.indexOf(paragraphMatch[0]) + paragraphMatch[0].length;
+                const before = content.substring(0, insertPosition);
+                const after = content.substring(insertPosition);
+                console.log(`Inserting content after paragraph containing "${term}"`);
+                return before + '\n\n' + insertHtml + '\n\n' + after;
+            }
+        }
+        
+        // Final fallback: append to end (original behavior)
+        console.log('No suitable insertion point found, appending to end');
+        return content + '\n\n' + insertHtml;
+    }
+
     // Source and context visibility toggle functions
     toggleSources(sourceId) {
         const element = document.getElementById(sourceId);
@@ -1564,12 +1745,12 @@ class ChatApp {
             }
         };
 
-        // Fallback timeout
+        // Fallback timeout - increased to match backend processing time
         setTimeout(() => {
             if (this.isStreaming && this.currentEventSource) {
-                this.handleStreamError('Stream timeout after 60 seconds');
+                this.handleStreamError('Stream timeout after 3 minutes');
             }
-        }, 60000);
+        }, 180000);
     }
 
     handleStreamEvent(eventData) {
@@ -1600,6 +1781,10 @@ class ChatApp {
     }
 
     handleStreamComplete(data = {}) {
+        console.log('=== handleStreamComplete called ===');
+        console.log('Data received:', data);
+        console.log('Current streaming state:', this.isStreaming);
+
         if (this.currentEventSource) {
             this.currentEventSource.close();
             this.currentEventSource = null;
@@ -1610,6 +1795,15 @@ class ChatApp {
 
         // Add final response if provided
         if (data && data.response) {
+            console.log('Processing response data:', {
+                main_text_length: data.response.main_text?.length,
+                has_diagram_code: !!data.response.diagram_code,
+                diagram_code_length: data.response.diagram_code?.length,
+                diagram_url: data.response.diagram_url,
+                code_snippets_count: data.response.code_snippets?.length || 0,
+                code_snippets: data.response.code_snippets
+            });
+
             const assistantMessage = {
                 id: Date.now().toString(),
                 role: 'assistant',
@@ -1621,19 +1815,25 @@ class ChatApp {
                     execution_time_ms: data.execution_time_ms,
                     services_used: data.services_used,
                     fallback_used: data.fallback_used,
-                    diagram_url: data.response.diagram_url
+                    diagram_code: data.response.diagram_code,
+                    diagram_url: data.response.diagram_url,
+                    code_snippets: data.response.code_snippets || []
                 }
             };
 
+            console.log('Assistant message created:', assistantMessage);
             this.addMessageToUI(assistantMessage);
             this.scrollToBottom();
 
-            // Reload conversations to update sidebar
-            this.loadConversations();
+            // Update sidebar to reflect new message
+            this.updateSidebar();
+        } else {
+            console.log('No response data to process');
         }
 
         this.isStreaming = false;
         this.updateSendButton();
+        console.log('=== handleStreamComplete finished ===');
     }
 
     handleStreamError(errorMessage) {
