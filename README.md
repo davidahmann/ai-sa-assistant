@@ -1,209 +1,26 @@
 # AI-Powered Cloud SA Assistant
 
+[![Go Version](https://img.shields.io/badge/Go-1.23.5-blue.svg)](https://golang.org/doc/devel/release.html#go1.23)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+[![Docker](https://img.shields.io/badge/docker-compose-blue.svg)]()
+
 A demo-level AI assistant designed to accelerate pre-sales research for Solutions Architects. Built with Go microservices and powered by OpenAI, ChromaDB, and Microsoft Teams integration.
 
-## 🚀 Quick Start
+## 🌟 Project Philosophy
 
-### Prerequisites
+The AI-Powered Cloud SA Assistant is an internal, demo-level solution designed to showcase the power of modern RAG (Retrieval-Augmented Generation) architectures. Our mission is to transform the pre-sales workflow for Solutions Architects by turning hours of manual research into seconds of actionable, trusted, and visually impressive plans.
 
-- Go 1.23.5
-- Docker & Docker Compose
-- OpenAI API key
-- Microsoft Teams webhook URL
-
-### Setup
-
-1. **Configure environment variables:**
-
-   ```bash
-   # Required: OpenAI API key
-   export OPENAI_API_KEY="sk-..."
-
-   # Required: Teams webhook URL (see Teams Integration section)
-   export TEAMS_WEBHOOK_URL="https://your-tenant.webhook.office.com/webhookb2/..."
-   ```
-
-2. **Launch services:**
-
-   ```bash
-   docker-compose up -d
-   ```
-
-3. **Ingest demo data:**
-
-   ```bash
-   docker-compose run --rm ingest --docs-path=/app/docs
-   ```
-
-4. **Test webhook:**
-
-   ```bash
-   curl -X POST -H "Content-Type: application/json" \
-     -d '{"type": "message", "text": "test"}' \
-     http://localhost:8080/teams-webhook
-   ```
-
-5. **Test in Teams:**
-   Send a message to your configured Teams channel!
+**Key Capabilities:**
+- **Hybrid Retrieval Engine**: Combines metadata filtering, vector search, and live web search fallback.
+- **On-Demand Plan Generation**: Generates comprehensive migration and architecture plans in seconds.
+- **Automated Architecture Diagramming**: Generates Mermaid.js diagrams on the fly.
+- **Actionable Code Scaffolding**: Delivers ready-to-use Terraform and CLI code snippets.
+- **Seamless Teams Integration**: Interactive Adaptive Cards directly in Microsoft Teams.
 
 ## 🏗️ Architecture
 
-### Microservices Overview
-
-- **Ingestion Service** (`cmd/ingest`): Parses documents, generates embeddings, loads into ChromaDB
-- **Retrieval API** (`cmd/retrieve`): Hybrid search (metadata + vector) with fallback logic
-- **Web Search Service** (`cmd/websearch`): Fetches live information based on freshness keywords
-- **Synthesis Service** (`cmd/synthesize`): LLM-powered response generation with diagrams and code
-- **Teams Bot** (`cmd/teamsbot`): Microsoft Teams interface with Adaptive Cards
-
-### Technology Stack
-
-- **Runtime**: Go 1.23.5
-- **Vector Store**: ChromaDB
-- **Metadata**: SQLite
-- **LLM**: OpenAI GPT-4o
-- **Orchestration**: Docker Compose
-- **UI**: Microsoft Teams Adaptive Cards
-
-### Port Configuration
-
-| Service | Internal | External |
-|---------|----------|----------|
-| ChromaDB | 8000 | 8000 |
-| Retrieve | 8080 | 8081 |
-| Synthesize | 8080 | 8082 |
-| WebSearch | 8080 | 8083 |
-| TeamsBot | 8080 | 8080 |
-
-## 🎯 Demo Scenarios
-
-### 1. AWS Lift-and-Shift Migration
-
-```text
-@SA-Assistant Generate a high-level lift-and-shift plan for migrating 120 on-prem Windows and Linux VMs to AWS, including EC2 instance recommendations, VPC/subnet topology, and the latest AWS MGN best practices from Q2 2025.
-```
-
-**Expected Output**: Comprehensive plan with AWS MGN architecture diagram, instance sizing recommendations, VPC topology, and AWS CLI commands.
-
-**Showcases**: Metadata filtering (migration + aws), chunk retrieval (EC2 sizing), web search (Q2 2025 MGN updates), synthesis with diagrams.
-
-### 2. Azure Hybrid Architecture Extension
-
-```text
-@SA-Assistant Outline a hybrid reference architecture connecting our on-prem VMware environment to Azure, covering ExpressRoute configuration, VMware HCX migration, active-active failover, and June 2025 Azure Hybrid announcements.
-```
-
-**Expected Output**: ExpressRoute configuration guide, VMware HCX workflow diagram, network topology, and PowerShell scripts.
-
-**Showcases**: Metadata filtering (hybrid + azure), parallel retrieval (VMware docs + Azure docs), web search (June 2025 announcements), technical synthesis.
-
-### 3. Azure Disaster Recovery as a Service
-
-```text
-@SA-Assistant Design a DR solution in Azure for critical workloads with RTO = 2 hours and RPO = 15 minutes, including geo-replication options, failover orchestration, and cost-optimized standby.
-```
-
-**Expected Output**: DR architecture diagram, Azure Site Recovery configuration, RTO/RPO analysis, and cost optimization recommendations.
-
-**Showcases**: Metadata filtering (disaster-recovery), fallback search (additional DR details), synthesis with technical specifications and cost analysis.
-
-### 4. Security Compliance Assessment
-
-```text
-@SA-Assistant Summarize HIPAA and GDPR encryption, logging, and policy enforcement requirements for our AWS landing zone, and include any recent AWS compliance feature updates.
-```
-
-**Expected Output**: Executive-friendly compliance checklist, encryption standards table, logging architecture, and recent AWS compliance updates.
-
-**Showcases**: Metadata filtering (security + compliance), chunk retrieval (HIPAA/GDPR requirements), web search (recent updates), synthesis into actionable checklist.
-
-## ⚙️ Configuration
-
-### Environment Variables (Override config.yaml)
-
-```bash
-OPENAI_API_KEY=sk-...  # pragma: allowlist secret
-TEAMS_WEBHOOK_URL=https://your-org.webhook.office.com/...
-CONFIG_PATH=/path/to/config.yaml
-```
-
-### Configuration File Structure
-
-```yaml
-openai:
-  apikey: "sk-..."  # pragma: allowlist secret
-teams:
-  webhook_url: "https://..."
-services:
-  retrieve_url: "http://retrieve:8080"
-  websearch_url: "http://websearch:8080"
-  synthesize_url: "http://synthesize:8080"
-# ... see configs/config.template.yaml for full options
-```
-
-## 🧪 Development
-
-### Running Tests
-
-```bash
-go test ./...
-```
-
-### Code Quality
-
-```bash
-golangci-lint run
-go fmt ./...
-go mod tidy
-```
-
-### Pre-commit Hooks
-
-```bash
-pre-commit install
-pre-commit run --all-files
-```
-
-## 🔧 Key Features
-
-### Hybrid Retrieval Pipeline
-
-1. **Metadata Filtering**: SQLite-based document filtering by scenario/cloud/tags
-2. **Vector Search**: Semantic search via ChromaDB embeddings
-3. **Fallback Logic**: Automatic retry with broader search if results are insufficient
-4. **Live Web Search**: Conditional web search for fresh information
-
-### Intelligent Synthesis
-
-- **Multi-modal Output**: Text + Mermaid diagrams + code snippets
-- **Source Citations**: Automatic citation extraction and validation
-- **Context-aware Prompting**: Structured prompts with internal docs and web results
-
-### Teams Integration
-
-- **Rich Adaptive Cards**: Professional formatting with images, code blocks, and sources
-- **Feedback Mechanism**: 👍/👎 buttons for continuous improvement
-- **Async Processing**: Non-blocking webhook handling
-- **Webhook Support**: Supports both Teams Incoming Webhooks and Logic Apps webhooks
-
-#### Setting up Teams Webhook
-
-1. **Go to your Teams channel**
-2. **Click "..." → "Workflows"**
-3. **Select "Post to a channel when a webhook request is received"**
-4. **Copy the generated webhook URL**
-5. **Set environment variable:**
-
-   ```bash
-   export TEAMS_WEBHOOK_URL="https://your-tenant.webhook.office.com/webhookb2/..."
-   ```
-
-**Supported webhook formats:**
-
-- Teams Incoming Webhook: `https://your-tenant.webhook.office.com/webhookb2/...`
-- Logic Apps Webhook: `https://prod-XX.region.logic.azure.com:443/workflows/...`
-
-## 📊 Architecture Diagram
+The system is built as a set of modular Go microservices orchestrated via Docker Compose.
 
 ```mermaid
 graph TD
@@ -220,6 +37,9 @@ graph TD
 
     Ingest[Ingest CLI] --> ChromaDB
     Ingest --> SQLite
+    
+    Learning[Learning Service] --> FeedbackLog[Feedback Log]
+    Learning --> SQLite
 
     subgraph "Internal Packages"
         Config[internal/config]
@@ -229,58 +49,110 @@ graph TD
     end
 ```
 
-## 🛠️ Troubleshooting
+### Microservices Overview
 
-### Common Issues
+- **Ingestion Service** (`cmd/ingest`): Parses documents, generates embeddings, and loads them into ChromaDB.
+- **Retrieval API** (`cmd/retrieve`): Hybrid search (metadata + vector) with fallback logic.
+- **Web Search Service** (`cmd/websearch`): Fetches live information based on freshness keywords.
+- **Synthesis Service** (`cmd/synthesize`): LLM-powered response generation with diagrams and code.
+- **Teams Bot** (`cmd/teamsbot`): Microsoft Teams interface with Adaptive Cards.
+- **Learning Service** (`cmd/learning`): Background service that analyzes user feedback to improve system performance.
 
-1. **ChromaDB Connection Failed**
+## 🚀 Quick Start
 
-   ```bash
-   curl http://localhost:8000/api/v1/heartbeat
-   ```
+### Prerequisites
 
-2. **OpenAI API Errors**
-   - Check API key validity
-   - Monitor rate limits
-   - Review logs for 4xx errors
+- Go 1.23.5
+- Docker & Docker Compose
+- OpenAI API key
+- Microsoft Teams webhook URL (optional for local testing)
 
-3. **Teams Card Not Rendering**
-   - Validate JSON structure
-   - Check webhook URL configuration
-   - Review adaptive card schema
+### Setup
 
-### Health Checks
+1.  **Configure environment variables:**
 
-```bash
-# Service health
-curl http://localhost:8081/health  # Retrieve
-curl http://localhost:8082/health  # Synthesize
-curl http://localhost:8083/health  # WebSearch
-curl http://localhost:8080/health  # TeamsBot
+    ```bash
+    # Required: OpenAI API key
+    export OPENAI_API_KEY="sk-..."
 
-# ChromaDB health
-curl http://localhost:8000/api/v1/heartbeat
+    # Optional: Teams webhook URL
+    export TEAMS_WEBHOOK_URL="https://your-tenant.webhook.office.com/webhookb2/..."
+    ```
+
+2.  **Launch services:**
+
+    ```bash
+    make start-services
+    # OR
+    docker-compose up -d
+    ```
+
+3.  **Ingest demo data:**
+
+    ```bash
+    docker-compose run --rm ingest --docs-path=/app/docs
+    ```
+
+4.  **Verify Status:**
+
+    ```bash
+    make status
+    ```
+
+## 🎯 Demo Scenarios
+
+### 1. AWS Lift-and-Shift Migration
+**Prompt:** `@SA-Assistant Generate a high-level lift-and-shift plan for migrating 120 on-prem Windows and Linux VMs to AWS...`
+**Output:** Comprehensive plan with AWS MGN architecture diagram, instance sizing recommendations, and AWS CLI commands.
+
+### 2. Azure Hybrid Architecture Extension
+**Prompt:** `@SA-Assistant Outline a hybrid reference architecture connecting our on-prem VMware environment to Azure...`
+**Output:** ExpressRoute configuration guide, VMware HCX workflow diagram, and PowerShell scripts.
+
+### 3. Azure Disaster Recovery as a Service
+**Prompt:** `@SA-Assistant Design a DR solution in Azure for critical workloads with RTO = 2 hours and RPO = 15 minutes...`
+**Output:** DR architecture diagram, Azure Site Recovery configuration, and cost optimization recommendations.
+
+### 4. Security Compliance Assessment
+**Prompt:** `@SA-Assistant Summarize HIPAA and GDPR encryption, logging, and policy enforcement requirements...`
+**Output:** Executive-friendly compliance checklist, encryption standards table, and recent AWS compliance updates.
+
+## ⚙️ Configuration
+
+Configuration is managed via `configs/config.yaml` and environment variables. Environment variables take precedence.
+
+```yaml
+openai:
+  apikey: "sk-..."
+teams:
+  webhook_url: "https://..."
+services:
+  retrieve_url: "http://retrieve:8080"
+  websearch_url: "http://websearch:8080"
+  synthesize_url: "http://synthesize:8080"
 ```
 
-## 📈 Monitoring & Observability
+## 🧪 Development
 
-- **Structured Logging**: JSON logs via Zap
-- **Health Endpoints**: `/health` on all services
-- **Feedback Tracking**: User feedback logged to `feedback.log`
-- **Error Handling**: Graceful degradation with exponential backoff
+### Running Tests
+
+```bash
+make test
+```
+
+### Code Quality
+
+```bash
+make check
+```
 
 ## 🤝 Contributing
 
-1. Follow Go 1.23.5 standards
-2. Run tests and linting before PRs
-3. Update documentation for new features
-4. Maintain ≥80% test coverage
+1.  Follow Go 1.23.5 standards.
+2.  Run `make check` before PRs.
+3.  Update documentation for new features.
+4.  Maintain ≥80% test coverage.
 
 ## 📄 License
 
-This is a demo project for internal use.
-
----
-
-**Version**: v1.0.0
-**Last Updated**: 2025-01-01
+This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.

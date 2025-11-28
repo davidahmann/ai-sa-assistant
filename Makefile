@@ -146,7 +146,7 @@ status: ## Show status of all services
 	@echo "Synthesize: $$(curl -s http://localhost:8082/health > /dev/null 2>&1 && echo "✅ Ready" || echo "❌ Not ready")"
 	@echo "WebSearch: $$(curl -s http://localhost:8083/health > /dev/null 2>&1 && echo "✅ Ready" || echo "❌ Not ready")"
 	@echo "TeamsBot: $$(curl -s http://localhost:8080/health > /dev/null 2>&1 && echo "✅ Ready" || echo "❌ Not ready")"
-	@echo "WebUI: $$(curl -s http://localhost:8084/health > /dev/null 2>&1 && echo "✅ Ready" || echo "❌ Not ready")"
+	@echo "Learning: $$(docker ps | grep learning > /dev/null 2>&1 && echo "✅ Running" || echo "❌ Not running")"
 
 .PHONY: demo
 demo: clean build start-services ## Clean, build, and start full demo environment

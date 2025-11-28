@@ -105,7 +105,20 @@ services:
       - CONFIG_PATH=/app/configs/config.yaml
     profiles:
       - ingest
-    command: ["./ingest", "-d", "/app/docs", "-c", "/app/configs/config.yaml"]
+    command: [ "./ingest", "-d", "/app/docs", "-c", "/app/configs/config.yaml" ]
+
+  learning:
+    build:
+      context: .
+      dockerfile: cmd/learning/Dockerfile
+    volumes:
+      - ./configs:/app/configs
+      - metadata_data:/app/data
+      - ./feedback.log:/app/feedback.log
+    env_file:
+      - .env
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
 
 volumes:
   chromadb_data:

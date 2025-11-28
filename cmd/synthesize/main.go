@@ -2353,6 +2353,7 @@ type ErrorResponse struct {
 	Suggestions []string `json:"suggestions,omitempty"`
 	RetryAfter  int      `json:"retry_after,omitempty"`
 	SupportInfo string   `json:"support_info,omitempty"`
+	Details     string   `json:"details,omitempty"`
 }
 
 // handleSynthesisError provides graceful error handling with informative messages
@@ -2444,6 +2445,7 @@ func handleSynthesisError(c *gin.Context, err error, logger *zap.Logger, operati
 			},
 			RetryAfter:  60,
 			SupportInfo: "If this continues, please contact support with details about your request",
+			Details:     err.Error(),
 		}
 	}
 
